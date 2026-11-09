@@ -1,0 +1,15 @@
+{
+  "name": "createcontent-club",
+  "owner": {
+    "name": "Create Content Club"
+  },
+  "description": "Create Content Club editing skills for Claude Code",
+  "plugins": [
+    {
+      "name": "ccc-editor",
+      "source": "./plugins/ccc-editor",
+      "description": "Create Content Club video editor: turns a raw talking-head video into a finished vertical reel \u2014 tight cuts, text hook, captions, camera zooms and clean audio \u2014 after a short style picker.",
+      "version": "0.1.0"
+    }
+  ]
+}

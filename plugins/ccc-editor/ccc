@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# CCC editor — ulazna tačka (macOS i Windows/Git Bash).
+#   razvoj:  ./ccc <komanda>                     (radni folder = ovaj folder)
+#   plugin:  CCC_HOME="<podaci plugina>" bash "<plugin>/ccc" <komanda>
+CODE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOME_DIR="${CCC_HOME:-}"
+if [ -z "$HOME_DIR" ]; then
+  if [ -d "$CODE/.venv" ]; then HOME_DIR="$CODE"; else HOME_DIR="$HOME/.ccc-editor"; fi
+fi
+
+if   [ -x "$HOME_DIR/.venv/bin/python" ];         then PY="$HOME_DIR/.venv/bin/python"
+elif [ -x "$HOME_DIR/.venv/Scripts/python.exe" ]; then PY="$HOME_DIR/.venv/Scripts/python.exe"
+else
+  echo "CCC_NOT_INSTALLED: the editor isn't set up on this computer yet — run setup first." >&2
+  exit 3
+fi
+
+# Naš pun ffmpeg (bin/) i Node imaju prednost; ffprobe dolazi iz Remotion-a (na kraju PATH-a).
+for d in "$HOME_DIR/node" "$HOME_DIR/node/bin" "$HOME_DIR/bin"; do [ -d "$d" ] && PATH="$d:$PATH"; done
+for d in "$HOME_DIR"/remotion/node_modules/@remotion/compositor-*; do [ -d "$d" ] && PATH="$PATH:$d"; done
+export PATH PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+
+exec "$PY" "$CODE/engine/run.py" --home "$HOME_DIR" "$@" 2> >(grep -vE "objc\[|UserWarning|warnings.warn" >&2)

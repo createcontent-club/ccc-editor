@@ -1,0 +1,29 @@
+{
+  "name": "ccc-editing-remotion",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CCC Editing Skills — Remotion engine za montažu i render (1080x1920, 30fps).",
+  "scripts": {
+    "studio": "node node_modules/@remotion/cli/remotion-cli.js studio",
+    "render": "node node_modules/@remotion/cli/remotion-cli.js render",
+    "still": "node node_modules/@remotion/cli/remotion-cli.js still",
+    "browser": "node node_modules/@remotion/cli/remotion-cli.js browser ensure",
+    "compositions": "node node_modules/@remotion/cli/remotion-cli.js compositions",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/captions": "4.0.542",
+    "@remotion/cli": "4.0.542",
+    "@remotion/fonts": "4.0.542",
+    "@remotion/layout-utils": "4.0.542",
+    "@remotion/media-utils": "4.0.542",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

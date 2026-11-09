@@ -1,0 +1,235 @@
+"""Automatska provera isečenog videa pre predaje (kriterijumi faze 1).
+
+Sve se meri GLASOM (Voice: Silero + jak zvuk + suglasnici) — istom definicijom kojom se seče.
+"""
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import numpy as np
+
+from .energy import HOP, Voice
+from .media import decode_mono
+
+
+def _frame(path: Path, t: float, zoom: tuple[float, float, float] | None = None) -> np.ndarray:
+    vf = "scale=96:170"
+    if zoom:  # isti zum kao u Remotion-u: skala s oko tačke (ox, oy) na 1080×1920
+        s, ox, oy = zoom
+        vf = (f"scale=1080:1920,crop={1080 / s:.2f}:{1920 / s:.2f}:{ox - ox / s:.2f}:{oy - oy / s:.2f},"
+              "scale=96:170")
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1",
+                          "-vf", vf, "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, dtype=np.uint8).astype(np.float32)
+
+
+def _runs(mask: np.ndarray, value: bool) -> list[tuple[int, int]]:
+    out, k, n = [], 0, len(mask)
+    while k < n:
+        if mask[k] == value:
+            j = k
+            while j < n and mask[j] == value:
+                j += 1
+            out.append((k, j))
+            k = j
+        else:
+            k += 1
+    return out
+
+
+def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
+    res: list[tuple[bool, str]] = []
+    segs, fps, cfg = p["segments"], p["fps"], p["cut"]
+    frame = 1 / fps
+    src_v = Voice(decode_mono(job.dir / "source-audio.wav"))
+    out_v = Voice(decode_mono(job.public / "voice.wav"), floor=src_v.floor)
+
+    def kept(t: float) -> bool:
+        return any(g["srcStart"] <= t <= g["srcEnd"] for g in segs)
+
+    # 1. Glas zadržanih reči nije isečen, i nijedna zadržana reč nije ostala bez glasa.
+    removed = {w for r in p["removed"] for w in r["words"]}
+    clipped, silent = [], []
+    for w in p["words"]:
+        if w["id"] in removed:
+            continue
+        ks = range(int(w["start"] / HOP), int(w["end"] / HOP) + 1)
+        voiced = [k for k in ks if src_v.speech(k)]
+        if not voiced:
+            silent.append(f"{w['id']} '{w['text']}'")
+        elif any(not kept(k * HOP + HOP / 2) for k in voiced):
+            k = next(k for k in voiced if not kept(k * HOP + HOP / 2))
+            clipped.append(f"{w['id']} '{w['text']}' @{k * HOP:.2f}s")
+    res.append((not clipped, f"isečen glas u zadržanim rečima: {len(clipped)}"
+                + (f" → {', '.join(clipped[:5])}" if clipped else "")))
+    res.append((not silent, f"zadržane reči bez detektovanog glasa (moguće isečene): {len(silent)}"
+                + (f" → {', '.join(silent[:6])}" if silent else "")))
+
+    # 2. Početak i kraj: video kreće na prvom slogu i završava se na poslednjem.
+    vm = out_v.mask
+    first = int(np.argmax(vm)) * HOP
+    last_end = (len(vm) - int(np.argmax(vm[::-1]))) * HOP
+    total = sum(g["vFrames"] for g in segs) / fps
+    tail = total - last_end
+    res.append((first <= frame, f"početak: glas kreće na {first * 1000:.0f} ms (≤ 1 frejm = {frame * 1000:.0f} ms)"))
+    res.append((tail <= frame, f"kraj: posle poslednjeg sloga {max(0, tail) * 1000:.0f} ms (≤ 1 frejm)"))
+
+    # 3. Rupe bez glasa u gotovom zvuku (pauze, uzdasi) — dozvoljeno najviše ~1 frejm.
+    gaps = [(a * HOP, (b - a) * HOP) for a, b in _runs(vm, False) if a > 0 and b < len(vm)]
+    limit = cfg["max_gap"] + cfg["pre"] + cfg["post"] + HOP
+    long_gaps = [(t, d) for t, d in gaps if d > limit]
+    def out_to_src(t: float) -> float:
+        acc = 0.0
+        for s in segs:
+            ln = s["srcEnd"] - s["srcStart"]
+            if t < acc + ln:
+                return s["srcStart"] + t - acc
+            acc += ln
+        return segs[-1]["srcEnd"]
+
+    kept_words = [w for w in p["words"] if w["id"] not in removed]
+
+    def in_word(t: float, d: float) -> bool:  # zatvaranje suglasnika ("bu-t", "re-cursive") nije uzdah
+        a, b = out_to_src(t), out_to_src(t + d - 1e-3)
+        return b - a < d + 1e-3 and any(w["start"] <= a and b <= w["end"] for w in kept_words)
+
+    # Uzdah = bar 50 ms zvuka iznad +8 dB u rupi bez glasa, između reči.
+    breaths = [(t, d) for t, d in gaps
+               if (out_v.rel[int(t / HOP):int((t + d) / HOP)] > 8).sum() >= 5 and not in_word(t, d)]
+    g = np.array([d for _, d in gaps]) * fps if gaps else np.array([0.0])
+    res.append((not long_gaps, f"rupe bez glasa > {limit * 1000:.0f} ms: {len(long_gaps)}"
+                + (" → " + ", ".join(f"{t:.2f}s ({d * 1000:.0f} ms)" for t, d in long_gaps[:6]) if long_gaps else "")
+                + f" · sve rupe: prosek {g.mean():.2f}, max {g.max():.2f} frejma"))
+    res.append((not breaths, f"uzdasi/dah u gotovom zvuku: {len(breaths)}"
+                + (" → " + ", ".join(f"{t:.2f}s" for t, _ in breaths[:6]) if breaths else "")))
+
+    # 3b. Titlovi: nijedan trenutak glasa bez titla, poslednji titl traje do kraja videa.
+    caps = p.get("captions") or []
+    if caps:
+        uncovered = []
+        for k0, k1 in _runs(vm, True):
+            for k in range(k0, k1):
+                t = k * HOP + HOP / 2
+                if not any(c["start"] <= t < c["end"] for c in caps):
+                    uncovered.append(t)
+        spans = []
+        for t in uncovered:
+            if spans and t - spans[-1][1] <= 0.02:
+                spans[-1][1] = t
+            else:
+                spans.append([t, t])
+        spans = [(a, b) for a, b in spans if b - a >= 0.02]
+        res.append((not spans, f"glas bez titla: {len(spans)}"
+                    + (" → " + ", ".join(f"{a:.2f}–{b:.2f}s" for a, b in spans[:6]) if spans else "")))
+        gap_end = total - caps[-1]["end"]
+        res.append((abs(gap_end) < frame / 2, f"poslednji titl traje do kraja videa (razlika {gap_end * 1000:.0f} ms)"))
+
+    # 3b2. Boja naglaska (Karaoke) mora biti dovoljno svetla da se aktivna reč čita.
+    if p.get("caption_style") == "karaoke":
+        from .captions import DEFAULT_ACCENT, MIN_ACCENT_LUMINANCE, luminance
+        acc = p.get("caption_accent") or DEFAULT_ACCENT
+        lum = luminance(acc)
+        res.append((lum >= MIN_ACCENT_LUMINANCE,
+                    f"boja naglaska {acc}: osvetljenost {lum:.2f} (≥ {MIN_ACCENT_LUMINANCE}"
+                    + ("" if lum >= MIN_ACCENT_LUMINANCE else " — pretamna, predloži klijentu svetliju nijansu") + ")"))
+
+    # 3c. Hook: staje u kadar i UI zone, ne preklapa se sa titlom i ne prekriva lice.
+    hook = p.get("hook")
+    if hook:
+        from .captions import half_h
+        from .hook import SAFE_BOTTOM, SAFE_TOP, box_widths
+        widest = max(box_widths(hook))
+        face = p.get("face", {})
+        cap_top, cap_bottom = p["captionY"] - half_h(p), p["captionY"] + half_h(p)
+        clear_caption = hook["y"] >= cap_bottom or hook["bottom"] <= cap_top
+        clear_face = hook["y"] >= face.get("chin", 0) or hook["bottom"] <= face.get("head_top", 0)
+        in_frame = widest <= 960 and hook["y"] >= SAFE_TOP and hook["bottom"] <= SAFE_BOTTOM
+        cap_ok = hook["text"][:1] == hook["text"][:1].upper()
+        if hook.get("bg"):
+            from .hook import LARGE_TEXT_CONTRAST, contrast
+            cr = contrast(hook["bg"], hook["fg"])
+            res.append((cr >= LARGE_TEXT_CONTRAST, f"hook boja: boks {hook['bg']} / tekst {hook['fg']}, "
+                                                   f"kontrast {cr:.1f}:1 (≥ {LARGE_TEXT_CONTRAST} WCAG, krupan tekst)"))
+        res.append((clear_caption and clear_face and in_frame and cap_ok,
+                    f"hook {hook.get('style', 'box')} ({hook.get('position')}): y {hook['y']}–{hook['bottom']}, titl {cap_top}–{cap_bottom}, "
+                    f"lice {face.get('head_top')}–{face.get('chin')}, najširi boks {widest:.0f} px, "
+                    f"veliko početno slovo: {'da' if cap_ok else 'NE'}, do {hook['end']:.2f}s"))
+
+    # 3d. Kamera: ni pri najvećem zumu brada ne dolazi do titla, a teme do hooka iznad glave.
+    if p.get("camera") and p.get("face"):
+        from .camera import max_chin_after_zoom, min_head_after_zoom
+        from .captions import half_h
+        chin = max_chin_after_zoom(p)
+        cap_top = p["captionY"] - half_h(p)
+        ok = chin < cap_top
+        msg = f"kamera: brada pri najvećem zumu {chin:.0f} < vrh titla {cap_top}"
+        if hook and hook.get("position", "").startswith("iznad glave"):
+            head = min_head_after_zoom(p)
+            ok = ok and hook["bottom"] < head
+            msg += f", hook dno {hook['bottom']} < teme {head:.0f}"
+        res.append((ok, msg))
+        from .camera import hidden_jumps
+        missed = hidden_jumps(job, p)
+        fps_ = p["fps"]
+        starts, f_ = {}, 0
+        for i_, g_ in enumerate(segs):
+            starts[i_] = f_ / fps_
+            f_ += g_["vFrames"]
+        res.append((not missed, f"vidljivi skokovi bez promene kadra: {len(missed)}"
+                    + (" → " + ", ".join(f"{starts[m['seg']]:.1f}s (skok {m['jump']})" for m in missed[:6]) if missed else "")))
+
+    # 3e. Audio fix: glasnoća za IG/TikTok/Shorts, vrh, klipovanje.
+    if p.get("audio"):
+        from .audio import TARGET_LUFS, TARGET_TP, loudness
+        lm = loudness(job.public / "voice.wav")
+        pcm_ = subprocess.run(["ffmpeg", "-v", "error", "-i", str(job.public / "voice.wav"), "-f", "f32le", "-"],
+                              capture_output=True, check=True).stdout
+        clipped = int((np.abs(np.frombuffer(pcm_, np.float32)) >= 0.999).sum())
+        ok = abs(lm["lufs"] - TARGET_LUFS) <= 0.5 and lm["tp"] <= TARGET_TP + 0.05 and clipped == 0
+        res.append((ok, f"zvuk: {lm['lufs']} LUFS (cilj {TARGET_LUFS} ±0.5), vrh {lm['tp']} dBTP (≤ {TARGET_TP}), "
+                        f"klipovanih uzoraka {clipped}"))
+
+    # 4. Klikovi na rezovima.
+    pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", str(job.public / "voice.wav"), "-ac", "1", "-f", "f32le", "-"],
+                         capture_output=True, check=True).stdout
+    x = np.frombuffer(pcm, dtype=np.float32)
+    d = np.abs(np.diff(x))
+    typical = float(np.percentile(d, 99.9))
+    at, worst = 0.0, 0.0
+    for s in segs[:-1]:
+        at += s["srcEnd"] - s["srcStart"]
+        i = int(at * 48000)
+        worst = max(worst, float(d[max(0, i - 48):i + 48].max()))
+    res.append((worst <= typical, f"klikovi na rezovima: najveći skok {worst:.4f} (govor p99.9 = {typical:.4f})"))
+
+    # 5. Sinhronizacija: na početku svakog segmenta slika i zvuk se razlikuju ≤ pola frejma.
+    acc, prev_f, worst_sync = 0.0, 0, 0.0
+    for s in segs:
+        audio_src_at_cut = s["srcStart"] + (prev_f / fps - acc)  # izvorno vreme zvuka kad krene slika segmenta
+        worst_sync = max(worst_sync, abs(s["vFrom"] / fps - audio_src_at_cut))
+        acc += s["srcEnd"] - s["srcStart"]
+        prev_f += s["vFrames"]
+    res.append((worst_sync <= frame / 2 + 1e-3 and abs(total - p["stats"]["voice"]) < 1e-3,
+                f"sinhronizacija: najveće odstupanje slike od zvuka {worst_sync * 1000:.0f} ms (≤ {frame * 500:.0f} ms), "
+                f"slika {total:.3f}s / zvuk {p['stats']['voice']:.3f}s"))
+
+    # 6. Pravi frejmovi na pravom mestu (render vs. izvor, sredina 3 segmenta).
+    if rendered and rendered.exists():
+        src = job.public / "video.mp4"
+        diffs, out_f = [], 0
+        picks = {len(segs) // 4, len(segs) // 2, len(segs) - 1}
+        for k, s in enumerate(segs):
+            if k in picks and s["vFrames"] >= 2:
+                mid = s["vFrames"] // 2
+                cue = next((c for c in p.get("camera") or [] if c["seg"] == k), None)
+                zoom = None
+                if cue:
+                    sc = cue["from"] + (cue["to"] - cue["from"]) * mid / max(1, s["vFrames"])
+                    zoom = (sc, cue["ox"], cue["oy"])
+                diffs.append(float(np.abs(_frame(rendered, (out_f + mid + 0.5) / fps)
+                                          - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom)).mean()))
+            out_f += s["vFrames"]
+        res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
+    return res

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCC Style Picker</title>
+<style>
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-Light.ttf"); font-weight: 300; }
+  @font-face { font-family: "TikTok Sans"; src: url("/fonts/TikTokSans-Variable.ttf"); font-weight: 300 900; }
+
+  :root {
+    --bg: #0E0F12; --panel: #17191E; --panel-2: #1F2228; --line: #2A2E36;
+    --text: #F2F3F5; --muted: #9AA0AA; --accent: #FFBF00; --danger: #FF5A4E; --ok: #3DDC84;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.5 "Inter", system-ui, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 16px 120px; }
+  header { display: flex; gap: 18px; align-items: flex-start; }
+  header .logo { width: 56px; height: auto; flex: none; margin-top: 2px; }
+  @media (max-width: 520px) { header .logo { width: 44px; } }
+  header h1 { font: 700 28px/1.2 "Inter"; letter-spacing: -0.02em; margin: 0 0 6px; }
+  header p { margin: 0; color: var(--muted); }
+  .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.06em; font-size: 12px; text-transform: uppercase; margin-bottom: 10px; }
+
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-top: 18px; }
+  section.hidden { display: none; }
+  section.disabled { opacity: 0.35; pointer-events: none; }
+  h2 { font: 700 17px/1.3 "Inter"; margin: 0 0 4px; display: flex; gap: 10px; align-items: baseline; }
+  h2 .n { color: var(--accent); font-size: 13px; }
+  .hint { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+
+  textarea, input[type=text] {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font: 500 16px/1.4 "Inter"; outline: none; resize: vertical;
+  }
+  textarea:focus, input[type=text]:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .check { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  .card { position: relative; background: var(--panel-2); border: 2px solid transparent; border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .15s; }
+  .card:hover { transform: translateY(-2px); }
+  .card.selected { border-color: var(--accent); }
+  .card:focus-visible, .opt:focus-visible, .sw:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .card video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; background: #000; }
+  .card .label { padding: 10px 12px 12px; }
+  .card .label b { display: block; font-size: 14px; }
+  .card .label span { color: var(--muted); font-size: 12.5px; }
+  .card .num { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.6); border-radius: 999px; padding: 2px 10px; font-weight: 700; font-size: 13px; }
+  .card.selected .num { background: var(--accent); color: #000; }
+
+  .options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .opt { background: var(--panel-2); border: 2px solid transparent; border-radius: 12px; padding: 14px; cursor: pointer; }
+  .opt.selected { border-color: var(--accent); }
+  .opt b { display: block; } .opt span { color: var(--muted); font-size: 13px; }
+  .diagram { height: 120px; margin-bottom: 10px; border-radius: 8px; background: #2B2F37; position: relative; overflow: hidden; }
+  .diagram .head { position: absolute; left: 50%; width: 44px; height: 54px; margin-left: -22px; top: 34px; border-radius: 22px 22px 18px 18px; background: #555B66; }
+  .diagram .body { position: absolute; left: 50%; width: 110px; margin-left: -55px; top: 84px; height: 60px; border-radius: 30px 30px 0 0; background: #474C56; }
+  .diagram .cap { position: absolute; left: 50%; width: 64px; margin-left: -32px; height: 6px; border-radius: 3px; background: #fff; top: 94px; }
+  .diagram .hk { position: absolute; left: 50%; width: 96px; margin-left: -48px; height: 16px; border-radius: 4px; background: var(--accent); }
+
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw { width: 38px; height: 38px; border-radius: 10px; cursor: pointer; border: 2px solid transparent; }
+  .sw.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--bg) inset; }
+  .colorrow { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .colorrow { grid-template-columns: 1fr; } }
+  .live { background: #3A3F48 linear-gradient(160deg, #6E7480, #2C3038); border-radius: 12px; padding: 22px 16px; display: grid; gap: 16px; justify-items: center; }
+  .live .cap { font: 600 22px/1 "Inter"; letter-spacing: -0.045em; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.5); }
+  .live .block { font: 800 22px/1 "TikTok Sans"; font-variation-settings: "wdth" 95; padding: 10px 14px; border-radius: 6px; }
+  .live .pill { font: 700 15px/1 "Inter"; letter-spacing: -0.03em; padding: 7px 10px; border-radius: 7px; }
+  .warn { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(14,15,18,.92); backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  .bar .in { max-width: 1080px; margin: 0 auto; padding: 14px 16px; display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+  .summary { color: var(--muted); font-size: 13.5px; }
+  button { background: var(--accent); color: #000; border: 0; border-radius: 12px; padding: 14px 26px; font: 700 16px "Inter"; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .done { text-align: center; padding: 80px 16px; }
+  .done h1 { font: 700 30px "Inter"; } .done p { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <img class="logo" src="/logo.png" alt="Create Content Club">
+    <div>
+      <div class="brand">Create Content Club</div>
+      <h1>Pick your style</h1>
+      <p>Choose how your video should look. Your video is being prepared in the background while you choose.</p>
+    </div>
+  </header>
+
+  <section id="s-text">
+    <h2><span class="n">1</span> Text hook</h2>
+    <p class="hint">The text that appears on screen in the first ~3 seconds. Keep it short and punchy.</p>
+    <textarea id="hookText" rows="2" placeholder="e.g. How to become a big dog in your industry"></textarea>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="noHook"> No text hook</label>
+      <span class="hint" id="stackHint" style="margin:0;display:none">Stacked style: use <b>|</b> to split into two parts, e.g. <i>how to go viral | start growing, stop guessing</i></span>
+    </div>
+  </section>
+
+  <section id="s-hook">
+    <h2><span class="n">2</span> Hook style</h2>
+    <p class="hint">Tap a style to select it.</p>
+    <div class="grid" id="hookGrid"></div>
+  </section>
+
+  <section id="s-pos">
+    <h2><span class="n">3</span> Hook position</h2>
+    <p class="hint">Where the hook sits. If there's no room in your video, we'll use the other spot and let you know.</p>
+    <div class="options" id="posOpts"></div>
+  </section>
+
+  <section id="s-cap">
+    <h2><span class="n">4</span> Caption style</h2>
+    <p class="hint">How the subtitles appear while you talk.</p>
+    <div class="grid" id="capGrid"></div>
+  </section>
+
+  <section id="s-color" class="hidden">
+    <h2><span class="n">5</span> Brand color</h2>
+    <p class="hint" id="colorWhy">Used for the highlighted word / hook box.</p>
+    <div class="colorrow">
+      <div>
+        <div class="swatches" id="swatches"></div>
+        <div class="row"><input type="text" id="hex" placeholder="Or your brand hex, e.g. #FF5A1F" maxlength="7" style="max-width:260px"></div>
+        <div class="warn" id="colorWarn"></div>
+      </div>
+      <div class="live" id="live"></div>
+    </div>
+  </section>
+
+  <section id="s-cam">
+    <h2><span class="n" id="camNum">5</span> Camera</h2>
+    <p class="hint">Zoom switches between a wide and a closer shot at every visible jump cut, so cuts feel like a camera change.</p>
+    <div class="options" id="camOpts"></div>
+  </section>
+</div>
+
+<div class="bar"><div class="in">
+  <div class="summary" id="summary"></div>
+  <button id="go" disabled>Start editing</button>
+</div></div>
+
+<script>
+const S = { hookText: "", noHook: false, hookStyle: null, position: "below", captionStyle: null, color: null, camera: "zoom" };
+const HOOKS = [
+  { id: "box", name: "TikTok Box", desc: "Black text on white boxes" },
+  { id: "serif", name: "Editorial Serif", desc: "Elegant serif, no box" },
+  { id: "color", name: "Color Block", desc: "Bold text on your brand color" },
+  { id: "stack", name: "Stacked", desc: "Main line + brand-color subline" },
+];
+const CAPS = [
+  { id: "clean", name: "Clean", desc: "Soft blur-in" },
+  { id: "karaoke", name: "Karaoke", desc: "Spoken word in your color" },
+  { id: "box", name: "Box Fill", desc: "Words light up on a dark box" },
+  { id: "minimal", name: "Minimal", desc: "One key word in bold" },
+];
+let CFG = { palette: {}, default_color: "#FFE600" };
+
+const $ = (id) => document.getElementById(id);
+const hexOk = (v) => /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
+const normHex = (v) => { let h = v.trim().replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); return "#" + h.toUpperCase(); };
+const lum = (hex) => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const textOn = (bg) => contrast(bg, "#FFFFFF") >= 3 ? "#FFFFFF" : "#000000";
+
+// Kartice, opcije i boje su prava dugmad: Tab + Enter/razmak, a čitač ekrana zna šta je izabrano.
+function makeButton(el, label) {
+  el.setAttribute("role", "button"); el.tabIndex = 0; el.setAttribute("aria-label", label);
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } });
+}
+const press = (sel, on) => document.querySelectorAll(sel).forEach(el => { const v = on(el); el.classList.toggle("selected", v); el.setAttribute("aria-pressed", v); });
+
+function cards(gridId, items, kind) {
+  const g = $(gridId);
+  items.forEach((it, i) => {
+    const c = document.createElement("div");
+    c.className = "card"; c.dataset.id = it.id; makeButton(c, `${it.name} — ${it.desc}`);
+    c.innerHTML = `<span class="num">${i + 1}</span>
+      <video src="/assets/${kind}-${it.id}.mp4" poster="/assets/${kind}-${it.id}.jpg" muted loop playsinline autoplay></video>
+      <div class="label"><b>${it.name}</b><span>${it.desc}</span></div>`;
+    c.onclick = () => { S[kind === "hook" ? "hookStyle" : "captionStyle"] = it.id; render(); };
+    c.querySelector("video").setAttribute("aria-hidden", "true");
+    g.appendChild(c);
+  });
+}
+
+function options(boxId, items, key) {
+  const b = $(boxId);
+  items.forEach(it => {
+    const o = document.createElement("div");
+    o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name} — ${it.desc}`);
+    o.innerHTML = (it.diagram || "") + `<b>${it.name}</b><span>${it.desc}</span>`;
+    o.onclick = () => { S[key] = it.id; render(); };
+    b.appendChild(o);
+  });
+}
+
+function needsColor() { return S.captionStyle === "karaoke" || (!S.noHook && (S.hookStyle === "color" || S.hookStyle === "stack")); }
+
+function render() {
+  press("#hookGrid .card", c => c.dataset.id === S.hookStyle);
+  press("#capGrid .card", c => c.dataset.id === S.captionStyle);
+  press("#posOpts .opt", o => o.dataset.id === S.position);
+  press("#camOpts .opt", o => o.dataset.id === S.camera);
+  ["s-hook", "s-pos"].forEach(id => $(id).classList.toggle("disabled", S.noHook));
+  $("hookText").disabled = S.noHook;
+  $("stackHint").style.display = (!S.noHook && S.hookStyle === "stack") ? "inline" : "none";
+
+  const showColor = needsColor();
+  $("s-color").classList.toggle("hidden", !showColor);
+  $("camNum").textContent = showColor ? "6" : "5";
+  const col = S.color || CFG.default_color;
+  press(".sw", s => s.dataset.c === col);
+  const why = [];
+  if (S.captionStyle === "karaoke") why.push("the highlighted spoken word");
+  if (!S.noHook && S.hookStyle === "color") why.push("the hook box");
+  if (!S.noHook && S.hookStyle === "stack") why.push("the hook's second line");
+  $("colorWhy").textContent = "Used for " + why.join(" and ") + ".";
+  const fg = textOn(col);
+  $("live").innerHTML =
+    (S.captionStyle === "karaoke" ? `<div class="cap">your reels don't <span style="color:${col}">go</span> viral</div>` : "") +
+    (!S.noHook && S.hookStyle === "color" ? `<div class="block" style="background:${col};color:${fg}">How to go viral</div>` : "") +
+    (!S.noHook && S.hookStyle === "stack" ? `<div class="pill" style="background:${col};color:${fg}">start growing, stop guessing</div>` : "");
+  $("colorWarn").textContent = (S.captionStyle === "karaoke" && lum(col) < 0.2)
+    ? "This color is quite dark — the highlighted word may be hard to read. Pick a lighter shade." : "";
+
+  const missing = [];
+  if (!S.noHook && !S.hookText.trim()) missing.push("hook text");
+  if (!S.noHook && !S.hookStyle) missing.push("hook style");
+  if (!S.captionStyle) missing.push("caption style");
+  $("go").disabled = missing.length > 0;
+  $("summary").textContent = missing.length ? "Still needed: " + missing.join(", ") : "Ready — we'll edit your video automatically.";
+}
+
+async function init() {
+  try { CFG = await (await fetch("/config.json")).json(); } catch (e) {}
+  cards("hookGrid", HOOKS, "hook");
+  cards("capGrid", CAPS, "caption");
+  const dia = (hookTop) => `<div class="diagram"><div class="head"></div><div class="body"></div><div class="cap"></div><div class="hk" style="top:${hookTop}px"></div></div>`;
+  options("posOpts", [
+    { id: "below", name: "Below captions", desc: "Default — under the subtitles", diagram: dia(106) },
+    { id: "above", name: "Above the head", desc: "In the space above you", diagram: dia(10) },
+  ], "position");
+  options("camOpts", [
+    { id: "zoom", name: "Zoom", desc: "Wide / close shot changes on jump cuts" },
+    { id: "static", name: "Static", desc: "One steady frame, no zoom" },
+  ], "camera");
+  const sw = $("swatches");
+  Object.entries(CFG.palette || {}).forEach(([name, c]) => {
+    const d = document.createElement("div");
+    d.className = "sw"; d.dataset.c = c; d.title = name; d.style.background = c; makeButton(d, `${name} ${c}`);
+    d.onclick = () => { S.color = c; $("hex").value = ""; render(); };
+    sw.appendChild(d);
+  });
+  $("hex").oninput = (e) => { if (hexOk(e.target.value)) { S.color = normHex(e.target.value); render(); } };
+  $("hookText").oninput = (e) => { S.hookText = e.target.value; render(); };
+  $("noHook").onchange = (e) => { S.noHook = e.target.checked; render(); };
+  $("go").onclick = submit;
+  render();
+}
+
+async function submit() {
+  $("go").disabled = true;
+  const body = {
+    hook_text: S.noHook ? "" : S.hookText.trim(),
+    hook_style: S.noHook ? null : S.hookStyle,
+    hook_position: S.position,
+    caption_style: S.captionStyle,
+    color: needsColor() ? (S.color || CFG.default_color) : null,
+    camera: S.camera,
+  };
+  const r = await fetch("/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await r.json();
+  if (!res.ok) { $("summary").textContent = res.error; $("go").disabled = false; return; }
+  $("app").innerHTML = `<div class="done"><h1>Editing started ✂️</h1><p>You can close this page. Your finished video will appear in Claude Code.</p></div>`;
+  document.querySelector(".bar").remove();
+}
+init();
+</script>
+</body>
+</html>

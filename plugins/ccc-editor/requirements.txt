@@ -1,0 +1,10 @@
+# CCC Editing Skills — Python zavisnosti (Mac + Windows, bez sistemskih alata)
+# Transkripcija sa vremenom svake reči + Silero VAD (glas vs. dah)
+faster-whisper>=1.2
+# Slike / merenje teksta (prelom hooka), numerika
+pillow>=11
+numpy>=2
+# Detekcija lica → pozicija titla i hooka, centar zuma
+opencv-python-headless>=4.10
+# Pun ffmpeg (svi audio filteri) kao Python paket — bez Homebrew-a/winget-a i bez admin lozinke
+imageio-ffmpeg>=0.6
