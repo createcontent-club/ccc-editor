@@ -13,7 +13,7 @@ from __future__ import annotations
 import difflib
 import re
 
-from .energy import Voice
+from .energy import HOP, Voice
 
 FILLERS = {"um", "uh", "uhm", "umm", "uhh", "erm", "er", "ah", "ahh", "hmm", "hm", "mm", "mhm", "eh"}
 REPEAT_OK = {"that", "had", "is", "very", "really", "so", "no", "yeah", "yes", "bye", "ha", "go", "okay", "ok"}
@@ -102,6 +102,31 @@ def _subtract(spans: list[tuple[float, float]], holes: list[tuple[float, float]]
     return out
 
 
+QUIET_DB = 6.0     # ispod ovoga (dB iznad poda) je tišina
+RISE_DB = 4.0      # porast iznad najtišeg dela = nov zvuk (udah) → rezerva staje
+SAFE_PAD = 0.02    # prvih 20 ms uz glas uvek ostaje (stari standard), i kad nije tišina
+
+
+def _quiet_edge(voice: Voice, t: float, pad: float, limit: float) -> float:
+    """Ivica segmenta: od glasa (t) do `pad` sekundi pre (pad < 0) ili posle (pad > 0). Prolazi kroz rep
+    reči i tišinu, a staje kad krene NOV zvuk (udah, šum): nivo poraste > RISE_DB iznad najtišeg dela
+    viđenog do tada i pređe QUIET_DB — tako duža rezerva nikad ne uvuče uzdah, a ne seče rep reči."""
+    sign, full = (1 if pad > 0 else -1), abs(pad)
+    d = min(SAFE_PAD, full)
+    low = float("inf")
+    while d + HOP <= full + 1e-9:
+        k = int((t + d) / HOP) if sign > 0 else int((t - d - HOP) / HOP)  # frejm koji bi se dodao
+        if not 0 <= k < len(voice.rel):
+            break
+        r = float(voice.rel[k])
+        if r > QUIET_DB and r > low + RISE_DB:
+            break
+        low = min(low, r)
+        d += HOP
+    x = t + sign * d
+    return min(limit, x) if sign > 0 else max(limit, x)
+
+
 def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], voice: Voice,
             fps: float, cfg: dict) -> tuple[list[dict], list[dict]]:
     duration = voice.duration
@@ -173,7 +198,7 @@ def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], 
                 hi = hs
         pre = cfg["lead"] if i == 0 else cfg["pre"]
         post = cfg["tail"] if i == len(raw) - 1 else cfg["post"]
-        padded.append((max(lo, s - pre), min(hi, e + post)))
+        padded.append((_quiet_edge(voice, s, -pre, lo), _quiet_edge(voice, e, post, hi)))
     segs: list[list[float]] = []
     for s, e in padded:
         if segs and s <= segs[-1][1]:

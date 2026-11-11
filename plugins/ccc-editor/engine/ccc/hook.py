@@ -11,7 +11,7 @@ Stilovi (izgled je u remotion/src/components/Hook.tsx):
   color — Stil 3 "Color Block": mere kao Stil 1, ali boks u boji brenda, tekst Extra Bold 800,
           oštrije ivice; boja teksta (crna/bela) se bira po većem kontrastu sa bojom brenda.
   stack — Stil 4 "Stacked" (po slici klijenta): dva oblika jedan na drugom — gornji beli boks sa krupnim
-          crnim tekstom, donji manji boks u boji brenda koji malo zalazi preko gornjeg; isti font i debljina
+          crnim tekstom, donji manji boks u boji brenda odmah ispod, priljubljen (bez razmaka i bez preklapanja); isti font i debljina
           (Inter Bold) u oba; tekst se deli crtom "|" ili automatski; svaki deo u jednom redu.
 """
 from __future__ import annotations
@@ -115,7 +115,7 @@ def text_on(bg: str) -> str:
 STACK = {"weight": 700, "max_w": 900,  # font i tracking: izabrani set (F.load(…, "caption", 700, px))
          "top": {"px": 96, "min_px": 64, "h_ratio": 1.36, "pad_x": 34, "radius": 18},
          "sub": {"px": 52, "min_px": 38, "h_ratio": 1.5, "pad_x": 22, "radius": 14},
-         "overlap": 14}
+         "overlap": 0}  # oblici se dodiruju, bez preklapanja (odluka 11. nov 2026)
 SPLIT_BEFORE = {"in", "with", "for", "to", "and", "so", "because", "without", "when", "if", "while", "but",
                 "or", "from", "by", "using", "like", "before", "after", "until", "(start", "("}
 

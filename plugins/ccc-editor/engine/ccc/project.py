@@ -33,11 +33,19 @@ DEFAULT_CUT = {
     "utterance_gap": 0.25,  # tišina koja deli izgovorene delove (za transkripciju i retake-ove)
     "max_gap": 0.04,        # rupa bez glasa duža od ovoga nestaje (uzdah, pauza)…
     "in_word_gap": 0.12,    # …osim unutar jedne reči (zatvaranje suglasnika), do 120 ms
-    "pre": 0.02,            # …ostaje 20 ms pre glasa
-    "post": 0.02,           # …i 20 ms posle glasa
-    "lead": 0.01,           # video kreće 10 ms pre prvog sloga
-    "tail": 0.02,           # i završava 20 ms posle poslednjeg (samo da glas ne bude odsečen)
+    "pre": 0.05,            # …ostaje 50 ms pre glasa (meki počeci reči: h, f, s — 20 ms je znao da ih iseče)
+    "post": 0.07,           # …i 70 ms posle glasa → između rečenica ~0.12 s
+    "lead": 0.01,           # video kreće 10 ms pre prvog sloga (provera: glas ≤ 1 frejm od početka)
+    "tail": 0.03,           # i završava 30 ms posle poslednjeg (≤ 1 frejm, bez pauze na kraju)
     "fade": 0.005,          # mikro-fade zvuka na svakom rezu (s)
+}
+
+# Pacing (izbor klijenta `pacing`): razlika u odnosu na DEFAULT_CUT (= "fast").
+# Oba: bez pauze na početku/kraju, svi loši take-ovi isečeni; chill samo ostavlja malo više vazduha.
+PACING = {
+    "fast": {},
+    "chill": {"max_gap": 0.15,   # kratke pauze u rečenici (≤ 150 ms) ostaju prirodne
+              "pre": 0.10, "post": 0.15},  # duže pauze se skraćuju na ~0.25 s
 }
 
 

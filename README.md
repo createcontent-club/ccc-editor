@@ -65,12 +65,14 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
 
 ## Step 4 — Edit your first video
 
-1. Open Claude Code and start a new session.
-2. Type something like:
+1. Open Claude Code and start a **new** chat/session.
+2. Type **`/ccc-edit`**, then **drag your video file into the chat** and press Enter:
 
-   > My new video is ready: *(drag your video file into the chat)*
+   > /ccc-edit *(your video file)*
 
-   Dragging the file in pastes its location — that's all Claude needs.
+   Dragging the file in pastes its location — that's all Claude needs. (Plain words like "edit my new video" work too, but `/ccc-edit` always starts the CCC Editor.)
+
+   Don't see `/ccc-edit` when you type `/`? Close Claude Code completely, open it again and start a new chat.
 3. **First time only:** Claude sets up the editor on your computer. This takes about **5–10 minutes** and you don't need to do anything. If your computer asks for permission to let a command run, allow it.
 4. The **CCC Editing Style Menu** opens in your browser:
    - pick a **format** — e.g. **Basic Edit** (formats marked *Coming soon* arrive with updates)
@@ -80,6 +82,7 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
      - choose a **caption style**
      - choose a **font** for your captions and hook (CCC Signature, Poppins, Plus Jakarta Sans or Bricolage Grotesque)
      - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
+     - choose the **pacing**: **Fast-paced** (tight, classic reel) or **Chill** (a touch more breathing room)
      - choose **Zoom** or **Static** camera
    - click **Start editing**
 5. A few minutes later your finished video is saved **next to your original**, named `<your file>-CCC-edit.mp4`. Claude tells you what was cut and how long the video is now.

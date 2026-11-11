@@ -178,6 +178,12 @@
     </div>
   </section>
 
+  <section id="s-pace" data-step>
+    <h2><span class="n"></span> Pacing</h2>
+    <p class="hint">How tight the cuts are. Both remove mistakes, dead air at the start and end, and long pauses.</p>
+    <div class="options" id="paceOpts"></div>
+  </section>
+
   <section id="s-cam" data-step>
     <h2><span class="n"></span> Camera</h2>
     <p class="hint">Zoom switches between a wide and a closer shot at every visible jump cut, so cuts feel like a camera change.</p>
@@ -194,7 +200,7 @@
 // Dashboard formata: prikazuje samo izbore koje format dozvoljava (pravila: engine/ccc/formats.py).
 // Element koji format ne koristi → sekcija sakrivena; jedna dozvoljena vrednost → zaključano i sakriveno.
 const FID = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "basic");
-const S = { hookText: "", noHook: null, hookStyle: null, position: "below", captionStyle: null, font: "ccc", color: null, camera: "zoom" };
+const S = { hookText: "", noHook: null, hookStyle: null, position: "below", captionStyle: null, font: "ccc", color: null, camera: "zoom", pacing: "fast" };
 const HOOKS = [
   { id: "box", name: "TikTok Box", desc: "Black text on white boxes" },
   { id: "serif", name: "Editorial Serif", desc: "Elegant serif, no box" },
@@ -283,6 +289,7 @@ function render() {
   press("#capGrid .card", c => c.dataset.id === S.captionStyle);
   press("#posOpts .opt", o => o.dataset.id === S.position);
   press("#camOpts .opt", o => o.dataset.id === S.camera);
+  press("#paceOpts .opt", o => o.dataset.id === S.pacing);
   press("#fontGrid .fcard", c => c.dataset.id === S.font);
   $("serifNote").style.display = (hookOn() && S.hookStyle === "serif") ? "inline" : "none";
   // Prvo Da/Ne: dok klijent ne izabere "Yes", tekst, stil i pozicija hooka su zaključani.
@@ -382,6 +389,16 @@ async function init() {
   } else {
     $("s-font").classList.add("hidden");
   }
+  const PACE = [
+    { id: "fast", name: "Fast-paced", desc: "Tight cuts, no dead air — the classic reel feel" },
+    { id: "chill", name: "Chill", desc: "A touch more breathing room — great for phone-in-hand videos" },
+  ];
+  if (EL.pacing) {
+    S.pacing = EL.pacing.modes[0];
+    options("paceOpts", applyRule("s-pace", EL.pacing.modes, PACE, "pacing"), "pacing");
+  } else {
+    $("s-pace").classList.add("hidden");
+  }
   if (EL.camera) {
     S.camera = EL.camera.modes[0];
     options("camOpts", applyRule("s-cam", EL.camera.modes, CAM, "camera"), "camera");
@@ -413,6 +430,7 @@ async function submit() {
     font: S.font,
     color: needsColor() ? (S.color || CFG.default_color) : null,
     camera: S.camera,
+    pacing: S.pacing,
   };
   const r = await fetch("/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const res = await r.json();

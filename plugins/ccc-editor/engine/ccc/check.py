@@ -95,9 +95,13 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         a, b = out_to_src(t), out_to_src(t + d - 1e-3)
         return b - a < d + 1e-3 and any(w["start"] <= a and b <= w["end"] for w in kept_words)
 
-    # Uzdah = bar 50 ms zvuka iznad +8 dB u rupi bez glasa, između reči.
+    # Uzdah = bar 50 ms zvuka iznad +8 dB (u odnosu na pod izvora) u rupi bez glasa, između reči.
+    # Gotov zvuk je pojačan (kompresor + -14 LUFS), pa se nivo vraća na skalu izvora — inače bi tiha
+    # soba u pauzi (pacing) izgledala kao dah.
+    gain = max(0.0, float(np.median(out_v.rel[out_v.mask]) - np.median(src_v.rel[src_v.mask]))) \
+        if out_v.mask.any() and src_v.mask.any() else 0.0
     breaths = [(t, d) for t, d in gaps
-               if (out_v.rel[int(t / HOP):int((t + d) / HOP)] > 8).sum() >= 5 and not in_word(t, d)]
+               if (out_v.rel[int(t / HOP):int((t + d) / HOP)] - gain > 8).sum() >= 5 and not in_word(t, d)]
     g = np.array([d for _, d in gaps]) * fps if gaps else np.array([0.0])
     res.append((not long_gaps, f"rupe bez glasa > {limit * 1000:.0f} ms: {len(long_gaps)}"
                 + (" → " + ", ".join(f"{t:.2f}s ({d * 1000:.0f} ms)" for t, d in long_gaps[:6]) if long_gaps else "")

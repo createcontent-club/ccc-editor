@@ -52,8 +52,8 @@ const SerifHook: React.FC<{hook: HookSpec}> = ({hook}) => (
 
 /**
  * Hook Stil 4 "Stacked" (po slici klijenta): dva oblika jedan na drugom — gornji beli boks sa krupnim
- *  crnim tekstom, donji manji boks u boji brenda (tekst crn/beo po kontrastu) koji malo zalazi preko
- *  gornjeg; isti font i debljina u oba (Inter Bold, tracking -0.03em).
+ *  crnim tekstom, donji manji boks u boji brenda (tekst crn/beo po kontrastu) priljubljen odmah ispod
+ *  gornjeg (bez razmaka, bez preklapanja); isti font i debljina u oba (Inter Bold, tracking -0.03em).
  *  ULAZ: oba oblika sa blagim bounce-om i malim pomakom odozdo — prvo gornji, pa donji 4 frejma kasnije.
  *  IZLAZ: trenutan.
  */
@@ -62,7 +62,7 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook
   const fs = useFontSpec();
   const sizes = hook.sizes ?? [96, 52];
   const heights = hook.heights ?? [131, 78];
-  const overlap = hook.overlap ?? 14;
+  const overlap = hook.overlap ?? 0;
   const shapes = [
     {bg: '#FFFFFF', fg: '#000000', radius: 18, padX: 34},
     {bg: hook.bg ?? '#FF3B30', fg: hook.fg ?? '#FFFFFF', radius: 14, padX: 22},

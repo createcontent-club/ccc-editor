@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 
 from .audio import loudness
-from .project import DEFAULT_CUT, Job
+from .project import DEFAULT_CUT, PACING, Job
 
 
 def _recut(job: Job, p: dict) -> dict:
@@ -51,7 +51,7 @@ def _recut(job: Job, p: dict) -> dict:
 
     src_audio = job.dir / "source-audio.wav"
     # Podešavanja = trenutni CCC standard; projekat može da prepiše pojedina polja kroz "cut_override".
-    p["cut"] = {**DEFAULT_CUT, **p.get("cut_override", {})}
+    p["cut"] = {**DEFAULT_CUT, **PACING.get(p.get("pacing") or "fast", {}), **p.get("cut_override", {})}
     voice = Voice(decode_mono(src_audio))
     removed = cut.resolve(p["words"], p["utterances"], p["decisions"])
     p["segments"], p["removed"] = cut.compute(p["words"], p["utterances"], removed, voice, p["fps"], p["cut"])
@@ -85,9 +85,11 @@ def _build(job: Job, name: str) -> None:
         raise SystemExit(f"Format {fmt['id']} ima sopstvene elemente koji još nisu povezani u build.")
     p["choices"] = choices
     p["font"] = choices.get("font") or "ccc"  # set fontova: titlovi + hook (meri ga i hook, i render)
+    p["pacing"] = choices.get("pacing") or "fast"
     job.save(p)
     from .fonts import get as get_font
-    print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']}")
+    print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']} · pacing: {p['pacing']}")
+    print("▶ Rezovi (pacing)"); main(["cut", name])
     color, cs, hs = choices.get("color"), choices["caption_style"], choices.get("hook_style")
 
     print("▶ Titlovi"); main(["captions", name, "--style", cs] + (["--color", color] if color and cs == "karaoke" else []))

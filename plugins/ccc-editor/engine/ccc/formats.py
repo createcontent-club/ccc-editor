@@ -10,6 +10,7 @@ Pravila za element iz Basic-a (hook, captions, camera):
   • {"styles": [...]}      → klijent bira samo među ovim stilovima
   • {"positions": ["above"]}, {"modes": ["static"]} … → jedna vrednost = zaključano, klijent to ne bira
   • {"optional": False}    → (hook) hook je obavezan, nema "No text hook"
+  • {"modes": ["chill"]}   → (pacing) fast = tesni rezovi, chill = malo više vazduha; jedna vrednost = zaključano
   • {"choices": ["ccc"]}   → (font) set fontova za titlove + hook (engine/ccc/fonts.py); jedna vrednost = zaključano
 Sečenje (tight cuts) i zvuk (-14 LUFS) uvek važe — to je CCC standard za svaki format.
 
@@ -30,12 +31,14 @@ HOOK_STYLES = ["box", "serif", "color", "stack"]
 HOOK_POSITIONS = ["below", "above"]
 CAPTION_STYLES = ["clean", "karaoke", "box", "minimal"]
 CAMERA_MODES = ["zoom", "static"]
+PACING_MODES = ["fast", "chill"]
 
 BASIC = {
     "hook": {"styles": HOOK_STYLES, "positions": HOOK_POSITIONS, "optional": True},
     "captions": {"styles": CAPTION_STYLES},
     "camera": {"modes": CAMERA_MODES},
     "font": {"choices": FONT_IDS},
+    "pacing": {"modes": PACING_MODES},
 }
 
 # Imena za klijenta (engleski) — za "Set by this format" i izveštaje.
@@ -47,6 +50,7 @@ NAMES = {
                         "minimal": "Minimal captions"},
     "camera.modes": {"zoom": "zoom on jump cuts", "static": "static camera"},
     "font.choices": {k: f"{v['name']} font" for k, v in FONT_SETS.items()},
+    "pacing.modes": {"fast": "fast-paced cuts", "chill": "chill pacing"},
 }
 
 
@@ -105,7 +109,7 @@ def fixed(f: dict) -> list[str]:
     if "hook" not in f["elements"]:
         out.append("no text hook")
     for el, key in (("hook", "styles"), ("hook", "positions"), ("captions", "styles"), ("camera", "modes"),
-                    ("font", "choices")):
+                    ("font", "choices"), ("pacing", "modes")):
         vals = f["elements"].get(el, {}).get(key)
         if vals and len(vals) == 1:
             out.append(NAMES[f"{el}.{key}"][vals[0]])
@@ -157,6 +161,8 @@ def validate(d: dict) -> dict:
     cam = el.get("camera")
     camera = pick(d.get("camera"), cam["modes"], "camera.modes") if cam else "static"
 
+    pac = el.get("pacing")
+    pacing = pick(d.get("pacing"), pac["modes"], "pacing.modes") if pac else "fast"
     fnt = el.get("font")
     font = pick(d.get("font"), fnt["choices"], "font.choices") if fnt else "ccc"
 
@@ -167,4 +173,5 @@ def validate(d: dict) -> dict:
         except ValueError:
             raise ValueError("That color isn't valid — use a hex like #FF5A1F.")
     return {"format": f["id"], "hook_text": text, "hook_style": hook_style, "hook_position": pos or "below",
-            "caption_style": cap, "font": font, "color": color, "camera": camera}
+            "caption_style": cap, "font": font, "color": color, "camera": camera,
+            "pacing": pacing}

@@ -2,7 +2,7 @@
 
 The CCC essentials for one talking-head video: tight cuts, a text hook, captions, camera zooms and clean audio.
 
-**From Basic:** everything — the client chooses whether to have a text hook (and its text / style / position), caption style, font (captions + hook), brand color and camera.
+**From Basic:** everything — the client chooses whether to have a text hook (and its text / style / position), caption style, font (captions + hook), brand color, pacing (fast / chill) and camera.
 **Own elements:** none.
 
 ## Judgment

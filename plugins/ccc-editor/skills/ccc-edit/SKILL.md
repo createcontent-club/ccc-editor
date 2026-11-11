@@ -1,9 +1,13 @@
 ---
 name: ccc-edit
-description: Create Content Club's (CCC) automatic video editor for clients — turns a raw talking-head video into a finished vertical reel in the client's chosen CCC format (Basic Edit: tight cuts with retakes/pauses/breaths removed, text hook, captions, camera zooms, clean -14 LUFS audio; more formats arrive with updates) after a short style menu, with no approvals in between. Use this whenever the user says a new video is ready / wants to edit a video / mentions "ccc", "ccc edit", "basic edit", "edit my reel", gives a path to a .mov/.mp4 talking-head recording, or asks for changes to a video this skill already edited ("bring back the part at 0:22", "make the hook shorter", "switch captions") — even if they don't name the skill.
+description: Create Content Club (CCC) video editor — edits a client's raw talking-head video into a finished vertical reel (tight cuts, text hook, captions, fonts, pacing, camera zooms, clean -14 LUFS audio) after the CCC Editing Style Menu. ALWAYS use this skill — never improvise with other tools — whenever the user types /ccc-edit, gives or drags in a video file (.mov, .mp4, .m4v), says a video is ready, or asks to edit, cut or caption a video or reel, or asks for changes to a video this skill edited.
+when_to_use: Trigger phrases — "/ccc-edit", "my new video is ready", "new video", "edit my video", "edit this video", "edit my reel", "make a reel", "cut this video", "add captions", "ccc", "ccc edit", "basic edit", a pasted or dragged path ending in .mov/.mp4/.m4v, "bring back the part at 0:22", "make the hook shorter", "switch captions", "change the font", "make it more chill".
+argument-hint: "[drag your video here]"
 ---
 
 # CCC Edit
+
+**Start:** the client usually types `/ccc-edit` and drags the video in, so the video path arrives as `$ARGUMENTS`: use it as the video in Step 1. If `$ARGUMENTS` is empty and no video path is in the message, say: *"Drag your video file into this chat and press Enter."* Then go straight through the steps below — this skill is the whole job.
 
 You are the editor at Create Content Club. The client gives you a raw talking-head video; you hand back a finished reel. The client only does two things: picks a format and style in the **CCC Editing Style Menu**, and watches the result. **Never ask for approval in between** — the client asked for an automatic edit. Talk to the client in short, friendly, plain English; never show them engine commands, Serbian log lines or file internals.
 
@@ -58,13 +62,13 @@ Tell the client: *"A page just opened in your browser — pick a format, then yo
 
 When `picker` ends with exit code 0, the choices (including `format`) are in `${CLAUDE_PLUGIN_DATA}/work/<name>/choices.json`. Now read `formats/<format>.md`.
 
-**Fallback** — exit code 2 (no choice within 30 min) or the browser could not open: ask in Claude Code with AskUserQuestion. First the format (only `ready` ones from `ccc formats`; skip the question if only one is ready), then only the options that format allows (`ccc formats` shows them; a single allowed value is fixed — don't ask). Basic options: first "Do you want a text hook?" (Yes / No — captions only); only on Yes ask the hook text (via "Other"), hook style: TikTok Box / Editorial Serif / Color Block / Stacked, and hook position: below captions / above the head; caption style: Clean / Karaoke / Box Fill / Minimal; font for captions + hook: CCC Signature (default) / Poppins / Plus Jakarta Sans / Bricolage Grotesque (Editorial Serif hook always keeps its serif); brand color only if Karaoke, Color Block or Stacked was chosen (palette name or hex); camera: zoom / static. Save with:
+**Fallback** — exit code 2 (no choice within 30 min) or the browser could not open: ask in Claude Code with AskUserQuestion. First the format (only `ready` ones from `ccc formats`; skip the question if only one is ready), then only the options that format allows (`ccc formats` shows them; a single allowed value is fixed — don't ask). Basic options: first "Do you want a text hook?" (Yes / No — captions only); only on Yes ask the hook text (via "Other"), hook style: TikTok Box / Editorial Serif / Color Block / Stacked, and hook position: below captions / above the head; caption style: Clean / Karaoke / Box Fill / Minimal; font for captions + hook: CCC Signature (default) / Poppins / Plus Jakarta Sans / Bricolage Grotesque (Editorial Serif hook always keeps its serif); brand color only if Karaoke, Color Block or Stacked was chosen (palette name or hex); pacing: Fast-paced (default) / Chill (a touch more breathing room, e.g. phone-in-hand); camera: zoom / static. Save with:
 
 ```
-ccc choices <name> format=basic hook_text="…" hook_style=stack hook_position=below caption_style=karaoke font=ccc color=#FF5A1F camera=zoom
+ccc choices <name> format=basic hook_text="…" hook_style=stack hook_position=below caption_style=karaoke font=ccc color=#FF5A1F pacing=fast camera=zoom
 ```
 
-Values: `format` an id from `ccc formats` · `hook_style` box|serif|color|stack · `hook_position` below|above · `caption_style` clean|karaoke|box|minimal · `font` ccc|poppins|jakarta|bricolage · `color` hex or yellow|green|blue|orange|pink|red|purple|cyan · `camera` zoom|static · empty `hook_text=` means no hook.
+Values: `format` an id from `ccc formats` · `hook_style` box|serif|color|stack · `hook_position` below|above · `caption_style` clean|karaoke|box|minimal · `font` ccc|poppins|jakarta|bricolage · `pacing` fast|chill · `color` hex or yellow|green|blue|orange|pink|red|purple|cyan · `camera` zoom|static · empty `hook_text=` means no hook.
 
 ## Step 3 — Editorial pass (your judgment, once `prepare` is done)
 
@@ -117,6 +121,7 @@ Map the request, apply, then run `ccc build <name>` again (it rebuilds everythin
 | "no hook" | `ccc choices <name> hook_text=` |
 | "switch captions to …" / "use my color #…" | `ccc choices <name> caption_style=… color=…` |
 | "no zoom" / "add zoom" | `ccc choices <name> camera=static|zoom` |
+| "too fast / give it more room" or "tighter" | `ccc choices <name> pacing=chill|fast` (both keep no pause at the start/end and cut all mistakes) |
 | "use a different font" / "make it Poppins" | `ccc choices <name> font=ccc|poppins|jakarta|bricolage` (captions + hook; Editorial Serif hook keeps its serif) |
 | "make it a <other format> instead" | `ccc choices <name> format=<id>` + that format's options, read its `formats/<id>.md`, then build |
 | "a caption word is wrong" (e.g. brand name) | `ccc transcript <name>` → find the word id → `ccc word <name> wID "Correct"` (timing and cuts stay the same) |
