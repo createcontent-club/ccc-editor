@@ -11,10 +11,11 @@
   ./ccc render <ime> [--final]       preview (540×960) ili final (1080×1920)
   ./ccc check <ime>                  automatska provera (reči, pauze, klikovi, sinhronizacija, frejmovi)
   ./ccc previews <ime>               primeri svih stilova za Style Picker (jednom, iz agencijskog snimka)
-  ./ccc picker <ime>                 otvori Style Picker, sačekaj izbore klijenta → work/<ime>/choices.json
+  ./ccc picker <ime> [--format F]    otvori CCC Editing Style Menu (format → stil), sačekaj izbore → work/<ime>/choices.json
                                      (radi i dok priprema još traje; kod 2 = klijent nije izabrao u roku)
-  ./ccc choices <ime> k=v …          upiši/izmeni izbore bez stranice (hook_text, hook_style, hook_position,
+  ./ccc choices <ime> k=v …          upiši/izmeni izbore bez stranice (format, hook_text, hook_style, hook_position,
                                      caption_style, color, camera) — rezervni put i izmene posle isporuke
+  ./ccc formats                      formati u meniju i šta svaki preuzima iz Basic-a (pravila u engine/ccc/formats.py)
   ./ccc build <ime>                  izbori → titlovi, kamera, hook, zvuk, final render, provera, izvoz, izveštaj
   ./ccc report <ime>                 izveštaj za klijenta (engleski)
   ./ccc word <ime> wID "tekst"       ispravi tekst reči u titlu (npr. ime brenda) — tajming i rezovi ostaju
@@ -77,8 +78,14 @@ def _build(job: Job, name: str) -> None:
     choices = json.loads(f.read_text()) if f.exists() else p.get("choices")
     if not choices:
         raise SystemExit("Nema izbora klijenta (work/<ime>/choices.json) — pokreni ./ccc picker ili postavi pitanja.")
+    from .formats import get as get_format
+    choices.setdefault("format", "basic")  # projekti pre menija formata = Basic
+    fmt = get_format(choices["format"])
+    if fmt["own"]:
+        raise SystemExit(f"Format {fmt['id']} ima sopstvene elemente koji još nisu povezani u build.")
     p["choices"] = choices
     job.save(p)
+    print(f"▶ Format: {fmt['title']}")
     color, cs, hs = choices.get("color"), choices["caption_style"], choices.get("hook_style")
 
     print("▶ Titlovi"); main(["captions", name, "--style", cs] + (["--color", color] if color and cs == "karaoke" else []))
@@ -123,6 +130,7 @@ def main(argv: list[str]) -> None:
     sp = sub.add_parser("prepare"); sp.add_argument("video"); sp.add_argument("--name")
     sub.add_parser("name").add_argument("video")
     sub.add_parser("doctor").add_argument("--quick", action="store_true")
+    sub.add_parser("formats")
     for c in ("transcript", "cut", "review", "check", "retime", "previews", "build", "report", "keys"):
         sub.add_parser(c).add_argument("name")
     sr = sub.add_parser("remove"); sr.add_argument("name"); sr.add_argument("words"); sr.add_argument("reason")
@@ -140,6 +148,7 @@ def main(argv: list[str]) -> None:
     spk = sub.add_parser("picker"); spk.add_argument("name")
     spk.add_argument("--timeout", type=float, default=1800, help="sekunde čekanja na izbor (podrazumevano 30 min)")
     spk.add_argument("--no-open", action="store_true", help="ne otvaraj pregledač (samo ispiši adresu)")
+    spk.add_argument("--format", help="otvori direktno dashboard ovog formata (npr. basic), bez glavnog menija")
     sq = sub.add_parser("choices"); sq.add_argument("name"); sq.add_argument("pairs", nargs="*")
     sw = sub.add_parser("word"); sw.add_argument("name"); sw.add_argument("id"); sw.add_argument("text")
     sy = sub.add_parser("key"); sy.add_argument("name"); sy.add_argument("index", type=int); sy.add_argument("word")
@@ -152,6 +161,19 @@ def main(argv: list[str]) -> None:
         r = subprocess.run([sys.executable, str(CODE / "tools" / "doctor.py")] + (["--quick"] if a.quick else []))
         sys.exit(r.returncode)
 
+    if a.cmd == "formats":
+        from . import formats as F
+        for f in F.FORMATS:
+            print(f"{f['id']:14s} {f['status']:6s} {f['title']}")
+            if f["status"] == "ready" or f["elements"] != F.fmt("x", "", "")["elements"]:
+                for el, rules in f["elements"].items():
+                    print(f"    iz Basic-a: {el:9s} " + ", ".join(f"{k}={v}" for k, v in rules.items()))
+                for el in set(F.BASIC) - set(f["elements"]):
+                    print(f"    iz Basic-a: {el:9s} — NE KORISTI SE")
+            for o in f["own"]:
+                print(f"    sopstveno:  {o}")
+        return
+
     if a.cmd == "name":
         from .project import slug
         print(slug(Path(a.video).stem))
@@ -161,7 +183,7 @@ def main(argv: list[str]) -> None:
         from .picker import run as run_picker
         job = Job(a.name)
         p = job.load() if job.exists else {"name": a.name}
-        choices = run_picker(job, p, a.timeout, not a.no_open)
+        choices = run_picker(job, p, a.timeout, not a.no_open, a.format)
         if choices is None:
             print("! Klijent nije izabrao stil u roku — postavi pitanja u Claude Code-u.")
             sys.exit(2)
@@ -175,6 +197,9 @@ def main(argv: list[str]) -> None:
         job = Job(a.name)
         f = job.dir / "choices.json"
         cur = json.loads(f.read_text()) if f.exists() else {}
+        new_fmt = next((kv.partition("=")[2].strip() for kv in a.pairs if kv.startswith("format=")), None)
+        if new_fmt and new_fmt != cur.get("format", "basic"):  # drugi format = njegova pravila; tekst i boja ostaju
+            cur = {k: cur[k] for k in ("hook_text", "color") if k in cur}
         for kv in a.pairs:
             k, sep, v = kv.partition("=")
             if not sep:

@@ -8,7 +8,7 @@
 - camera zooms on jump cuts (optional)
 - clean, loud-enough audio for Instagram / TikTok / Shorts
 
-You pick a style once on a simple page, and the rest happens automatically.
+You pick a format and style on a simple page, and the rest happens automatically.
 
 ---
 
@@ -72,12 +72,14 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
 
    Dragging the file in pastes its location — that's all Claude needs.
 3. **First time only:** Claude sets up the editor on your computer. This takes about **5–10 minutes** and you don't need to do anything. If your computer asks for permission to let a command run, allow it.
-4. A page called **"Pick your style"** opens in your browser:
-   - type your **text hook** (or tick *No text hook*)
-   - choose a **hook style** and where it sits (**below the captions** or **above your head**)
-   - choose a **caption style**
-   - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
-   - choose **Zoom** or **Static** camera
+4. The **CCC Editing Style Menu** opens in your browser:
+   - pick a **format** — e.g. **Basic Edit** (formats marked *Coming soon* arrive with updates)
+   - on the format's page, choose your details. For Basic Edit:
+     - type your **text hook** (or tick *No text hook*)
+     - choose a **hook style** and where it sits (**below the captions** or **above your head**)
+     - choose a **caption style**
+     - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
+     - choose **Zoom** or **Static** camera
    - click **Start editing**
 5. A few minutes later your finished video is saved **next to your original**, named `<your file>-CCC-edit.mp4`. Claude tells you what was cut and how long the video is now.
 
@@ -100,7 +102,7 @@ Claude updates the video and saves it again in the same place.
 
 ## Getting updates
 
-New editing styles and video formats are added over time. To get them:
+New video formats (the *Coming soon* cards in the menu) and styles are added over time. To get them:
 
 - **Easiest:** in Claude Code type `/plugin`, open **Marketplaces → createcontent-club** and turn on **auto-update**.
 - **Or** in the terminal:

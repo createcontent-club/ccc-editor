@@ -59,7 +59,7 @@ def _():
 def _():
     have = sorted(p.name for p in FONTS.glob("*.[ot]tf"))
     for req in ("Inter-SemiBold.ttf", "Inter-Light.ttf", "Inter-Bold.ttf", "TikTokSans-Variable.ttf",
-                "InstrumentSerif-Regular.ttf"):
+                "InstrumentSerif-Regular.ttf", "Montserrat-Variable.ttf"):
         if req not in have:
             raise RuntimeError(f"nema {req} — pokreni: bash setup.sh")
     return f"{len(have)} fontova (titlovi: Inter SemiBold, hook: TikTok Sans — oba OFL)"

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCC Editing Style Menu</title>
+<link rel="icon" href="/logo.png">
+<style>
+  @font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-Variable.ttf"); font-weight: 100 900; }
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-Light.ttf"); font-weight: 300; }
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-SemiBold.ttf"); font-weight: 600; }
+  @font-face { font-family: "Inter"; src: url("/fonts/Inter-Bold.ttf"); font-weight: 700; }
+
+  :root {
+    --bg: #000; --panel: #06080D; --panel-2: #0B0F18; --line: rgba(255,255,255,.08);
+    --blue: #0066FF; --blue-hi: #3D8BFF; --blue-line: rgba(0,102,255,.38); --blue-glow: rgba(0,102,255,.20);
+    --text: #FFFFFF; --muted: #8C95A8; --dim: #5B6275;
+    --head: "Montserrat", "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; min-height: 100vh; color: var(--text); font: 400 15px/1.55 "Inter", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 420px at 50% -120px, rgba(0,102,255,.28), transparent 70%),
+      radial-gradient(600px 300px at 85% 110%, rgba(0,102,255,.10), transparent 70%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 48px 16px 64px; }
+
+  header { text-align: center; max-width: 720px; margin: 0 auto 40px; }
+  .brandrow { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .brandrow img { width: 34px; height: auto; filter: drop-shadow(0 0 14px rgba(0,102,255,.55)); }
+  .eyebrow { font: 800 12px/1 var(--head); letter-spacing: .22em; text-transform: uppercase; color: var(--text); }
+  h1 { font: 800 clamp(32px, 6vw, 52px)/1.06 var(--head); letter-spacing: -0.025em; margin: 0 0 16px; }
+  h1 .b { color: var(--blue-hi); text-shadow: 0 0 32px rgba(0,102,255,.55); }
+  .lede { color: var(--muted); font-size: 16.5px; margin: 0 auto; max-width: 560px; }
+  .status { display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; padding: 8px 14px 8px 12px;
+    border: 1px solid var(--blue-line); border-radius: 999px; background: rgba(0,102,255,.07); color: #C9D6F0; font-size: 13px; }
+  .status b { color: #fff; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--blue-hi); box-shadow: 0 0 0 0 rgba(61,139,255,.7); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 9px rgba(61,139,255,0); } 100% { box-shadow: 0 0 0 0 rgba(61,139,255,0); } }
+
+  .label { font: 800 12px/1 var(--head); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin: 0 0 16px 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; }
+  @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { position: relative; display: flex; flex-direction: column; border-radius: 22px; overflow: hidden;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line);
+    color: inherit; text-decoration: none; transition: transform .2s ease, border-color .2s, box-shadow .2s; }
+  a.card { border-color: var(--blue-line); box-shadow: 0 0 28px var(--blue-glow); }
+  a.card:hover, a.card:focus-visible { transform: translateY(-4px); border-color: var(--blue); box-shadow: 0 0 46px rgba(0,102,255,.38); outline: none; }
+  .media { position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: #05070C; }
+  .media video, .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .media::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11,15,24,0) 58%, rgba(11,15,24,1)); }
+  .pill { position: absolute; z-index: 2; top: 14px; left: 14px; font: 800 10.5px/1 var(--head); letter-spacing: .16em;
+    text-transform: uppercase; padding: 8px 11px; border-radius: 999px; }
+  .pill.ready { background: var(--blue); color: #fff; box-shadow: 0 0 18px rgba(0,102,255,.7); }
+  .pill.soon { background: rgba(0,0,0,.55); color: #C9D6F0; border: 1px solid rgba(255,255,255,.18); backdrop-filter: blur(6px); }
+
+  .body { padding: 6px 22px 22px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .body h2 { font: 800 23px/1.15 var(--head); letter-spacing: -0.015em; margin: 0; }
+  .body p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip { font: 600 12px/1 "Inter"; color: #D5DEF0; padding: 7px 10px; border-radius: 8px; background: rgba(0,102,255,.10); border: 1px solid rgba(0,102,255,.22); }
+  .cta { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; border-radius: 13px;
+    font: 800 15px/1 var(--head); letter-spacing: .01em; }
+  a.card .cta { background: var(--blue); color: #fff; }
+  a.card:hover .cta .arr { transform: translateX(4px); }
+  .arr { transition: transform .2s; }
+
+  /* Coming soon */
+  .card.soon { opacity: .92; }
+  .card.soon .body h2 { color: #DCE3F2; }
+  .card.soon .cta { border: 1px dashed rgba(255,255,255,.16); color: var(--dim); }
+  .soonart { position: absolute; inset: 0;
+    background:
+      radial-gradient(220px 220px at 50% 42%, rgba(0,102,255,.38), transparent 70%),
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 28px 28px,
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px) 0 0 / 28px 28px,
+      #04060B; }
+  .soonart .ph { position: absolute; left: 50%; top: 42%; width: 34%; aspect-ratio: 9 / 16; transform: translate(-50%, -50%) rotate(-6deg);
+    border-radius: 16px; border: 1.5px solid rgba(61,139,255,.55); background: rgba(0,102,255,.06);
+    box-shadow: 0 0 40px rgba(0,102,255,.35), inset 0 0 30px rgba(0,102,255,.15); animation: float 6s ease-in-out infinite; }
+  .soonart .ph::before { content: ""; position: absolute; left: 50%; top: 50%; width: 30%; aspect-ratio: 1; transform: translate(-40%, -50%);
+    background: url("/logo.png") center / contain no-repeat; opacity: .85; filter: drop-shadow(0 0 10px rgba(0,102,255,.8)); }
+  .soonart .ph.back { transform: translate(-22%, -54%) rotate(8deg); opacity: .35; animation-delay: -3s; }
+  .soonart .ph.back::before { display: none; }
+  @keyframes float { 50% { margin-top: -8px; } }
+  @media (prefers-reduced-motion: reduce) { .soonart .ph, .dot { animation: none; } }
+
+  footer { margin-top: 44px; text-align: center; color: var(--dim); font-size: 13.5px; }
+  footer b { color: var(--muted); font-weight: 600; }
+  .err { text-align: center; color: var(--muted); padding: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brandrow"><img src="/logo.png" alt=""><span class="eyebrow">Create Content Club</span></div>
+    <h1>Choose your <span class="b">editing style</span></h1>
+    <p class="lede">Pick a format for this video. Each one has its own look and options — you'll choose the details on the next screen.</p>
+    <div class="status" id="status" hidden><span class="dot"></span><span>Preparing <b id="vname"></b> in the background</span></div>
+  </header>
+
+  <div class="label">Formats</div>
+  <div class="grid" id="grid"></div>
+
+  <footer>Questions? <b>Message us in your 1-on-1 chat on Discord.</b></footer>
+</div>
+
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function readyCard(f) {
+  const a = document.createElement("a");
+  a.className = "card"; a.href = "/f/" + encodeURIComponent(f.id);
+  a.setAttribute("aria-label", `${f.title} — ${f.tagline}`);
+  a.innerHTML = `
+    <div class="media">
+      <video src="/assets/formats/${esc(f.id)}.mp4" poster="/assets/formats/${esc(f.id)}.jpg" muted loop playsinline autoplay aria-hidden="true"></video>
+      <span class="pill ready">Available</span>
+    </div>
+    <div class="body">
+      <h2>${esc(f.title)}</h2>
+      <p>${esc(f.tagline)}</p>
+      ${f.includes.length ? `<div class="chips">${f.includes.map(i => `<span class="chip">${esc(i)}</span>`).join("")}</div>` : ""}
+      <div class="cta">Choose ${esc(f.title)} <span class="arr">→</span></div>
+    </div>`;
+  return a;
+}
+
+function soonCard(f) {
+  const d = document.createElement("div");
+  d.className = "card soon"; d.setAttribute("aria-disabled", "true");
+  d.innerHTML = `
+    <div class="media"><div class="soonart"><div class="ph back"></div><div class="ph"></div></div><span class="pill soon">Coming soon</span></div>
+    <div class="body">
+      <h2>${esc(f.title)}</h2>
+      <p>${esc(f.tagline)}</p>
+      <div class="cta">Coming soon</div>
+    </div>`;
+  return d;
+}
+
+(async () => {
+  const grid = document.getElementById("grid");
+  try {
+    const m = await (await fetch("/api/menu")).json();
+    if (m.video) { document.getElementById("vname").textContent = `“${m.video}”`; document.getElementById("status").hidden = false; }
+    m.formats.forEach(f => grid.appendChild(f.status === "ready" ? readyCard(f) : soonCard(f)));
+  } catch (e) {
+    grid.outerHTML = `<p class="err">The editor stopped waiting for your choice. Go back to Claude Code and ask it to open the style menu again.</p>`;
+  }
+})();
+</script>
+</body>
+</html>
