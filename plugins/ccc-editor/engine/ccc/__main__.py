@@ -84,8 +84,10 @@ def _build(job: Job, name: str) -> None:
     if fmt["own"]:
         raise SystemExit(f"Format {fmt['id']} ima sopstvene elemente koji još nisu povezani u build.")
     p["choices"] = choices
+    p["font"] = choices.get("font") or "ccc"  # set fontova: titlovi + hook (meri ga i hook, i render)
     job.save(p)
-    print(f"▶ Format: {fmt['title']}")
+    from .fonts import get as get_font
+    print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']}")
     color, cs, hs = choices.get("color"), choices["caption_style"], choices.get("hook_style")
 
     print("▶ Titlovi"); main(["captions", name, "--style", cs] + (["--color", color] if color and cs == "karaoke" else []))

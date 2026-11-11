@@ -3,7 +3,7 @@ import {AbsoluteFill, Audio, OffthreadVideo, Sequence, interpolate, staticFile, 
 import type {CameraCue, EditProps, Segment} from './types';
 import {Captions} from './components/Captions';
 import {Hook} from './components/Hook';
-import {useCccFonts} from './style';
+import {DEFAULT_FONT, FontCtx, useCccFonts} from './style';
 
 export const segmentFrames = (s: Segment, fps: number) => s.vFrames ?? Math.round((s.srcEnd - s.srcStart) * fps);
 const segmentFrom = (s: Segment, fps: number) => s.vFrom ?? Math.round(s.srcStart * fps);
@@ -49,9 +49,11 @@ const Footage: React.FC<{video: string; segments: Segment[]; muted: boolean; cam
 };
 
 /** Slojevi (dole → gore): snimak (sa zumom) → hook → titlovi; tekst se ne zumira. */
-export const CccEdit: React.FC<EditProps> = ({video, audio, segments, captions, hook, captionY, captionStyle, captionAccent, camera}) => {
-  const fontsReady = useCccFonts();
+export const CccEdit: React.FC<EditProps> = ({video, audio, segments, captions, hook, captionY, captionStyle, captionAccent, camera, font}) => {
+  const spec = font ?? DEFAULT_FONT;
+  const fontsReady = useCccFonts(spec);
   return (
+    <FontCtx.Provider value={spec}>
     <AbsoluteFill style={{background: '#000'}}>
       <Footage video={video} segments={segments} muted={Boolean(audio)} camera={camera} />
       {/* Zvuk je već isečen u engine-u, sa mikro-fade-om na rezovima (bez klikova). */}
@@ -60,5 +62,6 @@ export const CccEdit: React.FC<EditProps> = ({video, audio, segments, captions, 
       {/* Hook i titlovi su na ekranu istovremeno; engine postavlja hook ispod titla ili iznad glave. */}
       {fontsReady ? <Captions captions={captions} y={captionY} style={captionStyle ?? 'clean'} accent={captionAccent} /> : null}
     </AbsoluteFill>
+    </FontCtx.Provider>
   );
 };

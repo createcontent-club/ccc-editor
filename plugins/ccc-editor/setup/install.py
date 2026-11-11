@@ -32,6 +32,13 @@ FONTS = {  # all OFL / freely redistributable (Google Fonts, rsms/inter)
     "TikTokSans-Variable.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/tiktoksans/TikTokSans%5Bopsz%2Cslnt%2Cwdth%2Cwght%5D.ttf",
     "InstrumentSerif-Regular.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/InstrumentSerif-Regular.ttf",
     "Montserrat-Variable.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",  # Style Menu
+    # Font choices for captions + hook (engine/ccc/fonts.py)
+    "Poppins-Light.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Light.ttf",
+    "Poppins-SemiBold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf",
+    "Poppins-Bold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf",
+    "Poppins-ExtraBold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-ExtraBold.ttf",
+    "PlusJakartaSans-Variable.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/plusjakartasans/PlusJakartaSans%5Bwght%5D.ttf",
+    "BricolageGrotesque-Variable.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/bricolagegrotesque/BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf",
 }
 INTER_ZIP = "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip"
 INTER_FILES = ["Inter-Light.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"]
@@ -181,7 +188,7 @@ def install_fonts(home: Path) -> None:
     for f in fonts.glob("*.ttf"):
         if not (pub / f.name).exists():
             shutil.copy2(f, pub / f.name)
-    ok("fonts (Inter, TikTok Sans, Instrument Serif, Montserrat)")
+    ok("fonts (Inter, TikTok Sans, Instrument Serif, Montserrat, Poppins, Plus Jakarta Sans, Bricolage Grotesque)")
 
 
 def install_models(home: Path, skip_whisper: bool) -> None:

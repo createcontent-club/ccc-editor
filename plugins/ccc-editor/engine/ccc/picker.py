@@ -18,6 +18,7 @@ from pathlib import Path
 from . import formats
 from .captions import ACCENT_PALETTE, DEFAULT_ACCENT
 from .formats import validate  # noqa: F401  (ccc choices koristi picker.validate)
+from .fonts import SETS as FONT_SETS, spec as font_spec
 from .project import FONTS
 
 PAGE_DIR = Path(__file__).resolve().parent / "picker"
@@ -68,7 +69,9 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True, start_fo
                 if not f:
                     return self._json({"error": "unknown format"}, 404)
                 return self._json({**f, "fixed": formats.fixed(f), "palette": ACCENT_PALETTE,
-                                   "default_color": p.get("caption_accent") or DEFAULT_ACCENT, "video": p["name"]})
+                                   "default_color": p.get("caption_accent") or DEFAULT_ACCENT, "video": p["name"],
+                                   "fonts": {k: {"name": v["name"], "desc": v["desc"], "spec": font_spec(k)}
+                                             for k, v in FONT_SETS.items()}})
             for prefix, base in (("/assets/", PAGE_DIR / "assets"), ("/fonts/", FONT_DIR)):
                 if path.startswith(prefix):
                     f = (base / path[len(prefix):]).resolve()

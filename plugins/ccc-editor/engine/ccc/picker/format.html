@@ -84,6 +84,24 @@
   .live .cap { font: 600 22px/1 "Inter"; letter-spacing: -0.045em; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.5); }
   .live .block { font: 800 22px/1 "TikTok Sans"; font-variation-settings: "wdth" 95; padding: 10px 14px; border-radius: 6px; }
   .live .pill { font: 700 15px/1 "Inter"; letter-spacing: -0.03em; padding: 7px 10px; border-radius: 7px; }
+  .fcard { position: relative; background: #070A11; border: 2px solid transparent; border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
+  .fcard:hover { transform: translateY(-2px); }
+  .fcard.selected { border-color: var(--accent); box-shadow: 0 0 26px var(--glow); }
+  .fcard:focus-visible { outline: 3px solid var(--accent-hi); outline-offset: 2px; }
+  .fcard .num { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.6); border-radius: 999px; padding: 2px 10px; font: 800 12.5px/1.6 var(--head); }
+  .fcard.selected .num { background: var(--accent); color: #fff; }
+  .fprev { height: 150px; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 26px 10px 14px;
+    background: #3A3F48 linear-gradient(160deg, #6E7480, #2C3038); }
+  .fprev .c { color: #fff; font-size: 17px; font-weight: 600; line-height: 1; text-shadow: 0 2px 6px rgba(0,0,0,.5); white-space: nowrap; }
+  .fprev .h { background: #fff; color: #000; font-size: 21px; font-weight: 700; line-height: 1; padding: 8px 10px; border-radius: 6px; white-space: nowrap; }
+  .fcard .label { padding: 10px 12px 12px; }
+  .fcard .label b { display: block; font: 800 14px/1.3 var(--head); }
+  .fcard .label span { color: var(--muted); font-size: 12.5px; }
+  .textbox { margin-top: 14px; transition: opacity .15s; }
+  .textbox.locked { opacity: .35; pointer-events: none; }
+  .yn { display: flex; gap: 12px; align-items: center; }
+  .yn .ic { width: 42px; height: 42px; flex: none; border-radius: 10px; background: #151A24; display: grid; place-items: center; font: 800 16px/1 var(--head); color: var(--muted); }
+  .opt.selected .yn .ic { background: var(--accent); color: #fff; box-shadow: 0 0 14px rgba(0,102,255,.55); }
   .warn { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
 
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.86); backdrop-filter: blur(12px); border-top: 1px solid var(--accent-line); box-shadow: 0 -10px 40px rgba(0,102,255,.10); }
@@ -112,11 +130,14 @@
 
   <section id="s-text" data-step>
     <h2><span class="n"></span> Text hook</h2>
-    <p class="hint">The text that appears on screen in the first ~3 seconds. Keep it short and punchy.</p>
-    <textarea id="hookText" rows="2" placeholder="e.g. How to become a big dog in your industry"></textarea>
-    <div class="row">
-      <label class="check" id="noHookRow"><input type="checkbox" id="noHook"> No text hook</label>
-      <span class="hint" id="stackHint" style="margin:0;display:none">Stacked style: use <b>|</b> to split into two parts, e.g. <i>how to go viral | start growing, stop guessing</i></span>
+    <p class="hint">Big text on screen in the first ~3 seconds. Want one, or just captions?</p>
+    <div class="options" id="hookYesNo"></div>
+    <div id="hookTextBox" class="textbox">
+      <textarea id="hookText" rows="2" placeholder="e.g. How to become a big dog in your industry"></textarea>
+      <div class="row">
+        <span class="hint" id="textHint" style="margin:0">Keep it short and punchy.</span>
+        <span class="hint" id="stackHint" style="margin:0;display:none">Stacked style: use <b>|</b> to split into two parts, e.g. <i>how to go viral | start growing, stop guessing</i></span>
+      </div>
     </div>
   </section>
 
@@ -136,6 +157,12 @@
     <h2><span class="n"></span> Caption style</h2>
     <p class="hint">How the subtitles appear while you talk.</p>
     <div class="grid" id="capGrid"></div>
+  </section>
+
+  <section id="s-font" data-step>
+    <h2><span class="n"></span> Font</h2>
+    <p class="hint">Used for your captions and text hook.<span id="serifNote" style="display:none"> Editorial Serif hook keeps its own serif font.</span></p>
+    <div class="grid" id="fontGrid"></div>
   </section>
 
   <section id="s-color" class="hidden" data-step>
@@ -167,7 +194,7 @@
 // Dashboard formata: prikazuje samo izbore koje format dozvoljava (pravila: engine/ccc/formats.py).
 // Element koji format ne koristi → sekcija sakrivena; jedna dozvoljena vrednost → zaključano i sakriveno.
 const FID = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "basic");
-const S = { hookText: "", noHook: false, hookStyle: null, position: "below", captionStyle: null, color: null, camera: "zoom" };
+const S = { hookText: "", noHook: null, hookStyle: null, position: "below", captionStyle: null, font: "ccc", color: null, camera: "zoom" };
 const HOOKS = [
   { id: "box", name: "TikTok Box", desc: "Black text on white boxes" },
   { id: "serif", name: "Editorial Serif", desc: "Elegant serif, no box" },
@@ -212,6 +239,31 @@ function cards(gridId, items, kind) {
   });
 }
 
+// Font kartice: svaki set se učitava sa servera (iste fajlove koristi render) i prikazuje titl + hook.
+function fontCards(items) {
+  const g = $("fontGrid");
+  items.forEach((it, i) => {
+    const fam = (role) => `F_${it.id}_${role}`;
+    (it.spec?.faces || []).forEach(f => {
+      const role = f.family.includes("Hook") ? "hook" : "cap";
+      const face = new FontFace(fam(role), `url(/fonts/${encodeURIComponent(f.file)})`, { weight: f.weight, ...(f.stretch ? { stretch: f.stretch } : {}) });
+      face.load().then(ff => document.fonts.add(ff)).catch(() => {});
+    });
+    const tr = it.spec?.tracking || { caption: 0, hook: 0 };
+    const axes = it.spec?.hookAxes ? `font-variation-settings:'wght' 700,'wdth' ${it.spec.hookAxes.wdth},'opsz' ${it.spec.hookAxes.opsz};` : "";
+    const c = document.createElement("div");
+    c.className = "fcard"; c.dataset.id = it.id; makeButton(c, `${it.name} — ${it.desc}`);
+    c.innerHTML = `<span class="num">${i + 1}</span>
+      <div class="fprev">
+        <div class="c" style="font-family:'${fam("cap")}';letter-spacing:${tr.caption}em">your reels don't go viral</div>
+        <div class="h" style="font-family:'${fam("hook")}';letter-spacing:${tr.hook}em;${axes}">How to go viral</div>
+      </div>
+      <div class="label"><b>${esc(it.name)}</b><span>${esc(it.desc)}</span></div>`;
+    c.onclick = () => { S.font = it.id; render(); };
+    g.appendChild(c);
+  });
+}
+
 function options(boxId, items, key) {
   const b = $(boxId);
   items.forEach(it => {
@@ -223,7 +275,7 @@ function options(boxId, items, key) {
   });
 }
 
-const hookOn = () => !!EL.hook && !S.noHook;
+const hookOn = () => !!EL.hook && S.noHook === false;
 function needsColor() { return S.captionStyle === "karaoke" || (hookOn() && (S.hookStyle === "color" || S.hookStyle === "stack")); }
 
 function render() {
@@ -231,8 +283,13 @@ function render() {
   press("#capGrid .card", c => c.dataset.id === S.captionStyle);
   press("#posOpts .opt", o => o.dataset.id === S.position);
   press("#camOpts .opt", o => o.dataset.id === S.camera);
-  ["s-hook", "s-pos"].forEach(id => $(id).classList.toggle("disabled", S.noHook));
-  $("hookText").disabled = S.noHook;
+  press("#fontGrid .fcard", c => c.dataset.id === S.font);
+  $("serifNote").style.display = (hookOn() && S.hookStyle === "serif") ? "inline" : "none";
+  // Prvo Da/Ne: dok klijent ne izabere "Yes", tekst, stil i pozicija hooka su zaključani.
+  press("#hookYesNo .opt", o => (o.dataset.id === "no") === S.noHook && S.noHook !== null);
+  ["s-hook", "s-pos"].forEach(id => $(id).classList.toggle("disabled", !hookOn()));
+  $("hookTextBox").classList.toggle("locked", !hookOn());
+  $("hookText").disabled = !hookOn();
   $("stackHint").style.display = (hookOn() && S.hookStyle === "stack") ? "inline" : "none";
 
   const showColor = needsColor();
@@ -257,6 +314,7 @@ function render() {
   document.querySelectorAll("section[data-step]").forEach(s => { if (!s.classList.contains("hidden")) s.querySelector(".n").textContent = ++n; });
 
   const missing = [];
+  if (EL.hook && S.noHook === null) missing.push("text hook yes or no");
   if (hookOn() && !S.hookText.trim()) missing.push("hook text");
   if (hookOn() && !S.hookStyle) missing.push("hook style");
   if (!S.captionStyle) missing.push("caption style");
@@ -296,7 +354,19 @@ async function init() {
   ];
 
   if (EL.hook) {
-    if (!EL.hook.optional) $("noHookRow").style.display = "none";
+    if (EL.hook.optional) {
+      const yn = $("hookYesNo");
+      [{ id: "yes", ic: "Aa", name: "Yes, add a text hook", desc: "Your text on screen at the start" },
+       { id: "no", ic: "—", name: "No text hook", desc: "Captions only" }].forEach(it => {
+        const o = document.createElement("div");
+        o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name} — ${it.desc}`);
+        o.innerHTML = `<div class="yn"><div class="ic">${it.ic}</div><div><b>${it.name}</b><span>${it.desc}</span></div></div>`;
+        o.onclick = () => { S.noHook = it.id === "no"; render(); if (!S.noHook) $("hookText").focus(); };
+        yn.appendChild(o);
+      });
+    } else {
+      S.noHook = false; $("hookYesNo").style.display = "none"; $("hookTextBox").style.marginTop = "0";
+    }
     cards("hookGrid", applyRule("s-hook", EL.hook.styles, HOOKS, "hookStyle"), "hook");
     S.position = EL.hook.positions[0];
     options("posOpts", applyRule("s-pos", EL.hook.positions, POS, "position"), "position");
@@ -305,6 +375,13 @@ async function init() {
     ["s-text", "s-hook", "s-pos"].forEach(id => $(id).classList.add("hidden"));
   }
   cards("capGrid", applyRule("s-cap", EL.captions.styles, CAPS, "captionStyle"), "caption");
+  if (EL.font) {
+    const FONTS = EL.font.choices.map(id => ({ id, ...(CFG.fonts || {})[id] })).filter(f => f.name);
+    S.font = EL.font.choices[0];
+    fontCards(applyRule("s-font", EL.font.choices, FONTS, "font"));
+  } else {
+    $("s-font").classList.add("hidden");
+  }
   if (EL.camera) {
     S.camera = EL.camera.modes[0];
     options("camOpts", applyRule("s-cam", EL.camera.modes, CAM, "camera"), "camera");
@@ -321,7 +398,6 @@ async function init() {
   });
   $("hex").oninput = (e) => { if (hexOk(e.target.value)) { S.color = normHex(e.target.value); render(); } };
   $("hookText").oninput = (e) => { S.hookText = e.target.value; render(); };
-  $("noHook").onchange = (e) => { S.noHook = e.target.checked; render(); };
   $("go").onclick = submit;
   render();
 }
@@ -334,6 +410,7 @@ async function submit() {
     hook_style: hookOn() ? S.hookStyle : null,
     hook_position: S.position,
     caption_style: S.captionStyle,
+    font: S.font,
     color: needsColor() ? (S.color || CFG.default_color) : null,
     camera: S.camera,
   };

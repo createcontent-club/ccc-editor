@@ -1,7 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {HookSpec} from '../types';
-import {CAPTION_FONT, HOOK_FONT, SERIF_FONT} from '../style';
+import {CAPTION_FONT, HOOK_FONT, SERIF_FONT, useFontSpec} from '../style';
 
 /**
  * Text hook po referenci (references/hook/, prve ~3 s), izmereno na 720 i preneto na 1080:
@@ -59,6 +59,7 @@ const SerifHook: React.FC<{hook: HookSpec}> = ({hook}) => (
  */
 const STACK_DELAY = 4; // frejma između gornjeg i donjeg oblika
 const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook, frame, fps}) => {
+  const fs = useFontSpec();
   const sizes = hook.sizes ?? [96, 52];
   const heights = hook.heights ?? [131, 78];
   const overlap = hook.overlap ?? 14;
@@ -101,7 +102,7 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook
                 fontFamily: CAPTION_FONT,
                 fontWeight: 700,
                 fontSize: sizes[i],
-                letterSpacing: '-0.03em',
+                letterSpacing: `${fs.tracking.stack}em`,
                 whiteSpace: 'nowrap',
               }}
             >
@@ -115,6 +116,7 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook
 };
 
 export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean}> = ({hook, fontsReady}) => {
+  const fs = useFontSpec();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = frame / fps;
@@ -143,7 +145,12 @@ export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean}> = ({hook, fon
     borderRadius: block ? 10 : s.radius,
     fontFamily: HOOK_FONT,
     fontSize: s.fontSize,
-    fontVariationSettings: `'wght' ${block ? 800 : 700}, 'wdth' 95, 'opsz' 36`,
+    fontWeight: block ? 800 : 700,
+    letterSpacing: `${fs.tracking.hook}em`,
+    // CCC set: TikTok Sans sa osama iz reference; ostali setovi: obična težina (varijabilni ili statični fajl).
+    ...(fs.hookAxes
+      ? {fontVariationSettings: `'wght' ${block ? 800 : 700}, 'wdth' ${fs.hookAxes.wdth}, 'opsz' ${fs.hookAxes.opsz}`}
+      : {}),
     whiteSpace: 'nowrap',
   };
 

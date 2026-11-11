@@ -1,3 +1,4 @@
+import type {FontSpec} from './style';
 /**
  * Deo originalnog snimka koji ostaje. srcStart/srcEnd = tačan isečak zvuka (s);
  * vFrom/vFrames = koji izvorni frejmovi idu u sliku (engine ih raspoređuje da prate zvuk ±½ frejma).
@@ -53,4 +54,6 @@ export type EditProps = {
   captionStyle?: CaptionStyle;
   /** Boja naglaska (Karaoke) — boja brenda klijenta, #RRGGBB. */
   captionAccent?: string;
+  /** Set fontova za titlove i hook (engine/ccc/fonts.py); bez njega CCC podrazumevani. */
+  font?: FontSpec | null;
 };

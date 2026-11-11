@@ -58,11 +58,11 @@ def _():
 @check("Fontovi")
 def _():
     have = sorted(p.name for p in FONTS.glob("*.[ot]tf"))
-    for req in ("Inter-SemiBold.ttf", "Inter-Light.ttf", "Inter-Bold.ttf", "TikTokSans-Variable.ttf",
-                "InstrumentSerif-Regular.ttf", "Montserrat-Variable.ttf"):
+    from ccc.fonts import files as font_files  # svi setovi fontova koje klijent može da izabere
+    for req in sorted({"InstrumentSerif-Regular.ttf", "Montserrat-Variable.ttf", *font_files()}):
         if req not in have:
             raise RuntimeError(f"nema {req} — pokreni: bash setup.sh")
-    return f"{len(have)} fontova (titlovi: Inter SemiBold, hook: TikTok Sans — oba OFL)"
+    return f"{len(have)} fontova (setovi: CCC, Poppins, Plus Jakarta Sans, Bricolage — svi OFL)"
 
 
 @check("Titl render (Pillow, CCC stil)")

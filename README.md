@@ -75,9 +75,10 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
 4. The **CCC Editing Style Menu** opens in your browser:
    - pick a **format** — e.g. **Basic Edit** (formats marked *Coming soon* arrive with updates)
    - on the format's page, choose your details. For Basic Edit:
-     - type your **text hook** (or tick *No text hook*)
+     - choose **Yes** or **No** for a text hook — with Yes, type your hook text
      - choose a **hook style** and where it sits (**below the captions** or **above your head**)
      - choose a **caption style**
+     - choose a **font** for your captions and hook (CCC Signature, Poppins, Plus Jakarta Sans or Bricolage Grotesque)
      - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
      - choose **Zoom** or **Static** camera
    - click **Start editing**
@@ -96,6 +97,7 @@ Just say it in plain words in the same chat, for example:
 - "switch the captions to Clean"
 - "use my color #2EF2FF"
 - "no zoom please"
+- "use the Poppins font"
 - "the word at 0:15 should be **Notion**, not *notion*"
 
 Claude updates the video and saves it again in the same place.

@@ -1,7 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import type {CaptionChunk, CaptionStyle} from '../types';
-import {CAPTION_FONT} from '../style';
+import {CAPTION_FONT, useFontSpec} from '../style';
 
 const easeOutCubic = (p: number) => 1 - Math.pow(1 - p, 3);
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -31,16 +31,19 @@ const CAPTION_LOOK: React.CSSProperties = {
   color: '#FFFFFF',
   textShadow: '0 4px 12px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.35)',
 };
+/** Isti izgled u svakom setu fontova; tracking prati izabrani font (Inter: -0.045em). */
+const useLook = (): React.CSSProperties => ({...CAPTION_LOOK, letterSpacing: `${useFontSpec().tracking.caption}em`});
 
 const ENTER = 0.16;
 const Clean: React.FC<{chunk: CaptionChunk; t: number; y: number}> = ({chunk, t, y}) => {
+  const look = useLook();
   const e = easeOutCubic(clamp01((t - chunk.start) / ENTER));
   const blur = 10 * (1 - e);
   return (
     <div
       style={{
         ...rowStyle(y),
-        ...CAPTION_LOOK,
+        ...look,
         opacity: 0.3 + 0.7 * e,
         filter: blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : undefined,
       }}
@@ -64,6 +67,7 @@ const Karaoke: React.FC<{chunk: CaptionChunk; t: number; y: number; fps: number;
   fps,
   accent,
 }) => {
+  const look = useLook();
   const words = chunk.wt?.length ? chunk.wt : chunk.text.split(' ').map((text) => ({text, start: chunk.start}));
   let active = 0;
   words.forEach((w, i) => {
@@ -78,7 +82,7 @@ const Karaoke: React.FC<{chunk: CaptionChunk; t: number; y: number; fps: number;
     <div
       style={{
         ...rowStyle(y),
-        ...CAPTION_LOOK,
+        ...look,
         transform: `translateY(-50%) scale(${enter})`,
       }}
     >
@@ -116,12 +120,13 @@ const Karaoke: React.FC<{chunk: CaptionChunk; t: number; y: number; fps: number;
 const BOX_BG = 'rgba(0, 0, 0, 0.85)';
 const DIM = 0.2;
 const BoxFill: React.FC<{chunk: CaptionChunk; t: number; y: number; fps: number}> = ({chunk, t, y, fps}) => {
+  const look = useLook();
   const words = chunk.wt?.length ? chunk.wt : chunk.text.split(' ').map((text) => ({text, start: chunk.start}));
   return (
     <div style={{...rowStyle(y), display: 'flex', justifyContent: 'center'}}>
       <div
         style={{
-          ...CAPTION_LOOK,
+          ...look,
           textShadow: 'none', // na crnom boksu senka nije potrebna
           background: BOX_BG,
           borderRadius: 18,
@@ -152,6 +157,7 @@ const BoxFill: React.FC<{chunk: CaptionChunk; t: number; y: number; fps: number}
  *  Animacija kao Stil 1 (fade + blur ulaz ~4 frejma, trenutan izlaz). Glavnu reč bira engine (`key`).
  */
 const Minimal: React.FC<{chunk: CaptionChunk; t: number; y: number}> = ({chunk, t, y}) => {
+  const look = useLook();
   const e = easeOutCubic(clamp01((t - chunk.start) / ENTER));
   const blur = 10 * (1 - e);
   const words = chunk.wt?.length ? chunk.wt.map((w) => w.text) : chunk.text.split(' ');
@@ -159,7 +165,7 @@ const Minimal: React.FC<{chunk: CaptionChunk; t: number; y: number}> = ({chunk, 
     <div
       style={{
         ...rowStyle(y),
-        ...CAPTION_LOOK,
+        ...look,
         opacity: 0.3 + 0.7 * e,
         filter: blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : undefined,
       }}

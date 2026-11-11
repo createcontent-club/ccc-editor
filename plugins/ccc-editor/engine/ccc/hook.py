@@ -18,17 +18,16 @@ from __future__ import annotations
 
 from PIL import ImageFont
 
+from . import fonts as F
 from .captions import half_h
 from .project import FONTS as _FONTS
 
 FONTS = _FONTS
 STYLES = {
-    "box": {"font": "TikTokSans-Variable.ttf", "axes": [36, 95, 700, 0], "px": 81, "tracking": 0.0,
-            "max_w": 834, "line_h": 129, "pitch": 84, "pad_x": 30, "balanced": False},
-    "color": {"font": "TikTokSans-Variable.ttf", "axes": [36, 95, 800, 0], "px": 81, "tracking": 0.0,
-              "max_w": 834, "line_h": 129, "pitch": 84, "pad_x": 30, "balanced": False},
-    "stack": {"font": "Inter-Bold.ttf", "axes": None, "px": 96, "tracking": -0.03,
-              "max_w": 900, "line_h": 131, "pitch": 0, "pad_x": 34, "balanced": False},
+    # box/color/stack: font i tracking iz izabranog seta (engine/ccc/fonts.py); serif uvek svoj.
+    "box": {"weight": 700, "px": 81, "max_w": 834, "line_h": 129, "pitch": 84, "pad_x": 30, "balanced": False},
+    "color": {"weight": 800, "px": 81, "max_w": 834, "line_h": 129, "pitch": 84, "pad_x": 30, "balanced": False},
+    "stack": {"weight": 700, "px": 96, "max_w": 900, "line_h": 131, "pitch": 0, "pad_x": 34, "balanced": False},
     "serif": {"font": "InstrumentSerif-Regular.ttf", "axes": None, "px": 96, "tracking": -0.02,
               "max_w": 900, "line_h": 104, "pitch": 100, "pad_x": 0, "balanced": True},
 }
@@ -38,20 +37,21 @@ END_DEFAULT = 3.44               # referenca: hook nestaje naglo na 3.44 s
 END_WINDOW = (3.0, 4.0)          # …ako u ovom prozoru postoji rez, hook nestaje baš na njemu
 
 
-def _font(st: dict) -> ImageFont.FreeTypeFont:
-    f = ImageFont.truetype(str(FONTS / st["font"]), st["px"])
-    if st["axes"]:
-        f.set_variation_by_axes(st["axes"])
-    return f
+def _font(st: dict, fid: str | None = None) -> tuple[ImageFont.FreeTypeFont, float]:
+    """(font, tracking u em) za stil hooka u izabranom setu fontova."""
+    if "font" in st:  # Editorial Serif — uvek svoj font
+        return ImageFont.truetype(str(FONTS / st["font"]), st["px"]), st["tracking"]
+    return F.load(fid or F.DEFAULT, "hook", st["weight"], st["px"]), F.tracking(fid, "hook")
 
 
-def _width(font: ImageFont.FreeTypeFont, st: dict, text: str) -> float:
-    return font.getlength(text) + st["tracking"] * st["px"] * max(0, len(text) - 1)
+def _width(font: tuple, st: dict, text: str) -> float:
+    f, tr = font
+    return f.getlength(text) + tr * st["px"] * max(0, len(text) - 1)
 
 
-def wrap(text: str, st: dict) -> list[str]:
+def wrap(text: str, st: dict, fid: str | None = None) -> list[str]:
     """Pohlepni prelom (TikTok); za balansirane stilove isti broj redova, ali ujednačene dužine."""
-    font, lines, cur = _font(st), [], ""
+    font, lines, cur = _font(st, fid), [], ""
     words = text.split()
     for word in words:
         cand = f"{cur} {word}".strip()
@@ -81,9 +81,9 @@ def wrap(text: str, st: dict) -> list[str]:
 def box_widths(hook: dict) -> list[float]:
     """Širina svakog reda na ekranu (tekst + boks), za proveru da staje u kadar."""
     if hook.get("style") == "stack":
-        return _stack_layout(hook["text"])["widths"]
+        return _stack_layout(hook["text"], hook.get("font"))["widths"]
     st = STYLES[hook.get("style", "box")]
-    font = _font(st)
+    font = _font(st, hook.get("font"))
     return [_width(font, st, l) + 2 * st["pad_x"] for l in hook["lines"]]
 
 
@@ -112,7 +112,7 @@ def text_on(bg: str) -> str:
 
 
 # Stil 4 "Stacked": veličine (px na 1080) i oblik.
-STACK = {"font": "Inter-Bold.ttf", "tracking": -0.03, "max_w": 900,
+STACK = {"weight": 700, "max_w": 900,  # font i tracking: izabrani set (F.load(…, "caption", 700, px))
          "top": {"px": 96, "min_px": 64, "h_ratio": 1.36, "pad_x": 34, "radius": 18},
          "sub": {"px": 52, "min_px": 38, "h_ratio": 1.5, "pad_x": 22, "radius": 14},
          "overlap": 14}
@@ -135,24 +135,25 @@ def split_stack(text: str) -> list[str]:
     return [" ".join(words[:i]).rstrip(",:—"), " ".join(words[i:])]
 
 
-def _fit_px(part: str, spec: dict) -> tuple[int, float]:
+def _fit_px(part: str, spec: dict, fid: str | None = None) -> tuple[int, float]:
     """Najveća veličina (≤ px, ≥ min_px) na kojoj deo staje u jedan red."""
+    tr = F.tracking(fid, "stack")
     for px in range(spec["px"], spec["min_px"] - 1, -2):
-        f = ImageFont.truetype(str(FONTS / STACK["font"]), px)
-        w = f.getlength(part) + STACK["tracking"] * px * max(0, len(part) - 1) + 2 * spec["pad_x"]
+        f = F.load(fid or F.DEFAULT, "caption", STACK["weight"], px)
+        w = f.getlength(part) + tr * px * max(0, len(part) - 1) + 2 * spec["pad_x"]
         if w <= STACK["max_w"]:
             return px, w
     return spec["min_px"], w
 
 
-def _stack_layout(text: str) -> dict:
+def _stack_layout(text: str, fid: str | None = None) -> dict:
     # Prvi deo uvek velikim slovom; drugi ostaje kako je napisan (nastavak rečenice: "in your industry").
     parts = split_stack(text)
     parts = [sentence_case(parts[0])] + parts[1:]
     specs = [STACK["top"], STACK["sub"]][: len(parts)]
     sizes, widths, heights = [], [], []
     for part, spec in zip(parts, specs):
-        px, w = _fit_px(part, spec)
+        px, w = _fit_px(part, spec, fid)
         sizes.append(px)
         widths.append(w)
         heights.append(round(px * spec["h_ratio"]))
@@ -165,6 +166,7 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
     from .camera import min_head_after_zoom
 
     st = STYLES[style]
+    fid = p.get("font") if p.get("font") in F.SETS else F.DEFAULT
     fps = p["fps"]
     cuts, f = [], 0
     for g in p["segments"][:-1]:
@@ -175,11 +177,11 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
     text = sentence_case(text.strip())
     extra = {}
     if style == "stack":
-        lay = _stack_layout(text)
+        lay = _stack_layout(text, fid)
         lines, height = lay["lines"], lay["height"]
         extra = {"sizes": lay["sizes"], "heights": lay["heights"], "overlap": STACK["overlap"]}
     else:
-        lines = wrap(text, st)
+        lines = wrap(text, st, fid)
         height = (len(lines) - 1) * st["pitch"] + st["line_h"]
     # Hook i titlovi su na ekranu ISTOVREMENO. Pozicija 1 (podrazumevana): ispod titla, ako staje
     # iznad donje UI zone. Pozicija 2: iznad glave (ispod gornje UI zone). Inače: ispod titla.
@@ -203,7 +205,7 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
         colors = {"bg": bg, "fg": text_on(bg)}
     if style == "stack" and lay["too_wide"]:
         where = "NEMA MESTA — deo hooka je predugačak za jedan red"
-    return {"text": text, "style": style, "placement": placement, **colors, **extra, "lines": lines, "y": round(y),
+    return {"text": text, "style": style, "font": fid, "placement": placement, **colors, **extra, "lines": lines, "y": round(y),
             "pitch": st["pitch"],
             "start": 0.0, "end": round(end, 4), "bottom": round(y + height), "position": where,
             "fits": not where.startswith("NEMA")}

@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from .fonts import spec as font_spec
 from .project import REMOTION, Job, remotion_cli
 
 
@@ -22,6 +23,7 @@ def render_props(job: Job, p: dict) -> Path:
         # Uvek eksplicitno: Remotion inače popuni nedostajuća polja podrazumevanim (probnim) vrednostima.
         "hook": p.get("hook"),
         "camera": p.get("camera") or [],
+        "font": font_spec(p.get("font")),  # set fontova za titlove + hook (engine/ccc/fonts.py)
     }
     path = job.dir / "render-props.json"
     path.write_text(json.dumps(props, ensure_ascii=False))

@@ -58,13 +58,13 @@ Tell the client: *"A page just opened in your browser — pick a format, then yo
 
 When `picker` ends with exit code 0, the choices (including `format`) are in `${CLAUDE_PLUGIN_DATA}/work/<name>/choices.json`. Now read `formats/<format>.md`.
 
-**Fallback** — exit code 2 (no choice within 30 min) or the browser could not open: ask in Claude Code with AskUserQuestion. First the format (only `ready` ones from `ccc formats`; skip the question if only one is ready), then only the options that format allows (`ccc formats` shows them; a single allowed value is fixed — don't ask). Basic options: hook text via "Other" or "No hook"; hook style: TikTok Box / Editorial Serif / Color Block / Stacked; hook position: below captions / above the head; caption style: Clean / Karaoke / Box Fill / Minimal; brand color only if Karaoke, Color Block or Stacked was chosen (palette name or hex); camera: zoom / static. Save with:
+**Fallback** — exit code 2 (no choice within 30 min) or the browser could not open: ask in Claude Code with AskUserQuestion. First the format (only `ready` ones from `ccc formats`; skip the question if only one is ready), then only the options that format allows (`ccc formats` shows them; a single allowed value is fixed — don't ask). Basic options: first "Do you want a text hook?" (Yes / No — captions only); only on Yes ask the hook text (via "Other"), hook style: TikTok Box / Editorial Serif / Color Block / Stacked, and hook position: below captions / above the head; caption style: Clean / Karaoke / Box Fill / Minimal; font for captions + hook: CCC Signature (default) / Poppins / Plus Jakarta Sans / Bricolage Grotesque (Editorial Serif hook always keeps its serif); brand color only if Karaoke, Color Block or Stacked was chosen (palette name or hex); camera: zoom / static. Save with:
 
 ```
-ccc choices <name> format=basic hook_text="…" hook_style=stack hook_position=below caption_style=karaoke color=#FF5A1F camera=zoom
+ccc choices <name> format=basic hook_text="…" hook_style=stack hook_position=below caption_style=karaoke font=ccc color=#FF5A1F camera=zoom
 ```
 
-Values: `format` an id from `ccc formats` · `hook_style` box|serif|color|stack · `hook_position` below|above · `caption_style` clean|karaoke|box|minimal · `color` hex or yellow|green|blue|orange|pink|red|purple|cyan · `camera` zoom|static · empty `hook_text=` means no hook.
+Values: `format` an id from `ccc formats` · `hook_style` box|serif|color|stack · `hook_position` below|above · `caption_style` clean|karaoke|box|minimal · `font` ccc|poppins|jakarta|bricolage · `color` hex or yellow|green|blue|orange|pink|red|purple|cyan · `camera` zoom|static · empty `hook_text=` means no hook.
 
 ## Step 3 — Editorial pass (your judgment, once `prepare` is done)
 
@@ -117,6 +117,7 @@ Map the request, apply, then run `ccc build <name>` again (it rebuilds everythin
 | "no hook" | `ccc choices <name> hook_text=` |
 | "switch captions to …" / "use my color #…" | `ccc choices <name> caption_style=… color=…` |
 | "no zoom" / "add zoom" | `ccc choices <name> camera=static|zoom` |
+| "use a different font" / "make it Poppins" | `ccc choices <name> font=ccc|poppins|jakarta|bricolage` (captions + hook; Editorial Serif hook keeps its serif) |
 | "make it a <other format> instead" | `ccc choices <name> format=<id>` + that format's options, read its `formats/<id>.md`, then build |
 | "a caption word is wrong" (e.g. brand name) | `ccc transcript <name>` → find the word id → `ccc word <name> wID "Correct"` (timing and cuts stay the same) |
 
