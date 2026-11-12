@@ -40,6 +40,8 @@ DEFAULT_CUT = {
     "fade": 0.005,          # mikro-fade zvuka na svakom rezu (s)
 }
 
+SPLIT_LINE = 960  # Split Screen: linija podele (px na 1920) — sadržaj gore, govornik dole
+
 # Pacing (izbor klijenta `pacing`): razlika u odnosu na DEFAULT_CUT (= "fast").
 # Oba: bez pauze na početku/kraju, svi loši take-ovi isečeni; chill samo ostavlja malo više vazduha.
 PACING = {

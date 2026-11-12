@@ -180,23 +180,28 @@ const Minimal: React.FC<{chunk: CaptionChunk; t: number; y: number}> = ({chunk, 
   );
 };
 
-export const Captions: React.FC<{captions: CaptionChunk[]; y: number; style?: CaptionStyle; accent?: string}> = ({
+export const Captions: React.FC<{captions: CaptionChunk[]; y: number; style?: CaptionStyle; accent?: string; from?: number; srcFps?: number}> = ({
   captions,
   y,
   style = 'clean',
   accent = DEFAULT_ACCENT,
+  from = 0,
+  srcFps,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = frame / fps;
-  const chunk = captions.find((c) => t >= c.start - 0.5 / fps && t < c.end);
-  if (!chunk) return null;
+  if (t < from) return null; // Split Screen: na mestu titla je još hook
+  const found = captions.find((c) => t >= c.start - 0.5 / fps && t < c.end);
+  if (!found) return null;
+  // Titl koji je počeo dok je hook bio na ekranu ulazi u trenutku kad hook nestane (sa animacijom ulaska).
+  const chunk = from > 0 && found.start < from ? {...found, start: from} : found;
   return (
     <AbsoluteFill>
       {style === 'karaoke' ? (
-        <Karaoke chunk={chunk} t={t} y={y} fps={fps} accent={accent} />
+        <Karaoke chunk={chunk} t={t} y={y} fps={srcFps ?? fps} accent={accent} />
       ) : style === 'box' ? (
-        <BoxFill chunk={chunk} t={t} y={y} fps={fps} />
+        <BoxFill chunk={chunk} t={t} y={y} fps={srcFps ?? fps} />
       ) : style === 'minimal' ? (
         <Minimal chunk={chunk} t={t} y={y} />
       ) : (

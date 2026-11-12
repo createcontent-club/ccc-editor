@@ -4,6 +4,8 @@ Sve se meri GLASOM (Voice: Silero + jak zvuk + suglasnici) — istom definicijom
 """
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -13,8 +15,11 @@ from .energy import HOP, Voice
 from .media import decode_mono
 
 
-def _frame(path: Path, t: float, zoom: tuple[float, float, float] | None = None) -> np.ndarray:
+def _frame(path: Path, t: float, zoom: tuple[float, float, float] | None = None,
+           crop: tuple[int, int] | None = None) -> np.ndarray:
     vf = "scale=96:170"
+    if crop:  # (y, visina) na 1080×1920 — Split Screen: deo kadra sa govornikom
+        vf = f"scale=1080:1920,crop=1080:{crop[1]}:0:{crop[0]},scale=96:{max(2, round(170 * crop[1] / 1920))}"
     if zoom:  # isti zum kao u Remotion-u: skala s oko tačke (ox, oy) na 1080×1920
         s, ox, oy = zoom
         vf = (f"scale=1080:1920,crop={1080 / s:.2f}:{1920 / s:.2f}:{ox - ox / s:.2f}:{oy - oy / s:.2f},"
@@ -111,11 +116,15 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
 
     # 3b. Titlovi: nijedan trenutak glasa bez titla, poslednji titl traje do kraja videa.
     caps = p.get("captions") or []
+    from .render import captions_from
+    cap_from = captions_from(p)  # Split Screen: dok traje hook, titl namerno nije na ekranu
     if caps:
         uncovered = []
         for k0, k1 in _runs(vm, True):
             for k in range(k0, k1):
                 t = k * HOP + HOP / 2
+                if t < cap_from:
+                    continue
                 if not any(c["start"] <= t < c["end"] for c in caps):
                     uncovered.append(t)
         spans = []
@@ -145,9 +154,12 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         from .captions import half_h
         from .hook import SAFE_BOTTOM, SAFE_TOP, box_widths
         widest = max(box_widths(hook))
-        face = p.get("face", {})
+        from .captions import to_output_y
+        f0 = p.get("face", {})
+        face = {k: round(to_output_y(p, f0[k])) for k in ("head_top", "chin") if k in f0}  # na ekranu
         cap_top, cap_bottom = p["captionY"] - half_h(p), p["captionY"] + half_h(p)
-        clear_caption = hook["y"] >= cap_bottom or hook["bottom"] <= cap_top
+        clear_caption = (hook["y"] >= cap_bottom or hook["bottom"] <= cap_top
+                         or cap_from >= hook["end"])  # Split: titl kreće tek posle hooka
         clear_face = hook["y"] >= face.get("chin", 0) or hook["bottom"] <= face.get("head_top", 0)
         in_frame = widest <= 960 and hook["y"] >= SAFE_TOP and hook["bottom"] <= SAFE_BOTTOM
         cap_ok = hook["text"][:1] == hook["text"][:1].upper()
@@ -160,6 +172,52 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                     f"hook {hook.get('style', 'box')} ({hook.get('position')}): y {hook['y']}–{hook['bottom']}, titl {cap_top}–{cap_bottom}, "
                     f"lice {face.get('head_top')}–{face.get('chin')}, najširi boks {widest:.0f} px, "
                     f"veliko početno slovo: {'da' if cap_ok else 'NE'}, do {hook['end']:.2f}s"))
+
+    # 3c2. Split Screen: govornik u donjoj polovini, teme ispod linije (titl/hook), lice ceo u kadru.
+    lay = p.get("layout") or {}
+    if lay.get("type") == "split" and p.get("face"):
+        from .captions import to_output_y
+        top, chin = to_output_y(p, p["face"]["head_top"]), to_output_y(p, p["face"]["chin"])
+        ok = top >= lay["line"] + 40 and chin <= 1920 - 120
+        res.append((ok, f"split: linija {lay['line']}, isečak od y {lay.get('cropY')}, teme {top:.0f} (≥ {lay['line'] + 40}), "
+                        f"brada {chin:.0f} (≤ 1800)"))
+
+    # 3c3. Split Screen, gornja polovina: plan pokriva ceo video, momenti nisu prekratki, fajlovi postoje.
+    if lay.get("type") == "split":
+        from .visuals import timeline, validate_plan, warnings
+        items, problems = timeline(p)
+        problems = validate_plan(p.get("visuals") or {}, job) + problems if p.get("visuals") else ["nema plana"]
+        cover = bool(items) and items[0]["start"] == 0 and abs(items[-1]["end"] - total) < frame
+        res.append((not problems and cover,
+                    f"gornja polovina: {len(items)} momenata, pokriveno 0–{items[-1]['end'] if items else 0:.2f}s od {total:.2f}s"
+                    + ("" if not problems else " → " + "; ".join(problems[:4]))))
+        for w in warnings(items):
+            print(f"  · {w}")
+        # Klijentovi fajlovi: svaki je iskorišćen ili prijavljen (skill kaže klijentu koji nije i zašto).
+        from .assets import nfc, originals, prepare
+        from .web import _from_link, sources
+        allf = [nfc(f.name) for f in originals(job)]
+        web = [n for n in allf if n.startswith("web-")]
+        names = [n for n in allf if not n.startswith("web-")]
+        used = set(re.findall(r'"(?:file|logo|image)": "([^"]+)"', json.dumps([x.get("data") or {} for x in items], ensure_ascii=False)))
+        used = {nfc(u) for u in used}
+        if web:  # pravi asseti sa interneta: svaki iskorišćen mora imati zapis porekla (izvor za izveštaj klijentu)
+            src = sources(job)
+            no_src = [n for n in web if n in used and n not in src]
+            ch = p.get("choices") or {}
+            # klijent isključio prave vizuale → sme samo ono što je došlo iz njegovih linkova
+            off = [n for n in web if n in used and ch.get("web") is False and not (src.get(n) or {}).get("client_link")
+                   and not _from_link(job, (src.get(n) or {}).get("url") or "")]
+            res.append((not no_src and not off, f"asseti sa interneta: iskorišćeno {len([n for n in web if n in used])}/{len(web)}"
+                                    + (f" · bez zapisa porekla: {', '.join(no_src)}" if no_src else "")
+                                    + (f" · klijent je isključio prave vizuale, a iskorišćeno: {', '.join(off)}" if off else "")))
+        if names:
+            man = prepare(job)
+            unused = [n for n in names if n not in used]
+            bad = [n for n in names if man.get(n, {}).get("kind") == "error"]
+            res.append((True, f"fajlovi klijenta: iskorišćeno {len(names) - len(unused)}/{len(names)}"
+                              + (f" · neiskorišćeni (reci klijentu zašto): {', '.join(unused)}" if unused else "")
+                              + (f" · ne mogu da se koriste: {', '.join(bad)}" if bad else "")))
 
     # 3d. Kamera: ni pri najvećem zumu brada ne dolazi do titla, a teme do hooka iznad glave.
     if p.get("camera") and p.get("face"):
@@ -232,8 +290,14 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                 if cue:
                     sc = cue["from"] + (cue["to"] - cue["from"]) * mid / max(1, s["vFrames"])
                     zoom = (sc, cue["ox"], cue["oy"])
-                diffs.append(float(np.abs(_frame(rendered, (out_f + mid + 0.5) / fps)
-                                          - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom)).mean()))
+                lay = p.get("layout") or {}
+                if lay.get("type") == "split":  # donja polovina gotovog videa = isečak izvora od cropY
+                    h = 1920 - lay["line"]
+                    out_c, src_c = (lay["line"], h), (lay.get("cropY", 0), h)
+                else:
+                    out_c = src_c = None
+                diffs.append(float(np.abs(_frame(rendered, (out_f + mid + 0.5) / fps, crop=out_c)
+                                          - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom, crop=src_c)).mean()))
             out_f += s["vFrames"]
         res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
     return res

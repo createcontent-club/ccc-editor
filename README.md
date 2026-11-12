@@ -8,6 +8,11 @@
 - camera zooms on jump cuts (optional)
 - clean, loud-enough audio for Instagram / TikTok / Shorts
 
+Two formats so far:
+
+- **Basic Edit** — your talking-head video, edited the CCC way.
+- **Split Screen** — you in the bottom half, and above you what you're talking about: animated visuals that explain your points, real logos, headlines, screenshots and posts — or your own screenshots and screen recordings.
+
 You pick a format and style on a simple page, and the rest happens automatically.
 
 ---
@@ -75,7 +80,7 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
    Don't see `/ccc-edit` when you type `/`? Close Claude Code completely, open it again and start a new chat.
 3. **First time only:** Claude sets up the editor on your computer. This takes about **5–10 minutes** and you don't need to do anything. If your computer asks for permission to let a command run, allow it.
 4. The **CCC Editing Style Menu** opens in your browser:
-   - pick a **format** — e.g. **Basic Edit** (formats marked *Coming soon* arrive with updates)
+   - pick a **format** — **Basic Edit** or **Split Screen** (formats marked *Coming soon* arrive with updates)
    - on the format's page, choose your details. For Basic Edit:
      - choose **Yes** or **No** for a text hook — with Yes, type your hook text
      - choose a **hook style** and where it sits (**below the captions** or **above your head**)
@@ -84,6 +89,11 @@ Then **close and reopen Claude Code** (desktop app or terminal) so it picks up t
      - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
      - choose the **pacing**: **Fast-paced** (tight, classic reel) or **Chill** (a touch more breathing room)
      - choose **Zoom** or **Static** camera
+   - **Split Screen** has the same hook, caption, font, color and pacing options (the hook sits on the split line and the camera is always static), plus:
+     - **Top half style** — **Dark** or **Light**
+     - **Your files** *(optional)* — drag in screenshots, screen recordings or clips you want on screen, and write when they should show (e.g. "when I talk about the audit"). Everything else gets animated visuals.
+     - **Real visuals** — **Find real visuals online** (real logos, headlines, screenshots, posts and photos of what you mention) or **Animated visuals only**
+     - **Links you mention** *(optional)* — paste links to articles, products or posts you talk about, one per line; they're used first
    - click **Start editing**
 5. A few minutes later your finished video is saved **next to your original**, named `<your file>-CCC-edit.mp4`. Claude tells you what was cut and how long the video is now.
 
@@ -102,6 +112,7 @@ Just say it in plain words in the same chat, for example:
 - "no zoom please"
 - "use the Poppins font"
 - "the word at 0:15 should be **Notion**, not *notion*"
+- Split Screen: "show my screenshot when I talk about the audit" (drop the file in the chat), "make the top light", "no internet stuff, only animations", "use a different photo of him", "use my logo instead", "here's the link to the article I mention: …"
 
 Claude updates the video and saves it again in the same place.
 
@@ -124,9 +135,15 @@ After an update, the first edit may take a minute longer while the editor refres
 - Don't worry about mistakes — just repeat the sentence. The editor keeps your **last complete take**.
 - Leave a second of silence before you start and after you finish.
 
+## Real visuals from the internet (Split Screen)
+
+When you talk about something real — a company, an app, a website, a news story, a post, a public person — the editor looks it up and uses the real logo, headline, screenshot, post, photo or a short clip instead of a generic animation. Sources are never shown on screen; your report at the end lists every real visual with its source, so you can check it before posting. Don't want any of this? Choose **Animated visuals only** on the Split Screen page (or just tell Claude "only animations").
+
+You are responsible for what you publish: make sure you're comfortable using third-party logos, headlines, screenshots, photos and clips in your content.
+
 ## Privacy
 
-Your video files never leave your computer — all editing and rendering happens locally. To decide what to cut, Claude reads the **text transcript** of what you said, as part of your normal Claude Code conversation.
+Your video files never leave your computer — all editing and rendering happens locally. To decide what to cut, Claude reads the **text transcript** of what you said, as part of your normal Claude Code conversation. Files you add on the Split Screen page stay on your computer too. With **Find real visuals online** on, Claude searches the web for the things you mention and downloads their logos, pages and clips.
 
 ## Removing the editor
 

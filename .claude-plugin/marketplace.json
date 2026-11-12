@@ -8,8 +8,8 @@
     {
       "name": "ccc-editor",
       "source": "./plugins/ccc-editor",
-      "description": "Create Content Club video editor: turns a raw talking-head video into a finished vertical reel in the CCC format you pick from the Editing Style Menu \u2014 Basic Edit: tight cuts, text hook, captions, camera zooms and clean audio; more formats arrive with updates.",
-      "version": "0.4.0"
+      "description": "Create Content Club video editor: turns a raw talking-head video into a finished vertical reel in the CCC format you pick from the Editing Style Menu \u2014 Basic Edit (tight cuts, text hook, captions, camera zooms, clean audio) and Split Screen (you below, animated visuals, real logos/headlines or your own screenshots above); more formats arrive with updates.",
+      "version": "0.5.0"
     }
   ]
 }

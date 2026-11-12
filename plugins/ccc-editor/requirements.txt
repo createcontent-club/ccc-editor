@@ -8,3 +8,5 @@ numpy>=2
 opencv-python-headless>=4.10
 # Pun ffmpeg (svi audio filteri) kao Python paket — bez Homebrew-a/winget-a i bez admin lozinke
 imageio-ffmpeg>=0.6
+# Pravi asseti sa interneta (Split Screen): kratki video isečci (vesti, YouTube, reels)
+yt-dlp>=2025.1

@@ -225,6 +225,30 @@ def caption_y(job, p: dict) -> tuple[int, dict]:
                "chin_spread": round((max(f["chin"] for f in track) - min(f["chin"] for f in track)) * 1920 / H)}
 
 
+def split_place(p: dict) -> None:
+    """Split Screen: titl na liniji podele; donja polovina = isečak izvora (cropY) tako da teme
+    govornika bude ~SPLIT_HEADROOM ispod linije (mesto za titl/hook), a lice u kadru."""
+    lay = p["layout"]
+    line = lay["line"]
+    half = 1920 - line
+    face = p.get("face") or {}
+    head = face.get("head_top")
+    crop = (head - SPLIT_HEADROOM) if head is not None else (1920 - half) // 2
+    lay["cropY"] = int(max(0, min(1920 - half, round(crop))))
+    p["captionY"] = line
+
+
+def to_output_y(p: dict, y: float) -> float:
+    """y u izvornom kadru → y na ekranu (Split Screen pomera govornika u donju polovinu)."""
+    lay = p.get("layout") or {}
+    if lay.get("type") == "split":
+        return y - lay.get("cropY", 0) + lay["line"]
+    return y
+
+
+SPLIT_HEADROOM = 110  # px između linije podele i temena govornika (titl/hook stoje na liniji)
+
+
 # ------------------------------------------------------------------ boja naglaska (Karaoke)
 # Paleta za upitnik; klijent može da upiše i svoju boju brenda (hex).
 ACCENT_PALETTE = {

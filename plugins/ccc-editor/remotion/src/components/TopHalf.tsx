@@ -1,0 +1,1332 @@
+import React, {createContext, useContext} from 'react';
+import {Easing, Img, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {Camera, Check, Heart, User, Video} from 'lucide-react';
+import * as Ph from '@phosphor-icons/react';
+import {CAPTION_FONT, useFontSpec} from '../style';
+
+/**
+ * Split Screen — gornja polovina (PLAN.md §11; pravila: skills/ccc-edit/formats/split-screen.md).
+ *
+ * Montažna psihologija (iz CCC revizija):
+ *  - hero otvaranje (prvi moment, dok traje hook) — najveći i najbogatiji vizual;
+ *  - nešto novo na 1.5–3 s; delovi ulaze TAČNO na reč (`atT` = s od početka momenta), i sporedni natpisi;
+ *  - vizual objašnjava, ne ponavlja; svaki grafički element čitljiv bez zvuka (skala, ose, zaključak);
+ *  - ništa ne stoji "mrtvo": tekst dobija highlight koji se iscrtava ispod ključne reči;
+ *  - najava = ceo oblik sa skrivenim sadržajem (zamućen), nikad fragment; budući koraci se ne vide;
+ *  - liste rastu nadole (redosled čitanja), meko klizanje nagore; grupa se glatko re-centrira kad stigne nov deo;
+ *  - glatke krive (ease-out), 50 fps, meki izlaz; vizual popunjava sigurnu zonu x 90–990, y 240–840.
+ */
+export type TopItem = {kind: string; start: number; end: number; data: Record<string, any>; src?: string; last?: string};
+export type TopSpec = {style: 'dark' | 'light'; accent: string; items: TopItem[]};
+
+const ZONE = {x: 90, y: 240, w: 900, h: 600};
+/** Ikonice: Phosphor (MIT), težina Bold — čvršće i kvalitetnije od tankih linija (odluka 12. nov 2026). */
+const ICONS: Record<string, React.FC<any>> = {
+  clock: Ph.Clock, calendar: Ph.CalendarBlank, chart: Ph.ChartBar, trending: Ph.TrendUp, money: Ph.CurrencyDollar,
+  users: Ph.Users, user: Ph.User, message: Ph.ChatCircle, mail: Ph.Envelope, target: Ph.Target, zap: Ph.Lightning,
+  rocket: Ph.RocketLaunch, check: Ph.Check, x: Ph.X, eye: Ph.Eye, search: Ph.MagnifyingGlass, star: Ph.Star,
+  heart: Ph.Heart, bot: Ph.Robot, phone: Ph.DeviceMobile, camera: Ph.Camera, video: Ph.VideoCamera, lock: Ph.Lock,
+  gift: Ph.Gift, lightbulb: Ph.Lightbulb, megaphone: Ph.Megaphone, filter: Ph.Funnel, link: Ph.Link,
+  sparkles: Ph.Sparkle, trophy: Ph.Trophy, instagram: Ph.InstagramLogo, send: Ph.PaperPlaneTilt, file: Ph.FileText,
+  bell: Ph.Bell, handshake: Ph.Handshake, inbox: Ph.Tray, play: Ph.Play, comment: Ph.ChatTeardropText,
+  crown: Ph.Crown, flame: Ph.Fire, ban: Ph.Prohibit, hourglass: Ph.Hourglass, shield: Ph.ShieldCheck,
+};
+
+const lum = (hex: string) => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const onAccent = (hex: string) => (1.05 / (lum(hex) + 0.05) >= 3 ? '#FFFFFF' : '#0A0A0B');
+const rgba = (hex: string, a: number) =>
+  `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
+
+type Theme = {
+  dark: boolean; base: string; grid: string; ink: string; mut: string; glass: string; glassStrong: string;
+  line: string; hi: string; shadow: string; orb: number; track: string;
+};
+const THEMES: Record<'dark' | 'light', Theme> = {
+  dark: {
+    dark: true, base: 'radial-gradient(900px 620px at 50% 52%, #222327 0%, #141518 55%, #0C0C0E 100%)',
+    grid: 'rgba(255,255,255,0.05)', ink: '#FFFFFF', mut: 'rgba(255,255,255,0.62)',
+    glass: 'rgba(255,255,255,0.065)', glassStrong: 'rgba(255,255,255,0.11)', line: 'rgba(255,255,255,0.18)',
+    hi: 'rgba(255,255,255,0.28)', shadow: '0 30px 70px rgba(0,0,0,0.5)', orb: 0.075, track: 'rgba(255,255,255,0.12)',
+  },
+  light: {
+    dark: false, base: 'radial-gradient(900px 620px at 50% 52%, #FAFAFB 0%, #EEEFF1 60%, #E4E5E8 100%)',
+    grid: 'rgba(10,10,12,0.05)', ink: '#0A0A0B', mut: 'rgba(10,10,12,0.56)',
+    glass: 'rgba(255,255,255,0.5)', glassStrong: 'rgba(255,255,255,0.72)', line: 'rgba(255,255,255,0.95)',
+    hi: 'rgba(255,255,255,1)', shadow: '0 26px 60px rgba(20,20,30,0.14)', orb: 0.09, track: 'rgba(10,10,12,0.09)',
+  },
+};
+
+/** Psihologija boja: loše = crveno, upozorenje = narandžasto, dobro = boja brenda. */
+const TONES: Record<string, string> = {bad: '#FF4D4D', warn: '#FFB020'};
+const toneColor = (tone: string | undefined, acc: string) => (tone && TONES[tone]) || acc;
+
+type Ctx = {t: number; dur: number; fps: number; th: Theme; acc: string; hero: boolean; sweep: boolean};
+const C = createContext<Ctx>({t: 0, dur: 1, fps: 30, th: THEMES.dark, acc: '#FFE600', hero: false, sweep: false});
+const useC = () => useContext(C);
+
+// ------------------------------------------------------------------ kretanje
+const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
+const ease = (x: number, from: number, len: number, curve: (n: number) => number = EASE_OUT) =>
+  interpolate(x - from, [0, len], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: curve});
+const prog = (c: Ctx, at: number, len = 0.65) => ease(c.t, at, len);
+/** Ulaz: fade + meko klizanje nagore + skidanje zamućenja (nikad pad spolja). */
+/** Ulaz sa dubinom: blagi 3D nagib (rotateX) koji se ispravi dok element dolazi — ne ravan fade. */
+const pop = (p: number, dy = 26): React.CSSProperties => ({
+  opacity: interpolate(p, [0, 0.55], [0, 1], {extrapolateRight: 'clamp'}),
+  transform: `perspective(1400px) translateY(${(1 - p) * dy}px) rotateX(${(1 - p) * 16}deg) scale(${0.94 + 0.06 * p})`,
+  transformOrigin: '50% 100%',
+  filter: p < 0.995 ? `blur(${(1 - p) * 8}px)` : undefined,
+});
+const at0 = (x: any, fallback = 0) => (typeof x?.atT === 'number' ? x.atT : fallback);
+const txt = (x: any) => (typeof x === 'string' ? x : x?.text ?? x?.label ?? '');
+/** Vreme pojave i-tog dela: `atT`, inače ravnomerno; prvi deo najkasnije 0.2 s (nikad prazno na početku). */
+const beat = (c: Ctx, x: any, i: number, n: number) => {
+  const t = typeof x?.atT === 'number' ? x.atT : n <= 1 ? 0 : (i * Math.min(c.dur * 0.55, 0.45 * (n - 1))) / (n - 1);
+  return i === 0 ? Math.min(t, 0.2) : t;
+};
+const font = (w: number, size: number, lh = 1.15): React.CSSProperties =>
+  ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em'});
+
+/**
+ * Vertikalna grupa koja se glatko re-centrira: delovi (visina h, pojava at) zauzimaju mesto od početka,
+ * a grupa je pomerena tako da je VIDLJIVI deo uvek na sredini zone — kad stigne nov deo, sve klizne gore.
+ */
+/**
+ * `focus`: kontrola pažnje — kad stigne nov deo liste, prethodni se utišaju (manji opacity + tamnije),
+ * pa oko gledaoca ide na najnoviji. Naslov/zaglavlje liste (`keep`) se ne utišava.
+ */
+const Stack: React.FC<{parts: {h: number; at: number; el: React.ReactNode; keep?: boolean}[]; gap?: number; focus?: boolean}> = ({
+  parts, gap = 24, focus,
+}) => {
+  const c = useC();
+  const total = parts.reduce((s, p) => s + p.h, 0) + gap * (parts.length - 1);
+  const shown = parts.reduce((s, p, i) => s + (p.h + (i ? gap : 0)) * ease(c.t, p.at, 0.7), 0);
+  return (
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap,
+      transform: `translateY(${(total - shown) / 2}px)`}}>
+      {parts.map((p, i) => {
+        const next = parts.slice(i + 1).find((q) => !q.keep);
+        const dim = focus && !p.keep && next ? ease(c.t, next.at, 0.5) : 0;
+        const base = pop(prog(c, p.at));
+        return (
+          <div key={i} style={{minHeight: p.h, display: 'flex', alignItems: 'center', justifyContent: 'center', ...base,
+            opacity: (base.opacity as number) * (1 - 0.65 * dim),
+            filter: [base.filter, dim > 0.01 ? `brightness(${1 - 0.45 * dim}) saturate(${1 - 0.5 * dim})` : ''].filter(Boolean).join(' ') || undefined}}>
+            <AtCtx.Provider value={p.at}>{p.el}</AtCtx.Provider>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** Kada je deo ušao (s od početka momenta) — Glass po tome pušta "light sweep". */
+const AtCtx = createContext<number>(0);
+
+const Glass: React.FC<{style?: React.CSSProperties; glow?: number; strong?: boolean; children?: React.ReactNode; r?: number; at?: number}> = ({
+  style, glow = 0, strong, children, r = 36, at,
+}) => {
+  const c = useC();
+  const {th, acc} = c;
+  const t0 = at ?? useContext(AtCtx);
+  // Light sweep: meki odsjaj jednom pređe preko stakla dok kartica ulazi — samo u momentima koje engine označi
+  // (otvaranje + payoff momenti, razmak ≥ 12 s) i samo na glavnoj kartici (onoj koja ulazi prva), ne na svakom redu.
+  const sw = c.sweep && t0 <= 0.3 ? ease(c.t, t0 + 0.12, 0.95, Easing.inOut(Easing.cubic)) : 0;
+  return (
+    <div style={{
+      position: 'relative', borderRadius: r, overflow: 'hidden', boxSizing: 'border-box',
+      background: strong ? th.glassStrong : th.glass, backdropFilter: 'blur(26px) saturate(150%)',
+      WebkitBackdropFilter: 'blur(26px) saturate(150%)', border: `1.5px solid ${th.line}`,
+      boxShadow: `${th.shadow}, inset 0 1.5px 0 ${th.hi}` + (glow ? `, 0 0 ${70 * glow}px ${rgba(acc, 0.42 * glow)}` : ''),
+      ...style,
+    }}>
+      <div style={{position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: `linear-gradient(140deg, rgba(255,255,255,${th.dark ? 0.16 : 0.5}) 0%, rgba(255,255,255,0) 42%)`}} />
+      {sw > 0 && sw < 1 ? (
+        <div style={{position: 'absolute', top: 0, bottom: 0, left: 0, width: '60%', pointerEvents: 'none', zIndex: 3,
+          transform: `translateX(${-120 + sw * 290}%) skewX(-18deg)`,
+          background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${th.dark ? 0.13 : 0.55}) 50%, rgba(255,255,255,0) 100%)`}} />
+      ) : null}
+      <div style={{position: 'relative'}}>{children}</div>
+    </div>
+  );
+};
+
+/**
+ * "Backlit" pločica (odluka 12. nov 2026: Bold · minimal): tamna grafitna pločica (i na Light podlozi), tanka svetla
+ * ivica u boji na vrhu, jedva primetan sjaj; ikonica Phosphor Bold u boji (tona). Mikro-pokret: kad stigne (`at`),
+ * ikonica blago "iskoči" (skala + mali zaokret) — živo, bez preterivanja.
+ */
+const NeonTile: React.FC<{name?: string; size?: number; tone?: string; at?: number; radius?: number; children?: React.ReactNode}> = ({
+  name, size = 120, tone, at, radius,
+  children,
+}) => {
+  const c = useC();
+  const col = toneColor(tone, c.acc);
+  const I = (name && ICONS[name]) || Ph.Sparkle;
+  const t0 = at ?? useContext(AtCtx);
+  const k = ease(c.t, t0 + 0.08, 0.7, Easing.bezier(0.34, 1.4, 0.64, 1));  // blagi "overshoot" za iskok
+  return (
+    <div style={{width: size, height: size, borderRadius: radius ?? size * 0.29, flex: 'none', display: 'grid', placeItems: 'center',
+      background: 'linear-gradient(180deg, #26272C 0%, #141518 100%)', border: '1.5px solid rgba(255,255,255,0.07)',
+      boxShadow: `inset 0 1px 0 ${rgba(col, 0.42)}, inset 0 0 ${size * 0.15}px ${rgba(col, 0.07)}, 0 ${size * 0.12}px ${size * 0.23}px rgba(0,0,0,${c.th.dark ? 0.35 : 0.22})`}}>
+      <div style={{transform: `scale(${0.7 + 0.3 * k}) rotate(${(1 - Math.min(1, k)) * -10}deg)`, display: 'grid', placeItems: 'center',
+        filter: `drop-shadow(0 0 ${size * 0.02}px ${rgba(col, 0.3)})`}}>
+        {children ?? <I size={size * 0.54} color={col} weight="bold" />}
+      </div>
+    </div>
+  );
+};
+const IconTile: React.FC<{name?: string; size?: number; on?: number; tone?: string; at?: number}> = ({name, size = 120, tone, at}) => (
+  <NeonTile name={name} size={size} tone={tone} at={at} />
+);
+
+/** Čist highlight koji se iscrtava ispod ključne reči (sekundarni takt — tekst nikad ne stoji "mrtav"). */
+const Highlight: React.FC<{children: React.ReactNode; at: number; size: number; tone?: string}> = ({children, at, size, tone}) => {
+  const c = useC();
+  const k = ease(c.t, at + 0.3, 0.6);
+  const col = toneColor(tone, c.acc);
+  return (
+    <span style={{position: 'relative', display: 'inline-block', zIndex: 0}}>
+      <span style={{position: 'absolute', left: -size * 0.06, right: -size * 0.06, bottom: size * 0.04, height: size * 0.3,
+        borderRadius: size * 0.15, background: col, opacity: c.th.dark ? 0.9 : 0.85, zIndex: -1,
+        transform: `scaleX(${k})`, transformOrigin: 'left center', boxShadow: `0 0 ${30 * k}px ${rgba(col, 0.55)}`}} />
+      {children}
+    </span>
+  );
+};
+
+// ------------------------------------------------------------------ šabloni
+const countUp = (v: string, k: number) => {
+  // Raspon ("3–4 hrs") ili više brojeva: bez odbrojavanja (međuvrednosti tipa "1–4" zbunjuju) — animaciju nosi vizual.
+  if ((v.match(/[0-9][0-9,.]*/g) || []).length !== 1) return v;
+  const m = v.match(/^([^0-9]*)([0-9][0-9,.]*)(.*)$/);
+  if (!m) return v;
+  const n = parseFloat(m[2].replace(/,/g, ''));
+  const dec = (m[2].split('.')[1] || '').length;
+  return m[1] + (dec ? (n * k).toFixed(dec) : Math.round(n * k).toLocaleString('en-US')) + m[3];
+};
+
+const Stat: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const at = d.atT ?? 0;
+  const v = String(d.value);
+  const size = Math.max(120, Math.min(190, Math.floor(1350 / Math.max(4, v.length))));
+  const subAt = at0(d.sub, Math.min(0.8, c.dur * 0.45));
+  const parts = [
+    {h: size + (d.label ? 70 : 0) + (d.of ? 90 : 0) + 60, at, el: (
+      <Glass glow={0.5} style={{width: 880, padding: '42px 56px 46px', textAlign: 'center'}}>
+        {d.label ? <div style={{...font(600, 44), color: c.th.mut}}>{d.label}</div> : null}
+        <div style={{...font(800, size, 1), letterSpacing: '-0.05em', color: c.th.ink, marginTop: 12, fontVariantNumeric: 'tabular-nums'}}>
+          {countUp(v, ease(c.t, at, 1.1))}
+        </div>
+        {d.of ? (
+          <div style={{marginTop: 30}}>
+            <div style={{height: 18, borderRadius: 99, background: c.th.track, overflow: 'hidden'}}>
+              <div style={{width: `${ease(c.t, at + 0.15, 1.2) * Math.max(2, d.ring ?? 50)}%`, height: '100%', borderRadius: 99,
+                background: c.acc, boxShadow: `0 0 24px ${rgba(c.acc, 0.8)}`}} />
+            </div>
+            <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 12, ...font(600, 32), color: c.th.mut}}>
+              <span style={{color: c.th.ink}}>{v}</span><span>{d.of}</span>
+            </div>
+          </div>
+        ) : null}
+      </Glass>
+    )},
+  ];
+  if (d.sub) parts.push({h: 76, at: subAt, el: (
+    <div style={{...font(800, 46), background: toneColor(d.sub?.tone ?? d.tone, c.acc), color: onAccent(toneColor(d.sub?.tone ?? d.tone, c.acc)),
+      padding: '12px 34px', borderRadius: 99, boxShadow: `0 0 34px ${rgba(toneColor(d.sub?.tone ?? d.tone, c.acc), 0.5)}`}}>{txt(d.sub)}</div>
+  )});
+  return <Stack parts={parts} gap={22} />;
+};
+
+/** Vreme: 7 dana, svaki dan dobija svoj blok jedan za drugim, ukupno se odbrojava — skala je odmah jasna. */
+const Week: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const at = d.atT ?? 0;
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].slice(0, Math.min(7, Math.max(3, d.days ?? 7)));
+  const v = String(d.value);
+  const fillEnd = at + 0.15 + days.length * 0.12 + 0.5;
+  // Oblik (7 praznih dana) stoji od početka momenta; dani se pune tek kad krene broj (`at`).
+  const parts = [{h: 470, at: 0, el: (
+    <Glass glow={0.4} style={{width: 880, padding: '36px 46px 40px'}}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'baseline'}}>
+        <div style={{...font(700, 40), color: c.th.mut}}>{d.label ?? 'per week'}</div>
+        <div style={{...font(800, 76, 1), color: c.th.ink, letterSpacing: '-0.045em', fontVariantNumeric: 'tabular-nums'}}>
+          {countUp(v, ease(c.t, at + 0.15, fillEnd - at))}
+        </div>
+      </div>
+      <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 30}}>
+        {days.map((dd, i) => {
+          const k = ease(c.t, at + 0.15 + i * 0.12, 0.6);
+          return (
+            <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14}}>
+              <div style={{width: 92, height: 230, borderRadius: 22, background: c.th.track, position: 'relative', overflow: 'hidden',
+                border: `1.5px solid ${c.th.line}`}}>
+                <div style={{position: 'absolute', left: 10, right: 10, bottom: 10, height: 46 * k, borderRadius: 14,
+                  background: c.acc, boxShadow: `0 0 22px ${rgba(c.acc, 0.7)}`}} />
+              </div>
+              <div style={{...font(700, 32), color: c.th.mut}}>{dd}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Glass>
+  )}];
+  if (d.per || d.sub) parts.push({h: 70, at: at0(d.sub, fillEnd - 0.2), el: (
+    <div style={{...font(800, 42), background: c.acc, color: onAccent(c.acc), padding: '10px 30px', borderRadius: 99}}>
+      {txt(d.sub) || d.per}
+    </div>
+  )});
+  return <Stack parts={parts} gap={20} />;
+};
+
+/** Koraci: ceo oblik od početka, tekst trenutnog koraka zamućen dok ga ne izgovori; budući koraci se ne vide. */
+const Steps: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const items: any[] = d.items;
+  const n = items.length;
+  const a = Math.min(n - 1, Math.max(0, d.active ?? 0));
+  const at = at0(items[a], 0);
+  const reveal = ease(c.t, at, 0.6);
+  const label = txt(items[a]);
+  return (
+    <div style={{width: 900, display: 'flex', flexDirection: 'column', alignItems: 'center', ...pop(prog(c, 0))}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 20, marginBottom: 26}}>
+        <div style={{...font(800, 36), letterSpacing: '0.14em', color: c.th.mut}}>STEP {a + 1} / {n}</div>
+        <div style={{display: 'flex', gap: 10}}>
+          {items.map((_, i) => (
+            <div key={i} style={{width: 80, height: 12, borderRadius: 99, overflow: 'hidden', background: c.th.track}}>
+              <div style={{width: `${(i < a ? 1 : i === a ? reveal : 0) * 100}%`, height: '100%', background: c.acc,
+                boxShadow: `0 0 14px ${rgba(c.acc, 0.8)}`}} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {a > 0 ? (
+        <div style={{display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap', justifyContent: 'center'}}>
+          {items.slice(0, a).map((x, i) => (
+            <Glass key={i} r={99} style={{padding: '10px 24px 10px 14px'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 12, ...font(600, 32), color: c.th.mut}}>
+                <span style={{width: 38, height: 38, borderRadius: 99, background: c.acc, display: 'grid', placeItems: 'center'}}>
+                  <Check size={24} color={onAccent(c.acc)} strokeWidth={3} />
+                </span>
+                {txt(x)}
+              </div>
+            </Glass>
+          ))}
+        </div>
+      ) : null}
+      <Glass glow={0.3 + 0.7 * reveal} strong style={{width: 900, padding: '44px 46px', display: 'flex', alignItems: 'center'}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 36}}>
+          <NeonTile size={136} at={at}><div style={{...font(800, 76, 1), color: c.acc}}>{a + 1}</div></NeonTile>
+          <div style={{...font(800, label.length > 24 ? 58 : 70, 1.08), color: c.th.ink, textAlign: 'left',
+            filter: reveal < 0.995 ? `blur(${(1 - reveal) * 18}px)` : undefined, opacity: 0.35 + 0.65 * reveal}}>{label}</div>
+        </div>
+      </Glass>
+    </div>
+  );
+};
+
+/** Tok: čvor ulazi na reč, linija se iscrtava do njega; u hero verziji (otvaranje) čestice teku, rezultat "pukne". */
+const Flow: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const nodes: any[] = d.nodes;
+  const n = nodes.length;
+  const hero = c.hero || d.hero;
+  const pitch = ZONE.w / n;
+  const tile = hero ? (n >= 3 ? 200 : 240) : n >= 4 ? 160 : 196;
+  const times = nodes.map((x, i) => beat(c, x, i, n));
+  const top = hero ? 150 : 120;
+  return (
+    <div style={{width: ZONE.w, position: 'relative', height: 520}}>
+      {d.title ? <div style={{...pop(prog(c, 0)), position: 'absolute', top: 10, left: 0, right: 0, textAlign: 'center',
+        ...font(700, 46), color: c.th.mut}}>{d.title}</div> : null}
+      {nodes.slice(1).map((_, i) => {
+        const x0 = pitch * (i + 0.5) + tile / 2 + 12, x1 = pitch * (i + 1.5) - tile / 2 - 12;
+        const k = ease(c.t, times[i + 1] - 0.3, 0.55);
+        const flowing = k >= 1;
+        return (
+          <div key={i} style={{position: 'absolute', top: top + tile / 2 - 4, left: x0, width: (x1 - x0) * k, height: 8, borderRadius: 9,
+            background: `linear-gradient(90deg, ${rgba(c.acc, 0.25)}, ${c.acc})`, boxShadow: `0 0 18px ${rgba(c.acc, 0.7)}`}}>
+            {flowing ? (hero ? [0, 0.33, 0.66] : [0]).map((o, j) => {
+              const ph = Easing.inOut(Easing.sin)(((c.t * 0.75) + o) % 1);
+              return <div key={j} style={{position: 'absolute', top: -7, left: `calc(${ph * 100}% - 11px)`, width: 22, height: 22,
+                borderRadius: 99, background: '#fff', boxShadow: `0 0 20px ${c.acc}`, opacity: Math.sin(ph * Math.PI)}} />;
+            }) : null}
+          </div>
+        );
+      })}
+      {nodes.map((x, i) => {
+        const p = prog(c, times[i]);
+        const last = i === n - 1;
+        const burst = hero && last ? ease(c.t, times[i], 0.9) : 0;
+        const dim = last ? 0 : ease(c.t, times[i + 1], 0.5) * 0.5;  // kontrola pažnje: oko ide na najnoviji čvor
+        const base = pop(p);
+        return (
+          <div key={i} style={{position: 'absolute', top, left: pitch * (i + 0.5) - 140, width: 280, display: 'flex',
+            flexDirection: 'column', alignItems: 'center', ...base, opacity: (base.opacity as number) * (1 - dim),
+            filter: [base.filter, dim > 0.01 ? `brightness(${1 - 0.5 * dim})` : ''].filter(Boolean).join(' ') || undefined}}>
+            <div style={{position: 'relative'}}>
+              {burst > 0 && burst < 1 ? (
+                <div style={{position: 'absolute', left: tile / 2, top: tile / 2, width: tile * (1 + burst * 1.2), height: tile * (1 + burst * 1.2),
+                  transform: 'translate(-50%,-50%)', borderRadius: tile * 0.4, border: `4px solid ${c.acc}`, opacity: 1 - burst}} />
+              ) : null}
+              {x.src ? <LogoPlate f={x} size={tile} /> : <IconTile name={x.icon} size={tile} on={1} />}
+            </div>
+            <div style={{...font(800, hero ? 46 : n >= 4 ? 34 : 40, 1.1), color: c.th.ink, marginTop: 24, textAlign: 'center', width: 270}}>{txt(x)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** Poređenje: levo se precrta, desno ulazi sa sjajem i ✓. */
+const Versus: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const tl = at0(d.left, 0);
+  const tr = at0(d.right, Math.min(1.0, c.dur * 0.45));
+  const strike = ease(c.t, tr - 0.2, 0.45);
+  const card = (x: any, good: boolean, p: number) => (
+    <Glass glow={good ? 1 : 0} strong={good} style={{...pop(p), width: 400, height: 420, padding: 36,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', opacity: good ? 1 : 1 - strike * 0.6}}>
+      <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', height: 348, justifyContent: 'center'}}>
+        <div style={{marginBottom: 30}}>
+          <NeonTile name={good ? 'check' : 'x'} size={116} radius={99} tone={good ? undefined : 'bad'} at={good ? tr : tl} />
+        </div>
+        <div style={{...font(800, txt(x).length > 12 ? 54 : 64, 1.05), color: c.th.ink, position: 'relative'}}>
+          {txt(x)}
+          {!good ? <div style={{position: 'absolute', left: -8, top: '52%', height: 8, width: `${strike * 108}%`, borderRadius: 9,
+            background: TONES.bad, boxShadow: '0 0 16px rgba(255,77,77,0.7)'}} /> : null}
+        </div>
+        {x.sub ? <div style={{...font(600, 34), color: c.th.mut, marginTop: 14}}>{x.sub}</div> : null}
+      </div>
+    </Glass>
+  );
+  return (
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+      {d.title ? <div style={{...pop(prog(c, 0)), ...font(700, 46), color: c.th.mut, marginBottom: 26}}>{d.title}</div> : null}
+      <div style={{display: 'flex', gap: 44, alignItems: 'center'}}>
+        {card(d.left, false, prog(c, tl))}
+        <div style={{...pop(prog(c, tr)), ...font(800, 50), color: c.th.mut}}>→</div>
+        {card(d.right, true, prog(c, tr))}
+      </div>
+    </div>
+  );
+};
+
+/** Grafikon sa kontekstom: šta se meri (ose), kroz šta (oznake), i zaključak na kraju. */
+const Chart: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const bars: number[] = d.bars;
+  const at = d.atT ?? 0;
+  const mx = Math.max(...bars);
+  const n = bars.length;
+  const xs: string[] = d.x ?? [];
+  const bw = Math.min(104, Math.floor(560 / n));
+  const grown = at + 0.1 + n * 0.1 + 0.4;
+  const noteAt = at0(d.note, grown);
+  const kn = ease(c.t, noteAt, 0.6);
+  // Boja nosi emociju: pad = loše (crveno), osim ako plan kaže drugačije.
+  const tone = d.tone ?? (bars[n - 1] < bars[0] ? 'bad' : undefined);
+  const col = toneColor(tone, c.acc);
+  const noteCol = toneColor(d.note?.tone ?? tone, c.acc);
+  return (
+    <Glass glow={0.35} style={{...pop(prog(c, at)), width: 900, padding: '34px 44px 30px'}}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 60}}>
+        <div style={{...font(700, 42), color: c.th.ink, textAlign: 'left'}}>{d.label ?? ''}</div>
+        {d.note ? (
+          <div style={{opacity: kn, transform: `translateY(${(1 - kn) * 14}px)`, ...font(800, 36), background: noteCol,
+            color: onAccent(noteCol), padding: '8px 22px', borderRadius: 99, whiteSpace: 'nowrap',
+            boxShadow: `0 0 26px ${rgba(noteCol, 0.5)}`}}>{txt(d.note)}</div>
+        ) : null}
+      </div>
+      <div style={{display: 'flex', marginTop: 18}}>
+        {d.y ? (
+          <div style={{width: 46, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <div style={{transform: 'rotate(-90deg)', whiteSpace: 'nowrap', ...font(600, 28), color: c.th.mut}}>{d.y} →</div>
+          </div>
+        ) : null}
+        <div style={{flex: 1}}>
+          <div style={{height: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around',
+            borderBottom: `2px solid ${c.th.line}`, borderLeft: d.y ? `2px solid ${c.th.line}` : undefined}}>
+            {bars.map((b, i) => {
+              const k = ease(c.t, at + 0.1 + i * 0.1, 0.8);
+              const last = i === n - 1;
+              return (
+                <div key={i} style={{width: bw, height: Math.max(6, (b / mx) * 270 * k), borderRadius: '16px 16px 6px 6px',
+                  background: last ? col : c.th.dark ? 'rgba(255,255,255,0.18)' : 'rgba(10,10,12,0.14)',
+                  boxShadow: last ? `0 0 ${36 * k}px ${rgba(col, 0.7)}` : undefined}} />
+              );
+            })}
+          </div>
+          {xs.length ? (
+            <div style={{display: 'flex', justifyContent: 'space-around', marginTop: 10}}>
+              {bars.map((_, i) => <div key={i} style={{width: bw + 40, textAlign: 'center', ...font(600, 26), color: c.th.mut}}>{xs[i] ?? ''}</div>)}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Glass>
+  );
+};
+
+/** Checklist: stavka se pojavljuje (i štiklira) tek kad se izgovori; lista raste nadole, grupa se re-centrira. */
+const Checklist: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const items: any[] = d.items;
+  const off = d.title ? 1 : 0;
+  const times = items.map((x, i) => beat(c, x, i + off, items.length + off));
+  const parts = [
+    ...(d.title ? [{h: 60, at: 0, keep: true, el: <div style={{...font(700, 46), color: c.th.mut}}>{d.title}</div>}] : []),
+    ...items.map((x, i) => {
+      const k = ease(c.t, times[i] + 0.2, 0.45);
+      return {h: 112, at: times[i], el: (
+        <Glass glow={0.35 * k} strong style={{width: 860, padding: '22px 30px'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: 28}}>
+            <NeonTile name={x?.tone === 'bad' ? 'x' : 'check'} size={72} tone={x?.tone} at={times[i] + 0.15} />
+            <div style={{...font(800, txt(x).length > 22 ? 48 : 56), color: c.th.ink}}>{txt(x)}</div>
+          </div>
+        </Glass>
+      )};
+    }),
+  ];
+  return <Stack parts={parts} gap={18} focus />;
+};
+
+/**
+ * "Native to the platform": kad rekreiramo pravu aplikaciju, dizajn i boje odaju platformu bez loga.
+ * Instagram DM — crna (svetla) podloga, sive primljene poruke, ljubičasto→plavi gradijent za poslate,
+ * zaglavlje sa avatarom u story prstenu i "Active now", polje "Message…" sa plavom kamerom.
+ */
+const IG = {
+  dark: {bg: '#000000', line: '#262626', recv: '#262626', ink: '#FFFFFF', mut: '#A8A8A8'},
+  light: {bg: '#FFFFFF', line: '#DBDBDB', recv: '#EFEFEF', ink: '#000000', mut: '#737373'},
+  sent: 'linear-gradient(135deg, #A033FF 0%, #5851DB 45%, #3797F0 100%)',
+  ring: 'linear-gradient(45deg, #F58529, #DD2A7B 55%, #8134AF)',
+  blue: '#3797F0',
+};
+const IgAvatar: React.FC<{size: number; ring?: boolean}> = ({size, ring}) => (
+  <div style={{width: size, height: size, borderRadius: 99, padding: ring ? 4 : 0, background: ring ? IG.ring : undefined, flex: 'none', boxSizing: 'border-box'}}>
+    <div style={{width: '100%', height: '100%', borderRadius: 99, border: ring ? '3px solid #000' : undefined, boxSizing: 'border-box',
+      background: 'linear-gradient(135deg, #FFB86B, #FF5A8A 60%, #7A5CFF)'}} />
+  </div>
+);
+const IgChat: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const P = c.th.dark ? IG.dark : IG.light;
+  const msgs: any[] = d.messages;
+  const times = msgs.map((x, i) => beat(c, x, i, msgs.length));
+  return (
+    <div style={{...pop(prog(c, 0)), width: 860, background: P.bg, borderRadius: 44, border: `1.5px solid ${P.line}`,
+      overflow: 'hidden', boxShadow: c.th.shadow, fontFamily: CAPTION_FONT}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 20, padding: '26px 30px', borderBottom: `1.5px solid ${P.line}`}}>
+        <div style={{...font(500, 54, 1), color: P.ink}}>‹</div>
+        <IgAvatar size={78} ring />
+        <div style={{flex: 1}}>
+          <div style={{...font(700, 38, 1.1), letterSpacing: '-0.01em', color: P.ink}}>{d.title ?? 'your.client'}</div>
+          <div style={{...font(500, 28, 1.2), letterSpacing: 0, color: P.mut}}>Active now</div>
+        </div>
+        <Video size={46} color={P.ink} strokeWidth={2} />
+      </div>
+      <div style={{padding: '18px 30px 8px', minHeight: 150}}>
+        {msgs.map((x, i) => {
+          const you = x.from === 'you';
+          const k = prog(c, times[i], 0.5);
+          if (c.t < times[i]) return null;
+          const dim = i < msgs.length - 1 && c.t >= times[i + 1] ? ease(c.t, times[i + 1], 0.5) * 0.45 : 0;
+          return (
+            <div key={i} style={{display: 'flex', justifyContent: you ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 14,
+              marginTop: 16, ...pop(k, 16), opacity: Math.min(1, k * 1.8) * (1 - dim)}}>
+              {!you ? <IgAvatar size={56} /> : null}
+              <div style={{maxWidth: 620, padding: '22px 30px', borderRadius: 44, background: you ? IG.sent : P.recv,
+                color: you ? '#FFFFFF' : P.ink, ...font(500, 42, 1.25), letterSpacing: '-0.01em'}}>{txt(x)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{margin: '14px 24px 24px', padding: '14px 18px', borderRadius: 99, border: `1.5px solid ${P.line}`,
+        display: 'flex', alignItems: 'center', gap: 18}}>
+        <div style={{width: 62, height: 62, borderRadius: 99, background: IG.blue, display: 'grid', placeItems: 'center'}}>
+          <Camera size={34} color="#FFFFFF" strokeWidth={2.2} />
+        </div>
+        <div style={{...font(500, 34), letterSpacing: 0, color: P.mut}}>Message...</div>
+      </div>
+    </div>
+  );
+};
+
+/** Instagram komentar (native): avatar, korisničko ime + vreme, tekst, "Reply", srce; odgovor kreatora ispod. */
+const IgComment: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const P = c.th.dark ? IG.dark : IG.light;
+  const ra = d.atT ?? Math.min(0.8, c.dur * 0.45);
+  const kr = prog(c, ra, 0.55);
+  const row = (name: string, text: string, size: number, author?: boolean) => (
+    <div style={{display: 'flex', gap: 22, alignItems: 'flex-start'}}>
+      <IgAvatar size={size} />
+      <div style={{flex: 1}}>
+        <div style={{...font(700, 32, 1.2), letterSpacing: 0, color: P.ink}}>
+          {name} <span style={{fontWeight: 500, color: P.mut}}>{author ? '· Author' : '2m'}</span>
+        </div>
+        <div style={{...font(500, author ? 40 : 52, 1.25), letterSpacing: '-0.01em', color: P.ink, marginTop: 6}}>{text}</div>
+        <div style={{...font(600, 28), letterSpacing: 0, color: P.mut, marginTop: 10}}>Reply</div>
+      </div>
+      <Heart size={36} color={P.mut} strokeWidth={2} />
+    </div>
+  );
+  return (
+    <div style={{...pop(prog(c, 0)), width: 860, background: P.bg, borderRadius: 44, border: `1.5px solid ${P.line}`,
+      padding: '34px 34px 30px', boxShadow: c.th.shadow, boxSizing: 'border-box', fontFamily: CAPTION_FONT}}>
+      <div style={{opacity: d.reply ? 1 - 0.45 * ease(c.t, ra, 0.5) : 1}}>{row(d.user ?? 'your.viewer', d.text, 80)}</div>
+      {d.reply && c.t >= ra ? (
+        <div style={{marginTop: 26, marginLeft: 100, ...pop(kr, 16)}}>{row(d.author ?? 'you', d.reply, 60, true)}</div>
+      ) : null}
+    </div>
+  );
+};
+
+/** DM: poruke ulaze redom nadole na reč; pre "you" poruke kucanje. */
+const Chat: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  if (d.platform === 'instagram') return <IgChat d={d} />;
+  const msgs: any[] = d.messages;
+  const times = msgs.map((x, i) => beat(c, x, i, msgs.length));
+  return (
+    <Glass glow={0.3} style={{...pop(prog(c, 0)), width: 860, padding: '30px 36px 36px'}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 18, paddingBottom: 22, marginBottom: 6,
+        borderBottom: `1.5px solid ${c.th.line}`}}>
+        <div style={{width: 68, height: 68, borderRadius: 99, background: `linear-gradient(135deg, ${c.acc}, #7A5CFF)`}} />
+        <div style={{...font(700, 40), color: c.th.ink}}>{d.title ?? 'Direct message'}</div>
+      </div>
+      {msgs.map((x, i) => {
+        const tt = times[i];
+        const you = x.from === 'you';
+        const start = you ? tt - 0.4 : tt;
+        if (c.t < start) return null;
+        const typing = you && c.t < tt;
+        const space = ease(c.t, start, 0.45);
+        return (
+          <div key={i} style={{display: 'flex', justifyContent: you ? 'flex-end' : 'flex-start', marginTop: 18 * space}}>
+            {typing ? (
+              <div style={{padding: '24px 32px', borderRadius: 30, background: rgba(c.acc, 0.3), display: 'flex', gap: 10, ...pop(space, 14)}}>
+                {[0, 1, 2].map((k) => <div key={k} style={{width: 14, height: 14, borderRadius: 9, background: c.th.ink,
+                  opacity: 0.3 + 0.7 * Math.abs(Math.sin((c.t * 5) + k * 0.9))}} />)}
+              </div>
+            ) : (
+              <div style={{...pop(prog(c, tt, 0.5), 18), maxWidth: 640, padding: '22px 30px', borderRadius: you ? '34px 34px 8px 34px' : '34px 34px 34px 8px',
+                background: you ? c.acc : c.th.glassStrong, color: you ? onAccent(c.acc) : c.th.ink, ...font(700, 46, 1.22),
+                border: you ? 'none' : `1.5px solid ${c.th.line}`, boxShadow: you ? `0 0 30px ${rgba(c.acc, 0.5)}` : undefined}}>{txt(x)}</div>
+            )}
+          </div>
+        );
+      })}
+    </Glass>
+  );
+};
+
+/** Filter publike: mreža ljudi → na reč ostaju samo "pravi" (sjaj + ✓), ostali blede. */
+const FilterGrid: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const total = Math.min(28, Math.max(12, d.total ?? 24));
+  const keep = Math.min(6, Math.max(1, d.keep ?? 3));
+  const cols = total % 7 === 0 ? 7 : 6;
+  const rows = Math.ceil(total / cols);
+  const at = d.atT ?? Math.min(0.9, c.dur * 0.45);
+  const k = ease(c.t, at, 0.6);
+  const sz = 96, gap = 20;
+  const picks = new Set(Array.from({length: keep}, (_, i) => Math.floor(((i + 0.5) * total) / keep + (i % 2 ? 2 : -1)) % total));
+  const parts = [
+    {h: 66, at: 0, el: <div style={{...font(800, 54), color: c.th.ink}}>{d.label}</div>},
+    {h: rows * sz + (rows - 1) * gap, at: 0.05, el: (
+      <div style={{display: 'grid', gridTemplateColumns: `repeat(${cols}, ${sz}px)`, gap}}>
+        {Array.from({length: total}, (_, i) => {
+          const on = picks.has(i);
+          return (
+            <div key={i} style={{...pop(prog(c, 0.08 + 0.015 * i, 0.5), 12), width: sz, height: sz, borderRadius: 99,
+              background: on ? rgba(c.acc, k) : c.th.track, opacity: on ? 1 : 1 - 0.72 * k,
+              boxShadow: on ? `0 0 ${38 * k}px ${rgba(c.acc, 0.8)}` : undefined, border: `1.5px solid ${c.th.line}`,
+              display: 'grid', placeItems: 'center'}}>
+              {on && k > 0.4 ? <Check size={50} color={onAccent(c.acc)} strokeWidth={3} /> : <User size={48} color={c.th.mut} strokeWidth={2} />}
+            </div>
+          );
+        })}
+      </div>
+    )},
+  ];
+  if (d.sub) parts.push({h: 56, at: at0(d.sub, at + 0.3), el: <div style={{...font(700, 44), color: c.th.mut}}>{txt(d.sub)}</div>});
+  return <Stack parts={parts} gap={22} />;
+};
+
+/** Kinetički naslov: smisleni delovi ulaze na reč; ključni deo dobija highlight koji se iscrtava ispod. */
+const Headline: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const words: any[] = d.words;
+  const all = words.map(txt).join(' ');
+  // Svaki smisleni deo stoji u jednom redu (nikad se ne lomi unutar sebe); font prati najduži deo.
+  const longest = Math.max(...words.map((x) => txt(x).length));
+  const size = Math.min(c.hero ? 132 : all.length > 30 ? 96 : all.length > 18 ? 116 : 136, Math.floor(ZONE.w / (longest * 0.54)));
+  const times = words.map((x, i) => {
+    const raw = typeof x?.atT === 'number' ? x.atT : i * Math.min(0.22, (c.dur * 0.5) / words.length);
+    return i === 0 ? Math.min(raw, 0.2) : raw;
+  });
+  let lines = 1, lineW = 0;  // procena broja redova (delovi se ne lome) — za re-centriranje grupe
+  words.forEach((x) => { const w = txt(x).length * size * 0.54 + size * 0.26; if (lineW + w > ZONE.w && lineW > 0) { lines++; lineW = w; } else lineW += w; });
+  const parts = [{h: lines * size * 1.08, at: 0, el: (
+    <div style={{display: 'flex', flexWrap: 'wrap', justifyContent: 'center', width: ZONE.w, gap: `${size * 0.08}px ${size * 0.26}px`}}>
+      {words.map((x, i) => {
+        const acc = d.accent && txt(x).toLowerCase().includes(String(d.accent).toLowerCase());
+        const el = <span style={{...font(800, size, 1.04), letterSpacing: '-0.045em', color: c.th.ink, whiteSpace: 'nowrap'}}>{txt(x)}</span>;
+        return (
+          <span key={i} style={{...pop(prog(c, times[i], 0.55), 34), display: 'inline-block'}}>
+            {acc ? <Highlight at={times[i]} size={size} tone={d.tone}>{el}</Highlight> : el}
+          </span>
+        );
+      })}
+    </div>
+  )}];
+  if (d.sub) parts.push({h: 64, at: at0(d.sub, Math.min(0.9, c.dur * 0.5)), el: <div style={{...font(600, 50), color: c.th.mut}}>{txt(d.sub)}</div>});
+  return <Stack parts={parts} gap={26} />;
+};
+
+/** Notifikacije: stižu redom ODOZGO NADOLE (redosled čitanja), meko klizaju nagore; grupa se re-centrira. */
+const Notify: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const items: any[] = d.items.slice(0, 4);
+  const times = items.map((x, i) => beat(c, x, i, items.length));
+  const parts = items.map((x, i) => ({h: 140, at: times[i], el: (
+    <Glass glow={0.25} strong r={34} style={{width: 880, padding: '24px 30px'}}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 26}}>
+        <NeonTile name={x.icon ?? 'bell'} size={92} tone={x.tone} />
+        <div style={{flex: 1, textAlign: 'left'}}>
+          <div style={{...font(800, 46), color: c.th.ink}}>{x.title}</div>
+          {x.body ? <div style={{...font(600, 34), color: c.th.mut, marginTop: 4}}>{x.body}</div> : null}
+        </div>
+        <div style={{...font(600, 30), color: c.th.mut}}>now</div>
+      </div>
+    </Glass>
+  )}));
+  return <Stack parts={parts} gap={18} focus />;
+};
+
+const Key: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const parts = [
+    ...(d.icon ? [{h: 190, at: 0, el: <IconTile name={d.icon} size={190} />}] : []),
+    {h: d.line1.length > 22 ? 190 : 120, at: 0.1, el: (
+      <div style={{...font(800, d.line1.length > 22 ? 88 : 110, 1.05), letterSpacing: '-0.045em', color: c.th.ink, textAlign: 'center', maxWidth: ZONE.w}}>{d.line1}</div>
+    )},
+    ...(d.line2 ? [{h: 64, at: at0(d.line2, 0.4), el: <div style={{...font(600, 54), color: c.th.mut, textAlign: 'center'}}>{txt(d.line2)}</div>}] : []),
+  ];
+  return <Stack parts={parts} gap={30} />;
+};
+
+const Comment: React.FC<{d: any}> = ({d}) => d.platform === 'instagram' ? <IgComment d={d} /> : (
+  <Chat d={{title: d.user ?? 'your.viewer', messages: [{from: 'them', text: d.text, atT: 0},
+    ...(d.reply ? [{from: 'you', text: d.reply, atT: d.atT ?? 0.6}] : [])]}} />
+);
+
+/**
+ * Klijentova slika/video: isti glass okvir, ulaz, "dah" i kontrola pažnje kao šabloni — ne odskače od ostatka.
+ * Okvir prati oblik fajla (vertikalan screenshot, horizontalan snimak ekrana…) i staje u zonu; slika dobija spor
+ * zoom unutar okvira; video kreće od `start` (s u klipu) i, ako je kraći od momenta, zadržava poslednji kadar.
+ */
+const Media: React.FC<{it: TopItem; sf: number}> = ({it, sf}) => {
+  const c = useC();
+  const d = it.data;
+  const capH = d.caption ? 76 : 0;
+  const maxW = 860, maxH = 580 - capH;
+  const ar = d.w && d.h ? d.w / d.h : 16 / 9;
+  // Nikad više od 2× prirodne veličine — mala slika ostaje oštra (manja), umesto razvučena i mutna.
+  const w = Math.min(maxW, maxH * ar, d.w ? d.w * 2 : maxW), h = w / ar;
+  const zoom = 1 + 0.06 * interpolate(c.t, [0, Math.max(1, c.dur)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.sin)});
+  const start = Math.max(0, Number(d.start ?? 0));
+  const clipLeft = d.clipDur ? Math.max(0.1, d.clipDur - start) : c.dur;
+  const frozen = it.kind === 'video' && c.t >= clipLeft;
+  const fill: React.CSSProperties = {width: '100%', height: '100%', objectFit: 'cover', display: 'block'};
+  // Providan PNG (logo, izrezan predmet): bez kutije — samo predmet sa senkom i sjajem, na podlozi.
+  if (it.kind === 'image' && d.alpha) {
+    const parts = [{h: h, at: 0, el: (
+      <Img src={staticFile(it.src ?? '')} style={{width: w, height: h, objectFit: 'contain', transform: `scale(${zoom})`,
+        filter: `drop-shadow(0 24px 40px rgba(0,0,0,${c.th.dark ? 0.55 : 0.2})) drop-shadow(0 0 30px ${rgba(c.acc, 0.25)})`}} />
+    )}];
+    if (d.caption) parts.push({h: 56, at: at0(d.caption, 0.35), el: <div style={{...font(800, 46), color: c.th.ink}}>{txt(d.caption)}</div>});
+    return <Stack parts={parts} gap={20} />;
+  }
+  const parts = [{h: h + 24, at: 0, el: (
+    <Glass glow={0.5} strong r={36} style={{padding: 12, lineHeight: 0}}>
+      <div style={{width: w, height: h, borderRadius: 24, overflow: 'hidden', position: 'relative', background: it.kind === 'video' ? '#000' : 'transparent'}}>
+        {it.kind === 'video' ? (
+          frozen && it.last ? <Img src={staticFile(it.last)} style={fill} /> : (
+            <Sequence from={sf} durationInFrames={Math.max(1, Math.round(clipLeft * c.fps))} layout="none">
+              <OffthreadVideo src={staticFile(it.src ?? '')} muted trimBefore={Math.round(start * c.fps)} style={fill} />
+            </Sequence>
+          )
+        ) : (
+          <Img src={staticFile(it.src ?? '')} style={{...fill, transform: `scale(${zoom})`}} />
+        )}
+      </div>
+    </Glass>
+  )}];
+  if (d.caption) parts.push({h: 56, at: at0(d.caption, 0.35), el: <div style={{...font(800, 46), color: c.th.ink}}>{txt(d.caption)}</div>});
+  return <Stack parts={parts} gap={20} />;
+};
+
+// ------------------------------------------------------------------ pravi asseti sa interneta (PLAN §12)
+/**
+ * Pravi logo u ISTOJ backlit neon pločici kao ikonice (doslednost — odluka 12. nov 2026): tamna grafitna pločica,
+ * tanka svetla ivica, logo u svojim bojama; taman logo (crn/tamnosiv) se prikazuje beo da se vidi na tamnoj pločici.
+ */
+const LogoPlate: React.FC<{f: any; size: number; at?: number}> = ({f, size, at}) => {
+  const c = useC();
+  const ar = f?.w && f?.h ? f.w / f.h : 1;
+  const wide = ar > 2.2;
+  const tw = wide ? size * 1.9 : size;
+  const inner = size * 0.56;
+  const iw = wide ? tw - size * 0.36 : ar >= 1 ? inner : inner * ar;
+  const ih = wide ? (tw - size * 0.36) / ar : ar >= 1 ? inner / ar : inner;
+  const t0 = at ?? useContext(AtCtx);
+  const k = ease(c.t, t0 + 0.08, 0.7, Easing.bezier(0.34, 1.4, 0.64, 1));
+  return (
+    <div style={{width: tw, height: size, borderRadius: size * 0.29, flex: 'none', display: 'grid', placeItems: 'center',
+      background: 'linear-gradient(180deg, #26272C 0%, #141518 100%)', border: '1.5px solid rgba(255,255,255,0.07)',
+      boxShadow: `inset 0 1px 0 ${rgba(c.acc, 0.42)}, inset 0 0 ${size * 0.15}px ${rgba(c.acc, 0.07)}, 0 ${size * 0.12}px ${size * 0.23}px rgba(0,0,0,${c.th.dark ? 0.35 : 0.22})`}}>
+      {f?.src ? <Img src={staticFile(f.src)} style={{width: iw, height: ih, objectFit: 'contain',
+        transform: `scale(${0.7 + 0.3 * k})`, filter: f.dark ? 'brightness(0) invert(1)' : undefined}} /> : null}
+    </div>
+  );
+};
+
+/** Logo: jedan (pločica + ime + opis) ili više (red pločica koje ulaze na reč, fokus na najnovijoj). */
+const Logo: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const list: any[] = d.logos ?? [{...d, atT: d.atT}];
+  if (list.length === 1) {
+    const x = list[0];
+    const parts = [{h: 330, at: 0, el: <LogoPlate f={x} size={c.hero ? 330 : 300} />}];
+    if (x.name || d.name) parts.push({h: 92, at: 0.15, el: <div style={{...font(800, 78, 1.05), letterSpacing: '-0.04em', color: c.th.ink}}>{x.name ?? d.name}</div>});
+    if (d.sub) parts.push({h: 60, at: at0(d.sub, 0.45), el: <div style={{...font(600, 46), color: c.th.mut}}>{txt(d.sub)}</div>});
+    return <Stack parts={parts} gap={24} />;
+  }
+  const times = list.map((x, i) => beat(c, x, i, list.length));
+  const size = list.length >= 4 ? 170 : 210;
+  return (
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30}}>
+      {d.title ? <div style={{...pop(prog(c, 0)), ...font(700, 46), color: c.th.mut}}>{d.title}</div> : null}
+      <div style={{display: 'flex', gap: 30, justifyContent: 'center', flexWrap: 'wrap', width: ZONE.w}}>
+        {list.map((x, i) => {
+          const dim = i < list.length - 1 && c.t >= times[i + 1] ? ease(c.t, times[i + 1], 0.5) * 0.5 : 0;
+          const base = pop(prog(c, times[i]));
+          return (
+            <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, ...base,
+              opacity: (base.opacity as number) * (1 - dim)}}>
+              <LogoPlate f={x} size={size} />
+              {x.name ? <div style={{...font(800, 36), color: c.th.ink}}>{x.name}</div> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Slike i screenshotovi (pravila CCC revizije 12. nov 2026):
+ *  - "bleed": ceo gornji deo (bez prozora) kad god označeni deo može da stoji u sredini sigurne zone, a da nigde
+ *    nije uz ivicu ni isečen;
+ *  - "blend": slika jednobojne ivice (telefon, beo sajt) → podloga gornjeg dela u boji ivice, slika se stopi u celinu
+ *    i može da se naglasi bilo koji deo bez vidljivih ivica;
+ *  - "frame": prozor pregledača / telefona kad ništa od toga ne ide.
+ * Kamera: PRAVOLINIJSKI zoom (vidljivi pravougaonik se linearno sužava ka cilju, meko ubrzanje/usporavanje).
+ * Isticanje: "flat cut-out" — označeni deo ostaje pun, ostatak izbledi ka boji podloge iza slike.
+ */
+/** Kretanje kamere (zoom/pan): S-kriva — sporo krene, ubrza na pola, sporo stane (ease-in-out quart), duže trajanje. */
+const CAM_EASE = Easing.bezier(0.76, 0, 0.24, 1);
+
+/**
+ * Tajming kamere prema trajanju scene: kraj scene je MIRAN (gledalac procesuira šta je na ekranu) —
+ * pauza = 35% scene (0.9–1.6 s); pokret se uklapa u ostatak (0.7–1.2 s, brže nego ranije) i stiže na označeni deo
+ * oko reči koja ga pominje, nikad ne pojede pauzu na kraju. Ista pravila proverava engine (visuals.warnings).
+ */
+const camTiming = (dur: number, hlAt: number | null) => {
+  const hold = Math.min(1.6, Math.max(0.9, dur * 0.35));
+  const endBy = Math.max(0.9, dur - hold);
+  const move = Math.min(1.2, Math.max(0.7, endBy - 0.2));
+  const latest = Math.max(0.15, endBy - move);
+  const zAt = hlAt === null ? 0.15 : Math.min(latest, Math.max(0.15, hlAt - move * 0.7));
+  return {zAt, move};
+};
+type View = {x: number; y: number; w: number; h: number};
+type PicPlan = {mode: 'bleed' | 'blend' | 'frame'; v0: View; v1: View; bg: string; W: number; H: number};
+const FOCUS_C = {x: 540, y: 540};  // centar sigurne zone gornjeg dela (x 90–990, y 240–840)
+
+const picPlan = (d: any, H: number): PicPlan => {
+  const W = 1080, iw = d.w || 1600, ih = d.h || 1000;
+  const f = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : d.focus;
+  const hasF = f && f.w > 0 && f.h > 0;
+  const sB = Math.max(W / iw, H / ih);
+  const cover: View = {x: (iw - W / sB) / 2, y: (ih - H / sB) / 2, w: W / sB, h: H / sB};
+  const toward = (s1: number, inBounds: boolean): View | null => {
+    if (!hasF) return null;
+    const v = {x: f.x + f.w / 2 - FOCUS_C.x / s1, y: f.y + f.h / 2 - FOCUS_C.y / s1, w: W / s1, h: H / s1};
+    if (!inBounds) return v;
+    const cx = Math.min(Math.max(v.x, 0), iw - v.w), cy = Math.min(Math.max(v.y, 0), ih - v.h);
+    const off = Math.hypot(cx - v.x, cy - v.y) * s1;  // koliko bi fokus otišao sa sredine (px na ekranu)
+    const fx = (f.x - cx) * s1, fy = (f.y - cy) * s1;
+    const inZone = fx >= 90 && fx + f.w * s1 <= 990 && fy >= 240 && fy + f.h * s1 <= 840;
+    return off <= 60 && inZone ? {x: cx, y: cy, w: v.w, h: v.h} : null;
+  };
+  // 1) bleed
+  const arOk = Math.max(iw / ih, (W / H)) / Math.min(iw / ih, (W / H)) <= 1.6;
+  if (hasF) {
+    const sMax = Math.min(800 / f.w, 500 / f.h);
+    const s1 = Math.min(sMax, sB * 2.4);
+    const v1 = s1 >= sB ? toward(s1, true) : null;
+    if (v1) return {mode: 'bleed', v0: cover, v1, bg: d.edge ?? '#FFFFFF', W, H};
+  } else if (arOk) {
+    const k = 1 / 1.06;
+    return {mode: 'bleed', v0: cover, v1: {x: cover.x + cover.w * (1 - k) / 2, y: cover.y + cover.h * (1 - k) / 2, w: cover.w * k, h: cover.h * k},
+      bg: d.edge ?? '#FFFFFF', W, H};
+  }
+  // 2) blend
+  if (d.edgeUniform) {
+    const s0 = Math.min((W * 0.92) / iw, (H - 60) / ih);
+    const v0 = {x: (iw * s0 - W) / 2 / s0, y: (ih * s0 - H) / 2 / s0 + (H / 2 - 500) / s0, w: W / s0, h: H / s0};
+    const v1 = hasF ? (toward(Math.max(s0 * 1.15, Math.min(800 / f.w, 500 / f.h, s0 * 3)), false) as View)
+      : {x: v0.x + v0.w * 0.03, y: v0.y + v0.h * 0.03, w: v0.w * 0.94, h: v0.h * 0.94};
+    return {mode: 'blend', v0, v1, bg: d.edge, W, H};
+  }
+  return {mode: 'frame', v0: cover, v1: cover, bg: '#FFFFFF', W, H};
+};
+
+/** Kamera kroz sliku: pravougaonik pogleda ide PRAVO od v0 do v1 (bez krive), meko ubrzanje/usporavanje. */
+const camera = (v0: View, v1: View, z: number, W: number) => {
+  const v = {x: v0.x + (v1.x - v0.x) * z, y: v0.y + (v1.y - v0.y) * z, w: v0.w + (v1.w - v0.w) * z, h: v0.h + (v1.h - v0.h) * z};
+  const s = W / v.w;
+  return {s, tx: -v.x * s, ty: -v.y * s};
+};
+
+/** Slika + flat cut-out isticanje; `bg` = boja "oblika" iza slike u koju ostatak izbledi. */
+const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number; bg: string}> = ({d, s, tx, ty, kh, bg}) => {
+  const iw = d.w || 1600, ih = d.h || 1000;
+  const hl = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : null;
+  const pad = 10;
+  return (
+    <div style={{position: 'absolute', left: 0, top: 0, width: iw, height: ih, transformOrigin: '0 0',
+      transform: `translate(${tx}px, ${ty}px) scale(${s})`}}>
+      <div style={{position: 'absolute', inset: 0, background: bg}} />
+      {d.src ? <Img src={staticFile(d.src)} style={{position: 'absolute', inset: 0, width: iw, height: ih, opacity: 1 - 0.78 * kh}} /> : null}
+      {hl && hl.w ? (
+        <div style={{position: 'absolute', left: hl.x - pad, top: hl.y - pad, width: hl.w + pad * 2, height: hl.h + pad * 2,
+          overflow: 'hidden', borderRadius: 8, opacity: kh > 0 ? 1 : 0}}>
+          {d.src ? <Img src={staticFile(d.src)} style={{position: 'absolute', left: -(hl.x - pad), top: -(hl.y - pad), width: iw, height: ih}} /> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/** Ceo gornji deo (bleed / blend): slika je površina za edit; titl na liniji dobija blagu senku ako je slika svetla. */
+const PictureFull: React.FC<{d: any; plan: PicPlan}> = ({d, plan}) => {
+  const c = useC();
+  const hl = d.highlight;
+  const hlAt = hl ? at0(hl, Math.min(0.9, c.dur * 0.4)) : 99;
+  const tm = camTiming(c.dur, hl ? hlAt : null);
+  const zAt = typeof d.zoomAt === 'number' ? d.zoomAt : tm.zAt;
+  // bez isticanja: spor Ken Burns koji se i dalje smiri pre kraja (mirna scena za čitanje)
+  const z = ease(c.t, hl ? zAt : 0, hl ? tm.move : Math.max(1.2, c.dur - Math.min(1.6, Math.max(0.9, c.dur * 0.35))), CAM_EASE);
+  const {s, tx, ty} = camera(plan.v0, plan.v1, z, plan.W);
+  const kh = hl ? ease(c.t, hlAt, 0.6, CAM_EASE) : 0;
+  const light = lum(plan.bg.length === 7 ? plan.bg : '#FFFFFF') > 0.5;
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: plan.bg}}>
+      <PicLayer d={d} s={s} tx={tx} ty={ty} kh={kh} bg={plan.bg} />
+      {plan.mode === 'bleed' || light ? (
+        <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: LIGHT_SHADE.h,
+          background: `linear-gradient(180deg, rgba(12,12,16,0) 0%, rgba(12,12,16,${LIGHT_SHADE.a * 0.12}) 35%, rgba(12,12,16,${LIGHT_SHADE.a * 0.4}) 62%, rgba(12,12,16,${LIGHT_SHADE.a * 0.75}) 84%, rgba(12,12,16,${LIGHT_SHADE.a}) 100%)`}} />
+      ) : null}
+    </div>
+  );
+};
+
+/** Prozor (pregledač ili telefon) — kad ni pun prikaz ni stapanje ne mogu; ista kamera i cut-out. */
+const Screenshot: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const phone = d.device === 'phone' || (d.w && d.h && d.h / d.w > 1.4);
+  const iw = d.w || 1600, ih = d.h || 1000, ar = iw / ih;
+  const barH = phone ? 0 : 46;
+  const maxW = phone ? 360 : 880, maxH = 560 - barH;
+  const fw = Math.min(maxW, maxH * ar), fh = fw / ar;
+  const hl = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : null;
+  const f = hl ?? d.focus;
+  const hlAt = hl ? at0(d.highlight, Math.min(0.9, c.dur * 0.4)) : 99;
+  const tm = camTiming(c.dur, hl ? hlAt : null);
+  const zAt = typeof d.zoomAt === 'number' ? d.zoomAt : tm.zAt;
+  const v0: View = {x: 0, y: 0, w: iw, h: ih};
+  let v1 = v0;
+  if (f && f.w) {
+    const s1 = Math.max(1, Math.min(2.6, (iw * 0.62) / f.w, (ih * 0.7) / f.h));
+    const w = iw / s1, h = ih / s1;
+    v1 = {x: Math.min(Math.max(f.x + f.w / 2 - w / 2, 0), iw - w), y: Math.min(Math.max(f.y + f.h / 2 - h / 2, 0), ih - h), w, h};
+  }
+  const z = ease(c.t, zAt, tm.move, CAM_EASE);
+  const {s, tx, ty} = camera(v0, v1, z, fw);
+  const kh = hl ? ease(c.t, hlAt, 0.6, CAM_EASE) : 0;
+  const host = (d.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  return (
+    <div style={{...pop(prog(c, 0))}}>
+      <Glass glow={0.35} strong r={phone ? 54 : 30} style={{padding: phone ? 14 : 10}}>
+        {!phone ? (
+          <div style={{height: barH, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px'}}>
+            {['#FF5F57', '#FEBC2E', '#28C840'].map((col) => <div key={col} style={{width: 14, height: 14, borderRadius: 9, background: col}} />)}
+            <div style={{flex: 1, marginLeft: 14, height: 28, borderRadius: 9, background: c.th.dark ? 'rgba(255,255,255,0.08)' : 'rgba(10,10,12,0.06)',
+              ...font(600, 18, 1.55), letterSpacing: 0, color: c.th.mut, textAlign: 'center'}}>{host}</div>
+          </div>
+        ) : null}
+        <div style={{width: fw, height: fh, borderRadius: phone ? 42 : 14, overflow: 'hidden', position: 'relative', background: '#fff'}}>
+          <PicLayer d={d} s={s * (iw / iw)} tx={tx} ty={ty} kh={kh} bg={d.edge ?? '#FFFFFF'} />
+        </div>
+      </Glass>
+    </div>
+  );
+};
+
+/**
+ * Prava fotografija (osoba, proizvod, mesto): isti način prikaza kao slike (ceo gornji deo / stapanje / prozor);
+ * kod osobe kamera polako ide ka licu (glava i ramena), lice se nikad ne iseče. Natpis imena i opisa ulazi na reč.
+ */
+const NameTag: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  if (!d.name) return null;
+  const k = prog(c, at0(d, 0.45), 0.6);
+  return (
+    <div style={{position: 'absolute', left: 0, right: 0, top: 690, display: 'flex', justifyContent: 'center', ...pop(k, 18)}}>
+      <Glass strong r={26} style={{padding: '16px 30px', background: 'rgba(14,15,18,0.62)', border: '1.5px solid rgba(255,255,255,0.2)'}}>
+        <div style={{display: 'flex', alignItems: 'baseline', gap: 16}}>
+          <div style={{...font(800, 46), color: '#FFFFFF'}}>{d.name}</div>
+          {d.sub ? <div style={{...font(600, 32), color: 'rgba(255,255,255,0.7)'}}>{txt(d.sub)}</div> : null}
+        </div>
+      </Glass>
+    </div>
+  );
+};
+
+const photoFocus = (d: any) => {
+  if (d.focus) return d.focus;
+  const f = d.face;
+  if (!f) return null;
+  // glava i ramena oko lica
+  return {x: f.x - f.w * 0.9, y: f.y - f.h * 0.6, w: f.w * 2.8, h: f.h * 2.9};
+};
+
+const photoPlan = (d: any, H: number): PicPlan => {
+  const W = 1080, iw = d.w || 1600, ih = d.h || 1000;
+  const sB = Math.max(W / iw, H / ih);
+  const f = photoFocus(d);
+  const clampV = (v: View): View => ({...v, x: Math.min(Math.max(v.x, 0), iw - v.w), y: Math.min(Math.max(v.y, 0), ih - v.h)});
+  const at = (s1: number, cx: number, cy: number) => clampV({x: cx - FOCUS_C.x / s1, y: cy - (FOCUS_C.y - 40) / s1, w: W / s1, h: H / s1});
+  const cx = f ? f.x + f.w / 2 : iw / 2, cy = f ? f.y + f.h / 2 : ih / 2;
+  const v0 = at(sB, cx, cy), v1 = at(sB * 1.08, cx, cy);
+  // samo LICE mora stati u sigurnu zonu pri cover prikazu (glava/ramena služe za kadriranje), inače okvir
+  const face = d.face;
+  const fitsFace = !face || (face.w * sB <= 760 && face.h * sB <= 520 && ((face.y - v0.y) * sB) >= 60);
+  if (fitsFace) return {mode: 'bleed', v0, v1, bg: d.edge ?? '#111', W, H};
+  return {mode: 'frame', v0, v1, bg: '#111', W, H};
+};
+
+const PhotoFull: React.FC<{d: any; plan: PicPlan}> = ({d, plan}) => {
+  const c = useC();
+  const z = ease(c.t, 0, Math.max(1.2, c.dur - Math.min(1.6, Math.max(0.9, c.dur * 0.35))), CAM_EASE);
+  const {s, tx, ty} = camera(plan.v0, plan.v1, z, plan.W);
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: plan.bg}}>
+      <PicLayer d={{...d, highlight: null}} s={s} tx={tx} ty={ty} kh={0} bg={plan.bg} />
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: LIGHT_SHADE.h,
+        background: `linear-gradient(180deg, rgba(12,12,16,0) 0%, rgba(12,12,16,${LIGHT_SHADE.a * 0.12}) 35%, rgba(12,12,16,${LIGHT_SHADE.a * 0.4}) 62%, rgba(12,12,16,${LIGHT_SHADE.a * 0.75}) 84%, rgba(12,12,16,${LIGHT_SHADE.a}) 100%)`}} />
+      <NameTag d={d} />
+    </div>
+  );
+};
+
+/**
+ * Objava sa društvene mreže — "native to the platform" (izgled i boje platforme, bez loga): X, Reddit, LinkedIn,
+ * Threads. Kad govornik čita objavu naglas, delovi teksta se ističu na reč (`highlight: [{text, at}]`).
+ * Ako postoji pravi screenshot objave (`file`), koristi se on (kao screenshot).
+ */
+const POST_THEME = {
+  x: {bg: '#000000', ink: '#E7E9EA', mut: '#71767B', line: '#2F3336', accent: '#1D9BF0'},
+  threads: {bg: '#101010', ink: '#F3F5F7', mut: '#777777', line: '#323232', accent: '#F3F5F7'},
+  reddit: {bg: '#0E1113', ink: '#F2F4F5', mut: '#8BA2AD', line: '#2A3236', accent: '#FF4500'},
+  linkedin: {bg: '#1B1F23', ink: '#FFFFFFE6', mut: '#FFFFFF99', line: '#38434F', accent: '#71B7FB'},
+} as const;
+const POST_LIGHT = {
+  x: {bg: '#FFFFFF', ink: '#0F1419', mut: '#536471', line: '#EFF3F4', accent: '#1D9BF0'},
+  threads: {bg: '#FFFFFF', ink: '#000000', mut: '#999999', line: '#E5E5E5', accent: '#000000'},
+  reddit: {bg: '#FFFFFF', ink: '#1C1C1C', mut: '#576F76', line: '#E5EBEE', accent: '#FF4500'},
+  linkedin: {bg: '#FFFFFF', ink: '#000000E6', mut: '#00000099', line: '#E8E8E8', accent: '#0A66C2'},
+} as const;
+
+const fmtCount = (n: any) => (typeof n === 'number' ? (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : `${n}`) : n);
+
+const ReadAlong: React.FC<{text: string; hls: any[]; color: string; size: number}> = ({text, hls, color, size}) => {
+  const c = useC();
+  const segs: {t: string; at?: number}[] = [];
+  let rest = text;
+  (hls ?? []).map((h) => ({t: txt(h), at: at0(h, 0.5)})).forEach((h) => {
+    const i = rest.toLowerCase().indexOf(h.t.toLowerCase());
+    if (i < 0) return;
+    if (i > 0) segs.push({t: rest.slice(0, i)});
+    segs.push({t: rest.slice(i, i + h.t.length), at: h.at});
+    rest = rest.slice(i + h.t.length);
+  });
+  if (rest) segs.push({t: rest});
+  return (
+    <>
+      {segs.map((sg, i) => {
+        if (typeof sg.at !== 'number') return <span key={i}>{sg.t}</span>;
+        const k = ease(c.t, sg.at, 0.45, CAM_EASE);
+        return (
+          <span key={i} style={{background: `linear-gradient(90deg, ${rgba(color, 0.35)} ${k * 100}%, transparent ${k * 100}%)`,
+            borderRadius: size * 0.12, padding: `0 ${size * 0.06}px`, margin: `0 -${size * 0.06}px`}}>{sg.t}</span>
+        );
+      })}
+    </>
+  );
+};
+
+const Avatar: React.FC<{d: any; size: number}> = ({d, size}) => {
+  const a = d.avatar;
+  return a?.src ? (
+    <Img src={staticFile(a.src)} style={{width: size, height: size, borderRadius: d.platform === 'reddit' ? 99 : 99, objectFit: 'cover', flex: 'none'}} />
+  ) : (
+    <div style={{width: size, height: size, borderRadius: 99, flex: 'none', display: 'grid', placeItems: 'center',
+      background: 'linear-gradient(135deg, #7A5CFF, #FF5A8A)', ...font(800, size * 0.42, 1), color: '#fff'}}>
+      {(d.name || d.handle || '?').replace('@', '').slice(0, 1).toUpperCase()}
+    </div>
+  );
+};
+
+const Post: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const pf: keyof typeof POST_THEME = d.platform;
+  const T = (c.th.dark ? POST_THEME : POST_LIGHT)[pf] ?? POST_THEME.x;
+  const len = (d.text || '').length + (d.title || '').length;
+  const size = len > 220 ? 36 : len > 140 ? 42 : 48;
+  const Ico = ({I}: {I: any}) => <I size={30} color={T.mut} weight="regular" />;
+  const stat = (I: any, v: any) => (v === undefined || v === null ? null : (
+    <div style={{display: 'flex', alignItems: 'center', gap: 10, ...font(500, 28), letterSpacing: 0, color: T.mut}}><Ico I={I} />{fmtCount(v)}</div>
+  ));
+  return (
+    <div style={{...pop(prog(c, d.atT ?? 0)), width: 880, background: T.bg, borderRadius: 34, border: `1.5px solid ${T.line}`,
+      padding: '30px 36px 26px', boxShadow: c.th.shadow, boxSizing: 'border-box', textAlign: 'left', fontFamily: CAPTION_FONT}}>
+      {pf === 'reddit' ? (
+        <div style={{display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16}}>
+          <div style={{width: 52, height: 52, borderRadius: 99, background: T.accent, display: 'grid', placeItems: 'center'}}>
+            <Ph.RedditLogo size={34} color="#fff" weight="fill" />
+          </div>
+          <div style={{...font(700, 28), letterSpacing: 0, color: T.ink}}>{d.community ?? 'r/community'}</div>
+          <div style={{...font(500, 26), letterSpacing: 0, color: T.mut}}>· {d.time ?? '5h'} · {d.handle ?? 'u/user'}</div>
+        </div>
+      ) : (
+        <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 18}}>
+          <Avatar d={d} size={76} />
+          <div style={{flex: 1, minWidth: 0}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+              <div style={{...font(800, 32, 1.15), letterSpacing: '-0.01em', color: T.ink}}>{d.name ?? d.handle}</div>
+              {d.verified ? <Ph.SealCheck size={30} color={pf === 'x' ? '#1D9BF0' : T.accent} weight="fill" /> : null}
+            </div>
+            <div style={{...font(500, 26, 1.2), letterSpacing: 0, color: T.mut}}>
+              {pf === 'linkedin' ? (d.headline ?? '') : `${d.handle ?? ''}${d.time ? ' · ' + d.time : ''}`}
+            </div>
+            {pf === 'linkedin' && d.time ? <div style={{...font(500, 24), letterSpacing: 0, color: T.mut}}>{d.time} · 🌐</div> : null}
+          </div>
+          {pf === 'x' ? <Ph.DotsThree size={34} color={T.mut} /> : null}
+        </div>
+      )}
+      {d.title ? <div style={{...font(700, size + 6, 1.2), letterSpacing: '-0.01em', color: T.ink, marginBottom: 10}}>{d.title}</div> : null}
+      <div style={{...font(500, size, 1.32), letterSpacing: '-0.01em', color: T.ink, whiteSpace: 'pre-wrap'}}>
+        <ReadAlong text={d.text} hls={d.highlight} color={pf === 'reddit' ? T.accent : pf === 'threads' ? '#8C8C8C' : T.accent} size={size} />
+      </div>
+      <div style={{display: 'flex', justifyContent: pf === 'linkedin' ? 'flex-start' : 'space-between', gap: 40, marginTop: 24,
+        paddingTop: 16, borderTop: pf === 'x' ? 'none' : `1.5px solid ${T.line}`}}>
+        {pf === 'reddit' ? (
+          <>
+            {stat(Ph.ArrowFatUp, d.likes)}{stat(Ph.ChatCircle, d.comments)}{stat(Ph.ShareFat, d.reposts)}
+          </>
+        ) : pf === 'linkedin' ? (
+          <>
+            {stat(Ph.ThumbsUp, d.likes)}{stat(Ph.ChatText, d.comments)}{stat(Ph.Repeat, d.reposts)}
+          </>
+        ) : (
+          <>
+            {stat(Ph.ChatCircle, d.comments)}{stat(Ph.Repeat, d.reposts)}{stat(Ph.Heart, d.likes)}{stat(Ph.ChartBar, d.views)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** Vest: izdavač (logo + ime + datum), naslov krupno; ključne reči naslova dobijaju highlight kad se izgovore. */
+const News: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const hls: any[] = d.highlight ?? [];
+  const head: string = d.headline;
+  const size = head.length > 70 ? 50 : head.length > 45 ? 58 : 66;
+  // Delovi naslova: obeleženi izrazi (sa `at`) postaju Highlight, ostalo običan tekst.
+  const segs: {t: string; at?: number}[] = [];
+  let rest = head;
+  hls.map((h) => ({t: txt(h), at: at0(h, 0.6)})).forEach((h) => {
+    const i = rest.toLowerCase().indexOf(h.t.toLowerCase());
+    if (i < 0) return;
+    if (i > 0) segs.push({t: rest.slice(0, i)});
+    segs.push({t: rest.slice(i, i + h.t.length), at: h.at});
+    rest = rest.slice(i + h.t.length);
+  });
+  if (rest) segs.push({t: rest});
+  return (
+    <Glass glow={0.3} strong style={{...pop(prog(c, d.atT ?? 0)), width: 880, padding: '34px 40px 40px'}}>
+      {d.image?.src ? (
+        <div style={{height: 240, borderRadius: 18, overflow: 'hidden', marginBottom: 26}}>
+          <Img src={staticFile(d.image.src)} style={{width: '100%', height: '100%', objectFit: 'cover',
+            // lice u kadru: traka od 240 px se postavlja na lice (ne na sredinu slike, gde je često vrat)
+            objectPosition: d.image.face && d.image.h ? `50% ${Math.round(Math.min(100, Math.max(0, (d.image.face.y + d.image.face.h * 0.3) / d.image.h * 100)))}%` : '50% 40%',
+            transform: `scale(${1 + 0.05 * ease(c.t, 0, Math.max(1, c.dur))})`, transformOrigin: '50% 35%'}} />
+        </div>
+      ) : null}
+      <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 22}}>
+        {d.logo?.src ? <LogoPlate f={d.logo} size={64} /> : null}
+        <div style={{...font(800, 34), color: c.th.ink}}>{d.outlet}</div>
+        {d.date ? <div style={{...font(600, 30), color: c.th.mut}}>· {d.date}</div> : null}
+      </div>
+      <div style={{...font(800, size, 1.14), letterSpacing: '-0.03em', color: c.th.ink, textAlign: 'left'}}>
+        {segs.map((sg, i) => typeof sg.at === 'number'
+          ? <Highlight key={i} at={sg.at} size={size}><span>{sg.t}</span></Highlight>
+          : <span key={i}>{sg.t}</span>)}
+      </div>
+    </Glass>
+  );
+};
+
+/** Pozadina je scena, ne zvezda: tih grid koji se gubi ka ivicama + dva blaga svetla u boji brenda. */
+const Background: React.FC<{th: Theme; acc: string; t: number}> = ({th, acc, t}) => {
+  const o1 = {x: 330 + Math.sin(t / 3.4) * 80, y: 420 + Math.cos(t / 4.0) * 50};
+  const o2 = {x: 760 + Math.cos(t / 3.0) * 70, y: 600 + Math.sin(t / 3.6) * 60};
+  return (
+    <>
+      <div style={{position: 'absolute', inset: 0, background: th.base}} />
+      {[o1, o2].map((o, i) => (
+        <div key={i} style={{position: 'absolute', left: o.x - 230, top: o.y - 230, width: 460, height: 460, borderRadius: 999,
+          background: rgba(acc, i ? th.orb * 0.8 : th.orb), filter: 'blur(120px)'}} />
+      ))}
+      <div style={{position: 'absolute', inset: 0,
+        backgroundImage: `linear-gradient(${th.grid} 2px, transparent 2px), linear-gradient(90deg, ${th.grid} 2px, transparent 2px)`,
+        backgroundSize: '72px 72px',
+        WebkitMaskImage: 'radial-gradient(ellipse 48% 52% at 50% 54%, #000 0%, rgba(0,0,0,0.6) 45%, transparent 100%)'}} />
+      {th.dark ? (
+        <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 140,
+          background: 'linear-gradient(180deg, transparent, rgba(0,0,0,0.35))'}} />
+      ) : (
+        // Light: blaga senka od linije podele naviše — beli titl na liniji dobija dovoljno odvajanja od svetle podloge.
+        // Više tačaka (ease) da nema vidljive "trake".
+        <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: LIGHT_SHADE.h,
+          background: `linear-gradient(180deg, rgba(12,12,16,0) 0%, rgba(12,12,16,${LIGHT_SHADE.a * 0.12}) 35%, ` +
+            `rgba(12,12,16,${LIGHT_SHADE.a * 0.4}) 62%, rgba(12,12,16,${LIGHT_SHADE.a * 0.75}) 84%, rgba(12,12,16,${LIGHT_SHADE.a}) 100%)`}} />
+      )}
+    </>
+  );
+};
+
+const LIGHT_SHADE = {h: 300, a: 0.42}; // Light: senka iznad linije podele (visina px, najveća tamnoća)
+const EXIT = 0.16; // s: moment izlazi (fade + blur + blago gore) tik pre sledećeg — novi ulazi na čistu podlogu
+
+const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: string; exit: number; height: number}> = ({it, t, fps, th, acc, exit, height}) => {
+  const sf = Math.round(it.start * fps);
+  const ctx: Ctx = {t: t - it.start, dur: it.end - it.start, fps, th, acc, hero: Boolean(it.data?.hero), sweep: Boolean(it.data?.sweep)};
+  const drift = 1 + 0.02 * interpolate(t - it.start, [0, Math.max(0.6, it.end - it.start)], [0, 1],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.sin)});
+  const out = exit > 0 ? Easing.in(Easing.cubic)(Math.min(1, exit)) : 0;
+  const d = it.data;
+  if (it.kind === 'photo' && d.src) {
+    const pp = photoPlan(d, height);
+    if (pp.mode !== 'frame') {
+      return (
+        <C.Provider value={ctx}>
+          <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: (1 - out) * Math.min(1, ease(t - it.start, 0, 0.35) * 1.2),
+            filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
+            <PhotoFull d={d} plan={pp} />
+          </div>
+        </C.Provider>
+      );
+    }
+  }
+  const pic = (it.kind === 'screenshot' || (it.kind === 'image' && !d.alpha) || (it.kind === 'post' && d.src)) && d.src && !d.cropped
+    ? picPlan(d, height) : null;
+  if (pic && pic.mode !== 'frame') {
+    return (
+      <C.Provider value={ctx}>
+        <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: (1 - out) * Math.min(1, ease(t - it.start, 0, 0.35) * 1.2),
+          filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
+          <PictureFull d={d} plan={pic} />
+        </div>
+      </C.Provider>
+    );
+  }
+  const body = it.kind === 'stat' ? <Stat d={d} />
+    : it.kind === 'week' ? <Week d={d} />
+    : it.kind === 'steps' ? <Steps d={d} />
+    : it.kind === 'flow' ? <Flow d={d} />
+    : it.kind === 'versus' ? <Versus d={d} />
+    : it.kind === 'chart' ? <Chart d={d} />
+    : it.kind === 'checklist' ? <Checklist d={d} />
+    : it.kind === 'chat' ? <Chat d={d} />
+    : it.kind === 'filter' ? <FilterGrid d={d} />
+    : it.kind === 'headline' ? <Headline d={d} />
+    : it.kind === 'notify' ? <Notify d={d} />
+    : it.kind === 'comment' ? <Comment d={d} />
+    : it.kind === 'key' ? <Key d={d} />
+    : it.kind === 'logo' ? <Logo d={d} />
+    : it.kind === 'screenshot' && d.cropped ? <Media it={{...it, kind: 'image'}} sf={sf} />
+    : it.kind === 'screenshot' || (it.kind === 'image' && !d.alpha && d.src) ? <Screenshot d={d} />
+    : it.kind === 'news' ? <News d={d} />
+    : it.kind === 'photo' ? <Media it={{...it, kind: 'image', data: {...d, caption: d.name ? {text: d.sub ? `${d.name} · ${txt(d.sub)}` : d.name, atT: at0(d, 0.45)} : undefined}}} sf={sf} />
+    : it.kind === 'post' && d.src ? <Screenshot d={d} />
+    : it.kind === 'post' ? <Post d={d} />
+    : <Media it={it} sf={sf} />;
+  return (
+    <C.Provider value={ctx}>
+      <div style={{position: 'absolute', left: ZONE.x, top: ZONE.y, width: ZONE.w, height: ZONE.h,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        opacity: 1 - out, filter: out > 0.01 ? `blur(${out * 10}px)` : undefined,
+        transform: `translateY(${-out * 24}px) scale(${drift * (1 - 0.05 * out)})`}}>
+        {body}
+      </div>
+    </C.Provider>
+  );
+};
+
+export const TopHalf: React.FC<{height: number; spec?: TopSpec | null}> = ({height, spec}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  useFontSpec();
+  const th = THEMES[spec?.style ?? 'dark'];
+  const acc = spec?.accent ?? '#FFE600';
+  const t = frame / fps;
+  const items = spec?.items ?? [];
+  const idx = items.findIndex((x) => t >= x.start && t < x.end);
+  const it = idx >= 0 ? items[idx] : null;
+  const exit = it && idx < items.length - 1 ? Math.max(0, (t - (it.end - EXIT)) / EXIT) : 0;
+  return (
+    <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, overflow: 'hidden'}}>
+      <Background th={th} acc={acc} t={t} />
+      {it ? <Moment key={`m${it.start}`} it={it} t={t} fps={fps} th={th} acc={acc} exit={exit} height={height} /> : null}
+    </div>
+  );
+};

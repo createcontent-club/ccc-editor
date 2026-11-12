@@ -1,3 +1,4 @@
+import type {TopSpec} from './components/TopHalf';
 import type {FontSpec} from './style';
 /**
  * Deo originalnog snimka koji ostaje. srcStart/srcEnd = tačan isečak zvuka (s);
@@ -44,6 +45,8 @@ export type EditProps = {
   audio?: string;
   /** fps kompozicije = fps snimka (bez pretvaranja 25→30). */
   fps: number;
+  /** Render sa fps × fpsMult (Split Screen: 2 → glatke animacije); snimak se ne ubrzava. */
+  fpsMult?: number;
   segments: Segment[];
   captions: CaptionChunk[];
   hook?: HookSpec | null;
@@ -56,4 +59,10 @@ export type EditProps = {
   captionAccent?: string;
   /** Set fontova za titlove i hook (engine/ccc/fonts.py); bez njega CCC podrazumevani. */
   font?: FontSpec | null;
+  /** Raspored: bez njega ceo kadar; split = sadržaj gore, govornik dole (isečak izvora od cropY). */
+  layout?: {type: 'split'; line: number; cropY?: number} | null;
+  /** Split Screen: titlovi kreću tek kad hook nestane (s); 0 = od starta. */
+  captionsFrom?: number;
+  /** Split Screen: gornja polovina — stil, akcenat i momenti. */
+  top?: TopSpec | null;
 };

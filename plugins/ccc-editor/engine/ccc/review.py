@@ -119,6 +119,16 @@ def client_report(p: dict, exported: str | None) -> str:
     lines.append("Camera: " + ("zoom on jump cuts" if p.get("camera") else "static"))
     if p.get("audio"):
         lines.append(f"Audio: cleaned and leveled to {p['audio']['after']['lufs']} LUFS (Instagram/TikTok standard)")
+    if (p.get("layout") or {}).get("type") == "split":
+        from .project import Job
+        from .web import real_visuals
+        try:
+            rv = real_visuals(Job(p["name"]), p)
+        except Exception:  # izveštaj nikad ne sme da padne zbog izvora
+            rv = []
+        if rv:
+            lines.append("Real visuals used (with sources — check you're OK showing them):")
+            lines += rv
     lines.append("Want changes? Just tell me — e.g. \"bring back the part at 0:22\", \"make the hook shorter\", "
                  "\"switch captions to Clean\".")
     return "\n".join(lines)

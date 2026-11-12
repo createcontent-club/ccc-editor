@@ -7,7 +7,15 @@ import time
 from pathlib import Path
 
 from .fonts import spec as font_spec
+from .visuals import render_spec as top_spec
 from .project import REMOTION, Job, remotion_cli
+
+
+def captions_from(p: dict) -> float:
+    """Split Screen: titlovi stoje na mestu hooka, pa kreću tek kad hook nestane (bez hooka: od starta)."""
+    if (p.get("layout") or {}).get("type") == "split" and p.get("hook"):
+        return float(p["hook"]["end"])
+    return 0.0
 
 
 def render_props(job: Job, p: dict) -> Path:
@@ -24,6 +32,11 @@ def render_props(job: Job, p: dict) -> Path:
         "hook": p.get("hook"),
         "camera": p.get("camera") or [],
         "font": font_spec(p.get("font")),  # set fontova za titlove + hook (engine/ccc/fonts.py)
+        "layout": p.get("layout"),          # None = ceo kadar; {"type": "split", "line", "cropY"} = Split Screen
+        "captionsFrom": captions_from(p),
+        "top": top_spec(job, p),            # Split Screen: momenti gornje polovine
+        # Split Screen: render u 2× fps (npr. 25 → 50) — animacije gornje polovine su glatke; snimak se ne menja.
+        "fpsMult": 2 if (p.get("layout") or {}).get("type") == "split" else 1,
     }
     path = job.dir / "render-props.json"
     path.write_text(json.dumps(props, ensure_ascii=False))

@@ -14,7 +14,8 @@
   ./ccc picker <ime> [--format F]    otvori CCC Editing Style Menu (format → stil), sačekaj izbore → work/<ime>/choices.json
                                      (radi i dok priprema još traje; kod 2 = klijent nije izabrao u roku)
   ./ccc choices <ime> k=v …          upiši/izmeni izbore bez stranice (format, hook_text, hook_style, hook_position,
-                                     caption_style, color, camera) — rezervni put i izmene posle isporuke
+                                     caption_style, color, camera; Split: top_style, web=on|off, links="url url")
+                                     — rezervni put i izmene posle isporuke
   ./ccc formats                      formati u meniju i šta svaki preuzima iz Basic-a (pravila u engine/ccc/formats.py)
   ./ccc build <ime>                  izbori → titlovi, kamera, hook, zvuk, final render, provera, izvoz, izveštaj
   ./ccc report <ime>                 izveštaj za klijenta (engleski)
@@ -40,7 +41,7 @@ import sys
 from pathlib import Path
 
 from .audio import loudness
-from .project import DEFAULT_CUT, PACING, Job
+from .project import DEFAULT_CUT, PACING, SPLIT_LINE, Job
 
 
 def _recut(job: Job, p: dict) -> dict:
@@ -81,11 +82,17 @@ def _build(job: Job, name: str) -> None:
     from .formats import get as get_format
     choices.setdefault("format", "basic")  # projekti pre menija formata = Basic
     fmt = get_format(choices["format"])
-    if fmt["own"]:
-        raise SystemExit(f"Format {fmt['id']} ima sopstvene elemente koji još nisu povezani u build.")
+    from .formats import DEV
+    if fmt["status"] != "ready" and not DEV:
+        raise SystemExit(f"Format {fmt['id']} još nije spreman (status {fmt['status']}).")
     p["choices"] = choices
     p["font"] = choices.get("font") or "ccc"  # set fontova: titlovi + hook (meri ga i hook, i render)
     p["pacing"] = choices.get("pacing") or "fast"
+    if fmt.get("layout") == "split":  # 50/50: sadržaj gore, govornik dole (crop računa korak Titlovi)
+        p["layout"] = {"type": "split", "line": SPLIT_LINE, **{k: v for k, v in (p.get("layout") or {}).items()
+                                                              if k == "cropY"}}
+    else:
+        p.pop("layout", None)
     job.save(p)
     from .fonts import get as get_font
     print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']} · pacing: {p['pacing']}")
@@ -148,12 +155,29 @@ def main(argv: list[str]) -> None:
     sh = sub.add_parser("hook"); sh.add_argument("name"); sh.add_argument("text", nargs="?", default="")
     sh.add_argument("--style", choices=["box", "serif", "color", "stack"], help="stil hooka (podrazumevano: dosadašnji ili box)")
     sh.add_argument("--color", help="boja brenda za Stil 3/4 (hex ili naziv); podrazumevano: boja brenda iz titlova")
-    sh.add_argument("--position", choices=["below", "above"], help="below = ispod titla (podrazumevano), above = iznad glave")
+    sh.add_argument("--position", choices=["below", "above", "line"],
+                    help="below = ispod titla (podrazumevano), above = iznad glave, line = linija podele (Split Screen)")
     spk = sub.add_parser("picker"); spk.add_argument("name")
     spk.add_argument("--timeout", type=float, default=1800, help="sekunde čekanja na izbor (podrazumevano 30 min)")
     spk.add_argument("--no-open", action="store_true", help="ne otvaraj pregledač (samo ispiši adresu)")
     spk.add_argument("--format", help="otvori direktno dashboard ovog formata (npr. basic), bez glavnog menija")
     sq = sub.add_parser("choices"); sq.add_argument("name"); sq.add_argument("pairs", nargs="*")
+    sv = sub.add_parser("visuals"); sv.add_argument("name"); sv.add_argument("--set", dest="plan")
+    # Pravi asseti sa interneta (Split Screen, PLAN §12) — engine/ccc/web.py
+    sf = sub.add_parser("fetch"); sf.add_argument("name"); sf.add_argument("url"); sf.add_argument("--for", dest="for_word")
+    sf.add_argument("--as", dest="as_name")
+    ss = sub.add_parser("shot"); ss.add_argument("name"); ss.add_argument("url"); ss.add_argument("--for", dest="for_word")
+    ss.add_argument("--find"); ss.add_argument("--selector"); ss.add_argument("--mobile", action="store_true")
+    ss.add_argument("--crop", action="store_true", help="samo traženi element (npr. objava), ne ceo ekran")
+    ss.add_argument("--as", dest="as_name")
+    ss.add_argument("--keep", action="store_true", help="sačuvaj i kad engine misli da je zid (pogledao si sliku i dobra je)")
+    sl = sub.add_parser("logo"); sl.add_argument("name"); sl.add_argument("brand"); sl.add_argument("--domain")
+    sc2 = sub.add_parser("clip"); sc2.add_argument("name"); sc2.add_argument("url"); sc2.add_argument("--for", dest="for_word")
+    sc2.add_argument("--from", dest="t_from", type=float, required=True); sc2.add_argument("--to", dest="t_to", type=float, required=True)
+    sc2.add_argument("--as", dest="as_name")
+    sub.add_parser("research").add_argument("name")
+    sa2 = sub.add_parser("assets"); sa2.add_argument("name"); sa2.add_argument("--add", dest="add_file")
+    sa2.add_argument("--note", default="")
     sw = sub.add_parser("word"); sw.add_argument("name"); sw.add_argument("id"); sw.add_argument("text")
     sy = sub.add_parser("key"); sy.add_argument("name"); sy.add_argument("index", type=int); sy.add_argument("word")
     sa = sub.add_parser("approve"); sa.add_argument("name"); sa.add_argument("gate", choices=["cut", "captions", "hook", "camera", "audio", "final"])
@@ -196,6 +220,42 @@ def main(argv: list[str]) -> None:
         print("✓ izbori: " + json.dumps(choices, ensure_ascii=False))
         return
 
+    if a.cmd in ("fetch", "shot", "logo", "clip", "research"):  # pravi asseti sa interneta (engine/ccc/web.py)
+        from . import web
+        job = Job(a.name)
+        cf = job.dir / "choices.json"
+        if a.cmd in ("fetch", "shot", "clip"):
+            a.url = web.check_url(a.url)
+        if a.cmd != "research" and cf.exists() and json.loads(cf.read_text()).get("web") is False \
+                and not (a.cmd != "logo" and web._from_link(job, a.url)):
+            raise SystemExit("Klijent je isključio prave vizuale sa interneta (dashboard) — dozvoljeni su samo njegovi linkovi "
+                             f"({', '.join(web.client_links(job)) or 'nema ih'}). Koristi animirane šablone ili njegove fajlove.")
+        if a.cmd == "fetch":
+            print(f"✓ preuzeto: {web.fetch(job, a.url, a.for_word, a.as_name)}")
+        elif a.cmd == "shot":
+            name, res = web.shot(job, a.url, a.for_word, a.find, a.selector, a.mobile, a.as_name, a.crop, a.keep)
+            r = res.get("rect")
+            print(f"✓ screenshot: {name} · {res.get('w')}×{res.get('h')} · \"{(res.get('title') or '')[:70]}\""
+                  + (f" · deo \"{a.find or a.selector}\": x {r['x']} y {r['y']} w {r['w']} h {r['h']} (za focus/highlight)" if r else "")
+                  + ("" if res.get("found") else f" · ⚠ \"{a.find or a.selector}\" nije nađen na stranici"))
+        elif a.cmd == "logo":
+            print(web.logo(job, a.brand, a.domain))
+        elif a.cmd == "clip":
+            print(f"✓ isečak: {web.clip(job, a.url, a.for_word, a.t_from, a.t_to, a.as_name)}")
+        else:
+            print(web.research_summary(job))
+        return
+
+    if a.cmd == "assets":  # Split Screen: klijentovi fajlovi — priprema + pregled za Claude-a (engine/ccc/assets.py)
+        from .assets import add, describe, prepare
+        job = Job(a.name)
+        if a.add_file:
+            print(f"✓ dodat fajl: {add(job, Path(a.add_file).expanduser(), a.note)}")
+        cf = job.dir / "choices.json"
+        notes = {x["file"]: x.get("note", "") for x in json.loads(cf.read_text()).get("assets", [])} if cf.exists() else {}
+        print(describe(prepare(job, notes)))
+        return
+
     if a.cmd == "choices":  # ne zavisi od pripreme
         from .picker import validate
         job = Job(a.name)
@@ -213,6 +273,8 @@ def main(argv: list[str]) -> None:
             clean = validate(cur)
         except ValueError as err:
             raise SystemExit(str(err))
+        if cur.get("assets") and clean.get("top_style"):  # Split Screen: klijentovi fajlovi + napomene ostaju
+            clean["assets"] = cur["assets"]
         job.dir.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps(clean, indent=1, ensure_ascii=False))
         print("✓ izbori: " + json.dumps(clean, ensure_ascii=False))
@@ -292,6 +354,9 @@ def main(argv: list[str]) -> None:
         p["captionY"], face = caption_y(job, p)
         if face.get("faces"):
             p["face"] = face
+        if (p.get("layout") or {}).get("type") == "split":
+            from .captions import split_place
+            split_place(p)
         if p.get("hook"):  # rezovi/lice su se možda promenili → hook ponovo
             from .hook import build as build_hook
             p["hook"] = build_hook(p, p["hook"]["text"], p["hook"].get("style", "box"), p["hook"].get("bg"),
@@ -395,6 +460,13 @@ def main(argv: list[str]) -> None:
         p.setdefault("key_overrides", {})[c["words"][0]] = a.word
         job.save(p)
         main(["captions", a.name])
+    elif a.cmd == "visuals":  # Split Screen: plan gornje polovine (engine/ccc/visuals.py)
+        from .visuals import describe, save_plan
+        if a.plan:
+            save_plan(job, p, Path(a.plan))
+            job.save(p)
+            print("✓ plan gornje polovine sačuvan")
+        print(describe(p) or "(nema plana — gornja polovina je prazna)")
     elif a.cmd == "previews":
         from .energy import Voice
         from .media import decode_mono

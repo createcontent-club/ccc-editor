@@ -185,6 +185,14 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
         height = (len(lines) - 1) * st["pitch"] + st["line_h"]
     # Hook i titlovi su na ekranu ISTOVREMENO. Pozicija 1 (podrazumevana): ispod titla, ako staje
     # iznad donje UI zone. Pozicija 2: iznad glave (ispod gornje UI zone). Inače: ispod titla.
+    if placement == "line":  # Split Screen: centar hooka na liniji podele; titlovi tu kreću posle hooka
+        line = (p.get("layout") or {}).get("line", 960)
+        y = line - height / 2
+        where = "na liniji podele"
+        if y < SAFE_TOP or y + height > SAFE_BOTTOM:
+            where = "NEMA MESTA — hook je predugačak"
+        return _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height, where,
+                       lay if style == "stack" else None)
     below = p["captionY"] + half_h(p) + GAP
     above = min_head_after_zoom(p) - GAP - height  # teme pri najvećem zumu
     # Klijent bira poziciju ("below" = ispod titla, "above" = iznad glave). Ako izabrana nema mesta,
@@ -198,12 +206,17 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
         y, where = spot[other][0], f"{spot[other][1]} (izabrano {spot[placement][1]}, ali tamo nema mesta)"
     else:  # predugačak hook — skill traži od klijenta kraći tekst
         y, where = below, "NEMA MESTA — hook je predugačak"
+    return _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height, where,
+                   lay if style == "stack" else None)
+
+
+def _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height, where, lay) -> dict:
     colors = {}
     if style in ("color", "stack"):
         from .captions import DEFAULT_ACCENT
         bg = color or p.get("caption_accent") or DEFAULT_ACCENT  # podrazumevano: ista boja brenda kao titlovi
         colors = {"bg": bg, "fg": text_on(bg)}
-    if style == "stack" and lay["too_wide"]:
+    if lay is not None and lay["too_wide"]:
         where = "NEMA MESTA — deo hooka je predugačak za jedan red"
     return {"text": text, "style": style, "font": fid, "placement": placement, **colors, **extra, "lines": lines, "y": round(y),
             "pitch": st["pitch"],

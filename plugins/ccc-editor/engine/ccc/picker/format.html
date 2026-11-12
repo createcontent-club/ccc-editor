@@ -97,6 +97,19 @@
   .fcard .label { padding: 10px 12px 12px; }
   .fcard .label b { display: block; font: 800 14px/1.3 var(--head); }
   .fcard .label span { color: var(--muted); font-size: 12.5px; }
+  .drop { display: block; border: 2px dashed var(--accent-line); border-radius: 16px; padding: 30px 18px; text-align: center; cursor: pointer;
+    background: rgba(0,102,255,.05); transition: background .15s, border-color .15s; }
+  .drop.over, .drop:hover { background: rgba(0,102,255,.12); border-color: var(--accent); }
+  .drop-in b { font: 800 17px var(--head); } .drop-in u { color: var(--accent-hi); text-underline-offset: 3px; }
+  .drop-in span { display: block; color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .frow { display: grid; grid-template-columns: 64px 1fr auto; gap: 14px; align-items: center; margin-top: 12px; padding: 10px;
+    border-radius: 14px; background: #070A11; border: 1px solid var(--line); }
+  .frow .th { width: 64px; height: 64px; border-radius: 10px; background: #151A24 center/cover no-repeat; display: grid; place-items: center;
+    font: 800 12px var(--head); color: var(--muted); overflow: hidden; }
+  .frow .nm { font-weight: 600; font-size: 14px; word-break: break-all; } .frow .sz { color: var(--muted); font-size: 12px; }
+  .frow input { margin-top: 6px; padding: 9px 12px; font-size: 14px; }
+  .frow .rm { background: none; border: 1px solid var(--line); color: var(--muted); box-shadow: none; padding: 8px 12px; font-size: 14px; border-radius: 10px; }
+  .frow .bar { height: 4px; border-radius: 4px; background: var(--accent); margin-top: 8px; transition: width .2s; }
   .textbox { margin-top: 14px; transition: opacity .15s; }
   .textbox.locked { opacity: .35; pointer-events: none; }
   .yn { display: flex; gap: 12px; align-items: center; }
@@ -165,6 +178,35 @@
     <div class="grid" id="fontGrid"></div>
   </section>
 
+  <section id="s-top" class="hidden" data-step>
+    <h2><span class="n"></span> Top half style</h2>
+    <p class="hint">The look of the visuals above you. Your brand color is the accent.</p>
+    <div class="options" id="topOpts"></div>
+  </section>
+
+  <section id="s-files" class="hidden" data-step>
+    <h2><span class="n"></span> Your files <span style="color:var(--muted);font-weight:600;font-size:14px">· optional</span></h2>
+    <p class="hint">Screenshots, screen recordings or clips you want on screen. We place each one where you talk about it — anything without a file gets our animated visuals.</p>
+    <label class="drop" id="drop">
+      <input type="file" id="fileIn" multiple accept="image/*,video/*,.heic,.heif" hidden>
+      <div class="drop-in"><b>Drag files here</b> or <u>choose files</u><span>PNG · JPG · WEBP · HEIC · MP4 · MOV — up to 2 GB each</span></div>
+    </label>
+    <div id="fileList"></div>
+    <div class="warn" id="fileWarn"></div>
+  </section>
+
+  <section id="s-web" class="hidden" data-step>
+    <h2><span class="n"></span> Real visuals</h2>
+    <p class="hint">When you mention a brand, app, website, news story, post or public person, we can show the real thing.</p>
+    <div class="options" id="webOpts"></div>
+    <div class="textbox" style="margin-top:16px">
+      <b style="font:800 14.5px var(--head)">Links you mention <span style="color:var(--muted);font-weight:600">· optional</span></b>
+      <p class="hint" style="margin:4px 0 10px">Articles, products, posts or pages you talk about — one per line. We use these first.</p>
+      <textarea id="links" rows="3" placeholder="https://www.theverge.com/…&#10;https://x.com/…/status/…"></textarea>
+      <div class="warn" id="linkWarn"></div>
+    </div>
+  </section>
+
   <section id="s-color" class="hidden" data-step>
     <h2><span class="n"></span> Brand color</h2>
     <p class="hint" id="colorWhy">Used for the highlighted word / hook box.</p>
@@ -200,7 +242,7 @@
 // Dashboard formata: prikazuje samo izbore koje format dozvoljava (pravila: engine/ccc/formats.py).
 // Element koji format ne koristi → sekcija sakrivena; jedna dozvoljena vrednost → zaključano i sakriveno.
 const FID = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "basic");
-const S = { hookText: "", noHook: null, hookStyle: null, position: "below", captionStyle: null, font: "ccc", color: null, camera: "zoom", pacing: "fast" };
+const S = { hookText: "", noHook: null, hookStyle: null, position: "below", captionStyle: null, font: "ccc", color: null, camera: "zoom", pacing: "fast", topStyle: "dark", web: "on", links: "", files: [], uploading: 0 };
 const HOOKS = [
   { id: "box", name: "TikTok Box", desc: "Black text on white boxes" },
   { id: "serif", name: "Editorial Serif", desc: "Elegant serif, no box" },
@@ -282,7 +324,8 @@ function options(boxId, items, key) {
 }
 
 const hookOn = () => !!EL.hook && S.noHook === false;
-function needsColor() { return S.captionStyle === "karaoke" || (hookOn() && (S.hookStyle === "color" || S.hookStyle === "stack")); }
+const isSplit = () => CFG.layout === "split";
+function needsColor() { return isSplit() || S.captionStyle === "karaoke" || (hookOn() && (S.hookStyle === "color" || S.hookStyle === "stack")); }
 
 function render() {
   press("#hookGrid .card", c => c.dataset.id === S.hookStyle);
@@ -290,6 +333,8 @@ function render() {
   press("#posOpts .opt", o => o.dataset.id === S.position);
   press("#camOpts .opt", o => o.dataset.id === S.camera);
   press("#paceOpts .opt", o => o.dataset.id === S.pacing);
+  press("#topOpts .opt", o => o.dataset.id === S.topStyle);
+  press("#webOpts .opt", o => o.dataset.id === S.web);
   press("#fontGrid .fcard", c => c.dataset.id === S.font);
   $("serifNote").style.display = (hookOn() && S.hookStyle === "serif") ? "inline" : "none";
   // Prvo Da/Ne: dok klijent ne izabere "Yes", tekst, stil i pozicija hooka su zaključani.
@@ -307,6 +352,7 @@ function render() {
   if (S.captionStyle === "karaoke") why.push("the highlighted spoken word");
   if (hookOn() && S.hookStyle === "color") why.push("the hook box");
   if (hookOn() && S.hookStyle === "stack") why.push("the hook's second line");
+  if (isSplit()) why.push("the visuals in the top half");
   $("colorWhy").textContent = "Used for " + why.join(" and ") + ".";
   const fg = textOn(col);
   $("live").innerHTML =
@@ -325,6 +371,12 @@ function render() {
   if (hookOn() && !S.hookText.trim()) missing.push("hook text");
   if (hookOn() && !S.hookStyle) missing.push("hook style");
   if (!S.captionStyle) missing.push("caption style");
+  if (S.uploading > 0) missing.push("files still uploading");
+  if (isSplit()) {
+    const bad = badLinks();
+    $("linkWarn").textContent = bad.length ? `Not a link: ${bad.slice(0, 2).map(x => x.length > 40 ? x.slice(0, 40) + "…" : x).join(", ")} — paste the full link (copy it from the address bar)` : "";
+    if (bad.length) missing.push("fix the links");
+  }
   $("go").disabled = missing.length > 0;
   $("summary").textContent = missing.length ? "Still needed: " + missing.join(", ") : "Ready — we'll edit your video automatically.";
 }
@@ -389,6 +441,22 @@ async function init() {
   } else {
     $("s-font").classList.add("hidden");
   }
+  if (isSplit()) {
+    $("s-top").classList.remove("hidden");
+    $("s-files").classList.remove("hidden");
+    initFiles();
+    const sw = (bg, fg) => `<div class="diagram" style="background:${bg};display:grid;place-items:center"><div style="width:58%;height:34px;border-radius:9px;background:${fg}"></div></div>`;
+    options("topOpts", [
+      { id: "dark", name: "Dark", desc: "Deep navy with a soft glow — the CCC look", diagram: sw("radial-gradient(circle at 50% 55%,#1B2540,#0B0F18 75%)", "#161D2C") },
+      { id: "light", name: "Light", desc: "Light grey with black text — high contrast", diagram: sw("#F2F3F6", "#FFFFFF") },
+    ], "topStyle");
+    $("s-web").classList.remove("hidden");
+    options("webOpts", [
+      { id: "on", name: "Find real visuals online", desc: "Real logos, headlines, screenshots, posts and photos. Sources are listed in your report." },
+      { id: "off", name: "Animated visuals only", desc: "No searching online — our animated graphics, your files and the links below." },
+    ], "web");
+    $("links").oninput = (e) => { S.links = e.target.value; render(); };
+  }
   const PACE = [
     { id: "fast", name: "Fast-paced", desc: "Tight cuts, no dead air — the classic reel feel" },
     { id: "chill", name: "Chill", desc: "A touch more breathing room — great for phone-in-hand videos" },
@@ -419,6 +487,57 @@ async function init() {
   render();
 }
 
+// ---- Split Screen: klijentovi fajlovi (ostaju na računaru, u work/<ime>/assets/)
+const IMG = /\.(png|jpe?g|webp|gif)$/i, VID = /\.(mp4|mov|m4v|webm)$/i;
+const fmtSize = (b) => b > 1e9 ? (b / 1e9).toFixed(1) + " GB" : b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB";
+function drawFiles() {
+  $("fileList").innerHTML = "";
+  S.files.forEach((f, i) => {
+    const row = document.createElement("div");
+    row.className = "frow";
+    const th = f.done && IMG.test(f.file) ? `style="background-image:url('/asset/${encodeURIComponent(f.file)}')"` : "";
+    row.innerHTML = `<div class="th" ${th}>${f.done && IMG.test(f.file) ? "" : VID.test(f.name) ? "VIDEO" : "IMG"}</div>
+      <div><div class="nm">${esc(f.name)}</div><div class="sz">${f.done ? fmtSize(f.size) : f.error ? esc(f.error) : "Uploading… " + Math.round(f.pct || 0) + "%"}</div>
+        ${f.done ? `<input type="text" maxlength="200" placeholder="When should it show? (optional) e.g. when I talk about the audit" value="${esc(f.note || "")}">` : `<div class="bar" style="width:${f.pct || 0}%"></div>`}</div>
+      <button class="rm" title="Remove">✕</button>`;
+    const inp = row.querySelector("input");
+    if (inp) inp.oninput = (e) => { f.note = e.target.value; };
+    row.querySelector(".rm").onclick = async () => {
+      if (f.done) await fetch("/upload/delete", { method: "POST", body: JSON.stringify({ file: f.file }) });
+      S.files.splice(i, 1); drawFiles(); render();
+    };
+    $("fileList").appendChild(row);
+  });
+}
+function upload(file) {
+  const f = { name: file.name, size: file.size, pct: 0, done: false, note: "" };
+  S.files.push(f); S.uploading++; drawFiles(); render();
+  const x = new XMLHttpRequest();
+  x.open("POST", "/upload?name=" + encodeURIComponent(file.name));
+  x.upload.onprogress = (e) => { if (e.lengthComputable) { f.pct = 100 * e.loaded / e.total; drawFiles(); } };
+  x.onload = x.onerror = () => {
+    S.uploading--;
+    let r = {}; try { r = JSON.parse(x.responseText); } catch (e) { r = { ok: false, error: "Upload failed — try again." }; }
+    if (r.ok) { f.done = true; f.file = r.file; f.size = r.size; } else { S.files.splice(S.files.indexOf(f), 1); $("fileWarn").textContent = r.error; }
+    drawFiles(); render();
+  };
+  x.send(file);
+}
+function initFiles() {
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => { $("fileWarn").textContent = ""; [...e.dataTransfer.files].forEach(upload); });
+  $("fileIn").onchange = (e) => { $("fileWarn").textContent = ""; [...e.target.files].forEach(upload); e.target.value = ""; };
+  // Fajlovi već ubačeni (npr. stranica osvežena) ostaju na listi.
+  fetch("/api/assets").then(r => r.json()).then(r => { (r.files || []).forEach(x => S.files.push({ name: x.file, file: x.file, size: x.size, done: true, note: x.note || "" })); drawFiles(); });
+}
+
+// Linkovi: jedan po redu (prihvata i razmake/zareze između), samo pune http(s) adrese.
+const linkList = () => S.links.split(/[\s,]+/).map(x => x.trim()).filter(Boolean)
+  .map(x => /^https?:\/\//i.test(x) ? x : /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(x) ? "https://" + x : x);
+const badLinks = () => linkList().filter(x => !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(x));
+
 async function submit() {
   $("go").disabled = true;
   const body = {
@@ -431,6 +550,7 @@ async function submit() {
     color: needsColor() ? (S.color || CFG.default_color) : null,
     camera: S.camera,
     pacing: S.pacing,
+    ...(isSplit() ? { top_style: S.topStyle, web: S.web === "on", links: linkList().slice(0, 20), assets: S.files.filter(f => f.done).map(f => ({ file: f.file, note: f.note })) } : {}),
   };
   const r = await fetch("/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const res = await r.json();

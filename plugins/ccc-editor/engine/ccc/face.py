@@ -38,6 +38,26 @@ def chin_track(video: str, times: list[float]) -> list[dict]:
     return out
 
 
+def image_face(path: str) -> dict | None:
+    """Najveće lice na slici (fotografija osobe) → {x, y, w, h} u px slike, ili None."""
+    import cv2
+    img = cv2.imread(path)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    det = cv2.FaceDetectorYN.create(str(MODELS / "face" / "face_detection_yunet_2023mar.onnx"), "", (w, h), 0.7)
+    _, faces = det.detect(img)
+    if faces is None or not len(faces):
+        return None
+    x, y, fw, fh = [float(v) for v in max(faces, key=lambda f: f[2] * f[3])[:4]]
+    if fw * fh < 0.004 * w * h:  # sitno lice u gomili — nije portret
+        return None
+    return {"x": round(x), "y": round(y), "w": round(fw), "h": round(fh)}
+
+
 if __name__ == "__main__":
-    video, times = sys.argv[1], json.loads(sys.argv[2])
-    print(json.dumps(chin_track(video, times)))
+    if sys.argv[1] == "--image":
+        print(json.dumps(image_face(sys.argv[2])))
+    else:
+        video, times = sys.argv[1], json.loads(sys.argv[2])
+        print(json.dumps(chin_track(video, times)))

@@ -3,10 +3,15 @@ import {CalculateMetadataFunction, Composition} from 'remotion';
 import {CccEdit, segmentFrames} from './CccEdit';
 import type {EditProps} from './types';
 
-const metadata: CalculateMetadataFunction<EditProps> = ({props}) => ({
-  fps: props.fps,
-  durationInFrames: Math.max(1, props.segments.reduce((sum, s) => sum + segmentFrames(s, props.fps), 0)),
-});
+// fpsMult: render sa više frejmova od izvora (npr. 25 → 50) da animacije budu glatke; svaki frejm snimka se
+// prikazuje više puta, a sve što je u sekundama (titlovi, hook, vizuali) koristi pun broj frejmova.
+const metadata: CalculateMetadataFunction<EditProps> = ({props}) => {
+  const mult = Math.max(1, Math.round(props.fpsMult ?? 1));
+  return {
+    fps: props.fps * mult,
+    durationInFrames: Math.max(1, props.segments.reduce((sum, s) => sum + segmentFrames(s, props.fps), 0) * mult),
+  };
+};
 
 /** Prava montaža: sve dolazi iz project.json (--props). Namerno bez ikakvog podrazumevanog teksta. */
 const editDefaults: EditProps = {

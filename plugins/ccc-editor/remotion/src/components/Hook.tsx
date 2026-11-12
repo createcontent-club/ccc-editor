@@ -58,7 +58,7 @@ const SerifHook: React.FC<{hook: HookSpec}> = ({hook}) => (
  *  IZLAZ: trenutan.
  */
 const STACK_DELAY = 4; // frejma između gornjeg i donjeg oblika
-const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook, frame, fps}) => {
+const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number; mult?: number}> = ({hook, frame, fps, mult = 1}) => {
   const fs = useFontSpec();
   const sizes = hook.sizes ?? [96, 52];
   const heights = hook.heights ?? [131, 78];
@@ -73,7 +73,7 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook
       {hook.lines.map((line, i) => {
         const y = top;
         top += heights[i] - overlap;
-        const s = spring({frame: frame - Math.round(hook.start * fps) - i * STACK_DELAY, fps,
+        const s = spring({frame: frame - Math.round(hook.start * fps) - i * STACK_DELAY * mult, fps,
           config: {damping: 11, stiffness: 170, mass: 0.6}});
         const sh = shapes[i] ?? shapes[1];
         return (
@@ -115,14 +115,14 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number}> = ({hook
   );
 };
 
-export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean}> = ({hook, fontsReady}) => {
+export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean; srcFps?: number}> = ({hook, fontsReady, srcFps}) => {
   const fs = useFontSpec();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = frame / fps;
   if (!fontsReady || t < hook.start || t >= hook.end) return null;
   if (hook.style === 'serif') return <SerifHook hook={hook} />;
-  if (hook.style === 'stack') return <StackHook hook={hook} frame={frame} fps={fps} />;
+  if (hook.style === 'stack') return <StackHook hook={hook} frame={frame} fps={fps} mult={Math.max(1, Math.round(fps / (srcFps ?? fps)))} />;
   const s = HOOK_STYLE;
 
   const row = (i: number, extra: React.CSSProperties = {}): React.CSSProperties => ({
