@@ -118,13 +118,14 @@ Claude updates the video and saves it again in the same place.
 
 ## Getting updates
 
-New video formats (the *Coming soon* cards in the menu) and styles are added over time. To get them:
+New video formats (the *Coming soon* cards in the menu) and styles are added over time. **You don't need to do anything:** the editor's first-time setup turns on automatic updates for you, so new versions download in the background and are ready the next time you open Claude Code.
 
-- **Easiest:** in Claude Code type `/plugin`, open **Marketplaces → createcontent-club** and turn on **auto-update**.
-- **Or** in the terminal:
+- Want to update right now, or turned automatic updates off? In the terminal:
   ```
   claude plugin update ccc-editor@createcontent-club
   ```
+  then close and reopen Claude Code.
+- To switch automatic updates on or off yourself: in Claude Code type `/plugin`, open **Marketplaces → createcontent-club**.
 
 After an update, the first edit may take a minute longer while the editor refreshes itself.
 

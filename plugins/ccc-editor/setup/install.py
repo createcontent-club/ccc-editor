@@ -208,6 +208,42 @@ def install_models(home: Path, skip_whisper: bool) -> None:
     ok("speech model")
 
 
+# ------------------------------------------------------------------ auto-update
+MARKETPLACE = "createcontent-club"
+REPO = "createcontent-club/ccc-editor"
+
+
+def enable_auto_update() -> None:
+    """New formats reach the client without them doing anything: turn on auto-update for our marketplace.
+    Claude Code leaves it off for non-Anthropic marketplaces; the documented switch is `autoUpdate` on the
+    marketplace's `extraKnownMarketplaces` entry in the user's settings. A choice the client made (true or
+    false) is never overwritten, and an unreadable settings file is left alone."""
+    if not (CODE / ".claude-plugin" / "plugin.json").exists():
+        return  # development copy, not an installed plugin
+    cfg = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser()
+    f = cfg / "settings.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8")) if f.exists() and f.read_text(encoding="utf-8").strip() else {}
+        if not isinstance(data, dict):
+            return
+    except (OSError, ValueError):
+        print("  · automatic updates: couldn't read Claude's settings — turn them on in /plugin → Marketplaces", flush=True)
+        return
+    mk = data.setdefault("extraKnownMarketplaces", {})
+    entry = mk.setdefault(MARKETPLACE, {"source": {"source": "github", "repo": REPO}})
+    if not isinstance(entry, dict) or "autoUpdate" in entry:
+        return
+    entry["autoUpdate"] = True
+    try:
+        cfg.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.name + ".ccc-tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, f)
+        ok("automatic updates turned on (new formats arrive by themselves)")
+    except OSError:
+        print("  · automatic updates: couldn't save — turn them on in /plugin → Marketplaces", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--home", required=True)
@@ -226,6 +262,7 @@ def main() -> None:
     step("3/4 Video engine")
     install_remotion(home, node)
     step("4/4 Done")
+    enable_auto_update()
     version = json.loads((CODE / ".claude-plugin" / "plugin.json").read_text()).get("version", "dev") \
         if (CODE / ".claude-plugin" / "plugin.json").exists() else "dev"
     (home / "installed.json").write_text(json.dumps({"version": version, "code": str(CODE)}, indent=1))
