@@ -135,6 +135,35 @@ def menu() -> list[dict]:
     return [{k: f[k] for k in ("id", "title", "tagline", "status", "includes")} for f in FORMATS]
 
 
+CHOICE_KEYS = ("format", "hook_text", "hook_style", "hook_position", "caption_style", "font", "color", "camera",
+               "pacing", "top_style", "web", "links", "assets")
+
+
+def carry_over(cur: dict, new_format: str) -> dict:
+    """Promena formata: zadrži svaki izbor koji novi format dozvoljava (ranije su ostajali samo hook tekst i boja —
+    QA 0.8.0, P1-32); ostalo se vraća na podrazumevano novog formata."""
+    f = get(new_format)
+    el = f["elements"]
+    allowed = {
+        "hook_style": (el.get("hook") or {}).get("styles", []), "hook_position": (el.get("hook") or {}).get("positions", []),
+        "caption_style": el["captions"]["styles"], "camera": (el.get("camera") or {}).get("modes", []),
+        "pacing": (el.get("pacing") or {}).get("modes", []), "font": (el.get("font") or {}).get("choices", []),
+    }
+    out = {"format": f["id"]}
+    for k, v in cur.items():
+        if k == "format":
+            continue
+        if k in allowed:
+            if v in allowed[k]:
+                out[k] = v
+        elif k in ("top_style", "web", "links", "assets"):
+            if f.get("layout") == "split":
+                out[k] = v
+        elif k == "hook_text" and el.get("hook") or k == "color":
+            out[k] = v
+    return out
+
+
 def validate(d: dict) -> dict:
     """Izbori sa stranice (ili iz `ccc choices`) → čisti izbori za engine, po pravilima formata.
     ValueError sa porukom za klijenta (engleski)."""

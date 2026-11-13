@@ -9,13 +9,21 @@ def fmt_t(t: float) -> str:
     return f"{int(t // 60)}:{t % 60:04.1f}"
 
 
-def transcript(p: dict) -> str:
+def transcript(p: dict, words: bool = False, span: tuple[str, str] | None = None) -> str:
     """Jedan izgovoreni deo po redu, sa opsegom ID-jeva i oznakom šta je već izbačeno —
-    dovoljno da Claude odluči o retake-ovima, lažnim počecima i off-script delovima."""
+    dovoljno da Claude odluči o retake-ovima, lažnim počecima i off-script delovima.
+    `words`: svaka reč sa svojim ID-jem (`w14:First`), izbačene u ~…~ — za tačan `remove` usred rečenice
+    (QA 0.8.0, P1-29: ID-jevi unutar dela su se ranije pogađali). `span`: samo delovi koji dodiruju w_a–w_b."""
     from .cut import resolve
     removed = resolve(p["words"], p["utterances"], p["decisions"])
-    lines = []
+    idx = {w["id"]: i for i, w in enumerate(p["words"])}
+    lo, hi = (idx.get(span[0], 0), idx.get(span[1], len(idx))) if span else (0, len(idx))
+    if lo > hi:
+        lo, hi = hi, lo
+    lines = ["(~reč~ = izbačeno)"] if words else []
     for u in p["utterances"]:
+        if span and (not u["from"] or idx[u["to"]] < lo or idx[u["from"]] > hi):
+            continue
         if not u["from"]:
             lines.append(f"{u['id']} [{fmt_t(u['start'])}] (bez reči: dah/šum) — izbačeno")
             continue
@@ -24,7 +32,11 @@ def transcript(p: dict) -> str:
         tag = f"  ⟵ {', '.join(marks)}" if marks else ""
         low = [w["text"] for w in uw if w["prob"] < 0.5]
         unsure = f"  (nesigurno: {' '.join(low)})" if low else ""
-        lines.append(f"{u['from']}–{u['to']} [{fmt_t(u['start'])}] {u['text']}{tag}{unsure}")
+        if words:
+            body = " ".join(f"~{w['id']}:{w['text']}~" if w["id"] in removed else f"{w['id']}:{w['text']}" for w in uw)
+            lines.append(f"{u['id']} [{fmt_t(u['start'])}] {body}{tag}")
+        else:
+            lines.append(f"{u['from']}–{u['to']} [{fmt_t(u['start'])}] {u['text']}{tag}{unsure}")
     return "\n".join(lines)
 
 

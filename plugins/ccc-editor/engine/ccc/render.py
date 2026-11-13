@@ -58,12 +58,18 @@ def render_props(job: Job, p: dict) -> Path:
 def render(job: Job, p: dict, preview: bool) -> tuple[Path, float]:
     props = render_props(job, p)
     out = job.dir / ("preview.mp4" if preview else "final.mp4")
-    args = remotion_cli("render", "CccEdit", str(out), f"--props={props}")
+    # Render ide u .part.mp4 pa se preimenuje: prekinut render (zatvoren laptop, Ctrl+C) nikad ne ostavlja pola
+    # fajla pod pravim imenom, a prethodni dobar final.mp4 ostaje dok novi nije ceo (QA 0.8.0, P1-20).
+    part = out.with_name(out.stem + ".part.mp4")
+    part.unlink(missing_ok=True)
+    args = remotion_cli("render", "CccEdit", str(part), f"--props={props}")
     if preview:
         args += ["--scale=0.5", "--crf=26"]
     t0 = time.time()
     r = subprocess.run(args, cwd=REMOTION, capture_output=True, text=True)
-    if r.returncode != 0 or not out.exists():
+    if r.returncode != 0 or not part.exists():
+        part.unlink(missing_ok=True)
         tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
-        raise SystemExit(f"Remotion render nije uspeo:\n{tail}")
+        raise SystemExit(f"CCC_RENDER_FAILED: Remotion render nije uspeo:\n{tail}")
+    part.replace(out)
     return out, time.time() - t0

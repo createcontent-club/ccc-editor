@@ -37,9 +37,15 @@ def safe_name(name: str) -> str:
     return f"{stem[:60]}.{ext.lower()}" if dot else stem[:60]
 
 
-def run(job, p: dict, timeout: float = 1800, open_browser: bool = True, start_format: str | None = None) -> dict | None:
+NOT_OPENED_S = 90  # pregledač otvara stranicu odmah; ako je niko ne učita za 90 s, nije se otvorio
+
+
+def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
+        start_format: str | None = None) -> tuple[dict | None, str]:
+    """→ (izbori, "ok") · (None, "timeout") · (None, "not_opened") — pregledač nije učitao stranicu (QA 0.8.0, P1-30)."""
     result: dict = {}
     done = threading.Event()
+    seen = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # tiho
@@ -62,7 +68,10 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True, start_fo
             self._send(200, (PAGE_DIR / name).read_bytes(), "text/html; charset=utf-8")
 
         def do_GET(self):
+            seen.set()
             path = self.path.split("?", 1)[0]
+            if path == "/api/ping":
+                return self._json({"ok": not done.is_set()})
             if path in ("/", "/index.html"):
                 return self._page("menu.html")
             if path == "/api/assets":
@@ -166,8 +175,10 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True, start_fo
         url += f"f/{formats.get(start_format)['id']}"
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"Style Menu: {url}", flush=True)
-    if open_browser:
-        webbrowser.open(url)
-    got = done.wait(timeout)
+    opened = webbrowser.open(url) if open_browser else True
+    if open_browser and (not opened or not seen.wait(NOT_OPENED_S)):
+        server.shutdown()
+        return None, "not_opened"
+    got = done.wait(max(0.0, timeout - (NOT_OPENED_S if open_browser else 0)))
     server.shutdown()
-    return dict(result) if got else None
+    return (dict(result), "ok") if got else (None, "timeout")

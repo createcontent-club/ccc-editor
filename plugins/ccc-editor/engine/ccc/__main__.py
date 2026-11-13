@@ -18,6 +18,9 @@
                                      — rezervni put i izmene posle isporuke
   ./ccc formats                      formati u meniju i šta svaki preuzima iz Basic-a (pravila u engine/ccc/formats.py)
   ./ccc build <ime>                  izbori → titlovi, kamera, hook, zvuk, final render, provera, izvoz, izveštaj
+  ./ccc transcript <ime> [wA-wB] [--words]   delovi sa ID-jevima; --words = svaka reč (w14:First), izbačene ~…~
+  ./ccc at <ime> 0:22 [--original]   šta se govori u gotovom videu (ili originalu) u tom trenutku + ID-jevi
+  ./ccc clean [<ime>|--all]          disk: briše teške fajlove (snimak, zvuk, renderi) — vraćaju se sami iz originala
   ./ccc report <ime>                 izveštaj za klijenta (engleski)
   ./ccc word <ime> wID "tekst"       ispravi tekst reči u titlu (npr. ime brenda) — tajming i rezovi ostaju
   ./ccc keys <ime>                   glavne reči po titlu (Minimal stil)
@@ -166,17 +169,20 @@ def _build(job: Job, name: str) -> None:
     for ok, msg in res:
         print(f"  {'✅' if ok else '❌'} {msg}")
     if not all(ok for ok, _ in res):
-        print("! Provera nije prošla — ispravi pa ponovo ./ccc build (video NIJE izvezen).")
-        sys.exit(1)
+        print("CCC_CHECK_FAILED: provera nije prošla — ispravi pa ponovo ./ccc build (video NIJE izvezen).")
+        sys.exit(EXIT_CHECK)
 
+    from .storage import export
     src = Path(p["source"]["path"])
-    dest = src.with_name(f"{src.stem}-CCC-edit.mp4")
-    try:
-        shutil.copy(job.dir / "final.mp4", dest)
-        p["exported"] = str(dest)
-    except OSError:
-        p["exported"] = str(job.dir / "final.mp4")
+    prev = p.get("exported")
+    dest, note = export(job.dir / "final.mp4", src)
+    p["exported"] = str(dest)
+    p.setdefault("exports", []).append({"file": str(dest), "at": __import__("time").strftime("%Y-%m-%d %H:%M")})
     job.save(p)
+    print(f"▶ Izvoz: {dest}" + (f" (prethodna verzija ostaje: {Path(prev).name})" if prev and prev != str(dest)
+                                 and Path(prev).exists() else ""))
+    if note:
+        print(f"! EXPORT_NOTE: {note}")
     if (p.get("layout") or {}).get("type") == "split":  # struktura ovog videa — samo da sledeći ne liči na njega
         from .story import remember
         from .visuals import timeline
@@ -188,7 +194,15 @@ def _build(job: Job, name: str) -> None:
         print(f"\nSTORYBOARD v{sb['version']}: {sb['html']} ({sb['scenes']} scena) — objavi ga kao Artifact (vidi CLAUDE.md)")
 
 
-READ_ONLY = {"transcript", "review", "report", "keys", "listen", "research", "check"}
+# Izlazni kodovi (QA 0.8.0, P1-31) — SKILL.md ih čita ovako:
+#   0 gotovo · 1 CCC_<KOD>/greška u ulazu (poruka kaže šta da se uradi) · 2 picker: nema izbora (pitaj u chatu)
+#   3 nije instaliran (wrapper `ccc`) · 4 CCC_CHECK_FAILED: provera gotovog videa pala, NIŠTA nije izvezeno
+#   5 CCC_CRASH: greška u engine-u (log u logs/) — nije klijentova ni Claude-ova greška
+EXIT_ERROR, EXIT_PICKER, EXIT_CHECK, EXIT_CRASH = 1, 2, 4, 5
+
+READ_ONLY = {"at", "transcript", "review", "report", "keys", "listen", "research", "check"}
+# Komande koje ne čitaju snimak/zvuk — rade i na očišćenom projektu bez vraćanja medija.
+NO_MEDIA = {"at", "transcript", "review", "report", "keys", "approve", "visuals", "storyboard", "feedback", "word", "key"}
 
 
 REASONS = {"off-script", "retake", "false-start", "filler", "stutter"}
@@ -209,7 +223,13 @@ def main(argv: list[str]) -> None:
     sub.add_parser("name").add_argument("video")
     sub.add_parser("doctor").add_argument("--quick", action="store_true")
     sub.add_parser("formats")
-    for c in ("transcript", "cut", "review", "check", "retime", "previews", "build", "report", "keys", "verify"):
+    scl = sub.add_parser("clean"); scl.add_argument("name", nargs="?")
+    scl.add_argument("--all", action="store_true", help="svi projekti (odluke ostaju, teški fajlovi se brišu)")
+    sat = sub.add_parser("at"); sat.add_argument("name"); sat.add_argument("time", help="0:22, 1:05.5 ili 22.5")
+    sat.add_argument("--original", action="store_true", help="vreme je u ORIGINALNOM snimku (podrazumevano: gotov video)")
+    stt = sub.add_parser("transcript"); stt.add_argument("name"); stt.add_argument("span", nargs="?", help="npr. w100-w180")
+    stt.add_argument("--words", action="store_true", help="svaka reč sa svojim ID-jem (w14:First), izbačene u ~…~")
+    for c in ("cut", "review", "check", "retime", "previews", "build", "report", "keys", "verify"):
         sub.add_parser(c).add_argument("name")
     sr = sub.add_parser("remove"); sr.add_argument("name"); sr.add_argument("words"); sr.add_argument("reason")
     sk = sub.add_parser("keep"); sk.add_argument("name"); sk.add_argument("words")
@@ -276,6 +296,22 @@ def main(argv: list[str]) -> None:
         r = subprocess.run([sys.executable, str(CODE / "tools" / "doctor.py")] + (["--quick"] if a.quick else []))
         sys.exit(r.returncode)
 
+    if a.cmd == "clean":  # disk: teški fajlovi (snimak, zvuk, renderi) — vraćaju se sami iz originala kad zatrebaju
+        from .storage import clean, projects, space_report
+        if not a.name and not a.all:
+            print("Projekti na disku:\n" + space_report() + "\n`ccc clean <ime>` ili `ccc clean --all`")
+            return
+        total = 0
+        for job in ([Job(a.name)] if a.name else projects()):
+            if not job.exists:
+                raise SystemExit(f"Nema projekta '{job.name}'.")
+            job.lock()
+            freed = clean(job)
+            total += freed
+            print(f"  {job.name}: {freed / 1024 ** 3:.2f} GB")
+        print(f"✓ oslobođeno {total / 1024 ** 3:.1f} GB (odluke, izbori, asseti i izvezeni videi ostaju)")
+        return
+
     if a.cmd == "formats":
         from . import formats as F
         for f in F.FORMATS:
@@ -311,10 +347,14 @@ def main(argv: list[str]) -> None:
         from .picker import run as run_picker
         job = Job(a.name)
         p = job.load() if job.exists else {"name": a.name}
-        choices = run_picker(job, p, a.timeout, not a.no_open, a.format)
+        choices, status = run_picker(job, p, a.timeout, not a.no_open, a.format)
         if choices is None:
-            print("! Klijent nije izabrao stil u roku — postavi pitanja u Claude Code-u.")
-            sys.exit(2)
+            if status == "not_opened":
+                print("CCC_PICKER_NOT_OPENED: the browser did not open the Style Menu — ask the questions in Claude Code "
+                      "(or give the client the address above to open by hand: `ccc picker <name> --no-open`).")
+            else:
+                print("CCC_PICKER_TIMEOUT: no choice within the time limit — ask the questions in Claude Code.")
+            sys.exit(EXIT_PICKER)
         job.dir.mkdir(parents=True, exist_ok=True)
         (job.dir / "choices.json").write_text(json.dumps(choices, indent=1, ensure_ascii=False))
         print("✓ izbori: " + json.dumps(choices, ensure_ascii=False))
@@ -368,14 +408,20 @@ def main(argv: list[str]) -> None:
         job.lock()
         f = job.dir / "choices.json"
         cur = json.loads(f.read_text()) if f.exists() else {}
-        new_fmt = next((kv.partition("=")[2].strip() for kv in a.pairs if kv.startswith("format=")), None)
-        if new_fmt and new_fmt != cur.get("format", "basic"):  # drugi format = njegova pravila; tekst i boja ostaju
-            cur = {k: cur[k] for k in ("hook_text", "color") if k in cur}
+        from .formats import CHOICE_KEYS, carry_over
+        pairs = []
         for kv in a.pairs:
             k, sep, v = kv.partition("=")
             if not sep:
-                raise SystemExit(f"Očekujem ključ=vrednost, dobio: {kv}")
-            cur[k.strip()] = v.strip() or None
+                raise SystemExit(f"CCC_BAD_CHOICE: expected key=value, got: {kv}")
+            if k.strip() not in CHOICE_KEYS:  # tipfeler ("hook_txt") se ranije tiho ignorisao
+                raise SystemExit(f"CCC_BAD_CHOICE: unknown key '{k.strip()}' — use: {', '.join(CHOICE_KEYS[:-1])}")
+            pairs.append((k.strip(), v.strip() or None))
+        new_fmt = next((v for k, v in pairs if k == "format"), None)
+        if new_fmt and new_fmt != cur.get("format", "basic"):  # drugi format: ostaje sve što on dozvoljava
+            cur = carry_over(cur, new_fmt)
+        for k, v in pairs:
+            cur[k] = v
         try:
             clean = validate(cur)
         except ValueError as err:
@@ -416,6 +462,15 @@ def main(argv: list[str]) -> None:
             for f in job.dir.iterdir() if job.dir.exists() else []:
                 if f.name != ".lock":
                     shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
+        from .storage import auto_clean, free_bytes, need_space, space_report
+        for nm, freed in auto_clean(skip=job.name):
+            print(f"  očišćeno: {nm} ({freed / 1024 ** 3:.1f} GB — izvezen pre 14+ dana; vraća se sam ako zatreba)")
+        need, free = need_space(src.stat().st_size), free_bytes(job.dir)
+        if free < need:
+            raise SystemExit(f"CCC_DISK_FULL: this video needs about {need / 1024 ** 3:.1f} GB free, the disk has "
+                             f"{free / 1024 ** 3:.1f} GB. Projects on disk:\n{space_report()}\n"
+                             "Free space with `ccc clean <name>` (keeps the edit, removes re-creatable files) or "
+                             "`ccc clean --all`.")
         info = probe(src)
         if not info["has_audio"]:
             raise SystemExit("CCC_NO_SOUND: this video has no sound — the editor needs the spoken audio.")
@@ -456,9 +511,45 @@ def main(argv: list[str]) -> None:
     if a.cmd not in READ_ONLY:  # sve što menja projekat čeka svoj red (paralelne komande su gubile izmene)
         job.lock()
     p = job.load()
+    if a.cmd not in NO_MEDIA:
+        from .storage import ensure_media
+        if ensure_media(job, p):
+            p = job.load()
+    if a.cmd == "at":
+        # Klijent kaže vreme iz GOTOVOG videa ("na 0:22") → reči i ID-jevi na tom mestu (QA 0.8.0, P1-35).
+        from .review import fmt_t
+        try:
+            parts = [float(x) for x in a.time.replace(",", ".").split(":")]
+        except ValueError:
+            raise SystemExit(f"CCC_BAD_TIME: '{a.time}' — use 0:22, 1:05.5 or 22.5")
+        t = sum(v * 60 ** i for i, v in enumerate(reversed(parts)))
+        src, acc = None, 0.0
+        if a.original:
+            src = t
+        else:
+            for g in p["segments"]:
+                ln = g["srcEnd"] - g["srcStart"]
+                if t <= acc + ln:
+                    src = g["srcStart"] + (t - acc)
+                    break
+                acc += ln
+            if src is None:
+                raise SystemExit(f"CCC_BAD_TIME: the edited video is only {fmt_t(acc)} long")
+        from .cut import resolve
+        removed = resolve(p["words"], p["utterances"], p["decisions"])
+        near = [w for w in p["words"] if src - 4 <= w["start"] <= src + 4]
+        here = min(near, key=lambda w: abs((w["start"] + w["end"]) / 2 - src)) if near else None
+        print(f"{'original' if a.original else 'edited video'} {fmt_t(t)} = original {fmt_t(src)}")
+        if here:
+            print("  " + " ".join((f"~{w['id']}:{w['text']}~" if w["id"] in removed else f"{w['id']}:{w['text']}")
+                                  + ("◀" if w is here else "") for w in near))
+            print("  (◀ = at that moment · ~…~ = already cut)")
+        else:
+            print("  (no words within 4 s)")
+        return
     if a.cmd == "transcript":
         from .review import transcript
-        print(transcript(p))
+        print(transcript(p, a.words or bool(a.span), _range(a.span) if a.span else None))
     elif a.cmd in ("remove", "keep"):
         if a.cmd == "remove" and a.reason not in REASONS:
             raise SystemExit(f"CCC_BAD_REASON: '{a.reason}' — use one of: {', '.join(sorted(REASONS))}")
@@ -508,8 +599,14 @@ def main(argv: list[str]) -> None:
               + (f" · u rasponu su i reči {inside[0]['id']}–{inside[-1]['id']} — proveri da nisu isečene" if inside else ""))
     elif a.cmd == "verify":
         # Slušanje gotovog reza (engine/ccc/verify.py): vremena reči iz gotovog zvuka + upozorenja.
-        from .verify import listen, lost_retakes
-        msgs = lost_retakes(p) + listen(job, p, retime=True)
+        from .verify import cache_key, listen, lost_retakes
+        prev = p.get("verify") or {}
+        if prev.get("key") == cache_key(p):  # rez se nije promenio od poslednjeg slušanja
+            msgs = lost_retakes(p) + [m for m in prev.get("msgs", []) if not m.startswith("(info)")]
+            msgs.append("(info) slušanje reza: rez je isti kao pri prošlom slušanju — korišćen taj rezultat")
+        else:
+            msgs = lost_retakes(p) + listen(job, p, retime=True)
+            p["verify"] = {"key": cache_key(p), "msgs": [m for m in msgs if not m.startswith("retake ")]}
         job.save(p)
         warn = [m for m in msgs if not m.startswith("(info)")]
         for m in msgs:
@@ -695,13 +792,16 @@ def main(argv: list[str]) -> None:
         print(f"✓ odobreno: {a.gate} ({p['approved'][a.gate]})")
     elif a.cmd == "check":
         from .check import run_checks
-        out = job.dir / "final.mp4"
-        out = out if out.exists() else job.dir / "preview.mp4"
+        cand = [f for f in (job.dir / "final.mp4", job.dir / "preview.mp4") if f.exists()]
+        if not cand:
+            raise SystemExit("Nema renderovanog videa — prvo ./ccc build (ili ./ccc render).")
+        out = max(cand, key=lambda f: f.stat().st_mtime)  # stari final.mp4 ne sme da sakrije noviji preview
         res = run_checks(job, p, out)
         for ok, msg in res:
             print(f"  {'✅' if ok else '❌'} {msg}")
         if not all(ok for ok, _ in res):
-            sys.exit(1)
+            print(f"CCC_CHECK_FAILED: {out.name}")
+            sys.exit(EXIT_CHECK)
     elif a.cmd == "render":
         from .render import render
         out, secs = render(job, p, preview=not a.final)

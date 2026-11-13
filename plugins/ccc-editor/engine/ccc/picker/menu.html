@@ -155,5 +155,29 @@ function soonCard(f) {
   }
 })();
 </script>
+<script>
+/* Meni zna da je zatvoren (QA 0.8.0, P1-30): server se gasi posle roka ili izbora — stranica to proveri na 5 s
+   i pokaže jasnu poruku umesto dugmeta koje "ne radi". */
+(function () {
+  const show = () => {
+    if (window.cccDone || document.getElementById("ccc-closed")) return;
+    const d = document.createElement("div");
+    d.id = "ccc-closed";
+    d.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(10,10,11,.9);display:grid;place-items:center;" +
+      "color:#fff;font:600 20px/1.45 system-ui,sans-serif;text-align:center;padding:24px";
+    d.innerHTML = "<div><p style='font-size:30px;margin:0 0 12px'>This menu has closed</p>" +
+      "<p style='opacity:.8;margin:0;max-width:520px'>Go back to Claude Code and say \u201copen the style menu again\u201d \u2014 " +
+      "or just answer the questions there.</p></div>";
+    document.body.appendChild(d);
+  };
+  window.cccClosed = show;
+  let fails = 0;
+  setInterval(() => {
+    if (window.cccDone) return;
+    fetch("/api/ping", {cache: "no-store"}).then((r) => { fails = r.ok ? 0 : fails + 1; if (fails >= 2) show(); })
+      .catch(() => { if (++fails >= 2) show(); });
+  }, 5000);
+})();
+</script>
 </body>
 </html>

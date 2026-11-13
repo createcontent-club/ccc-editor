@@ -101,12 +101,34 @@ class Job:
     def load(self) -> dict:
         if not self.exists:
             raise SystemExit(f"Nema projekta '{self.name}'. Prvo: ./ccc prepare <video>")
-        return json.loads(self.file.read_text())
+        try:
+            return json.loads(self.file.read_text())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Oštećen project.json (pun disk, ručna izmena) → poslednja dobra verzija iz .bak (QA 0.8.0, P1-33).
+            bak = self.file.with_name("project.json.bak")
+            try:
+                p = json.loads(bak.read_text())
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                raise SystemExit(f"CCC_PROJECT_DAMAGED: {self.file} is damaged and has no usable backup — start over "
+                                 "with `ccc prepare <video> --force`.")
+            self.file.with_name("project.json.damaged").write_bytes(self.file.read_bytes())
+            print("! project.json je bio oštećen — vraćena poslednja dobra verzija (project.json.bak)", flush=True)
+            self.save(p)
+            return p
 
     def save(self, p: dict) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
         tmp = self.file.with_suffix(f".{os.getpid()}.tmp")
         tmp.write_text(json.dumps(p, indent=1, ensure_ascii=False))
+        if self.file.exists():  # poslednja dobra verzija (samo ako je ispravna — oštećenu ne čuvamo kao rezervu)
+            try:
+                cur = self.file.read_bytes()
+                json.loads(cur)
+                bak = self.file.with_name(f"project.json.{os.getpid()}.baktmp")
+                bak.write_bytes(cur)  # kopija, ne premeštanje: project.json ni na trenutak ne nestaje
+                bak.replace(self.file.with_name("project.json.bak"))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                pass
         tmp.replace(self.file)
 
     def public_rel(self, filename: str) -> str:

@@ -639,13 +639,15 @@ def _types(plan: dict) -> list[str]:
                 here = f"{path}.{key}"
                 if key in ("from", "at") and not isinstance(v, str):
                     errs.append(f"{here}: mora biti id reči kao tekst (npr. \"w42\"), a ne {type(v).__name__}")
-                elif key in LIST_FIELDS and key not in ("highlight", "x") and v is not None and not isinstance(v, list):
+                elif key in LIST_FIELDS and key not in ("highlight", "x") and v is not None and not isinstance(v, list) \
+                        and not (key == "rows" and isinstance(v, int)):  # resource: rows = broj praznih redova je OK
                     errs.append(f"{here}: mora biti lista")
                 elif key in ("text", "label", "name", "title", "line1", "line2", "kicker") and v is not None \
                         and not isinstance(v, (str, dict)):
                     errs.append(f"{here}: mora biti tekst (npr. \"$4.2M\"), a ne {type(v).__name__}")
                 elif key in ("n", "size", "x", "y", "rx", "ry", "scale", "speed", "cols", "gap", "aspect") \
-                        and v is not None and not isinstance(v, (int, float, list)):
+                        and (".actors[" in here or ".beats[" in here) and v is not None and not isinstance(v, (int, float)):
+                    # samo položaji u sceni (chart koristi x = lista oznaka, y = naziv ose — 0.8.1 ih je odbijao)
                     errs.append(f"{here}: mora biti broj")
                 walk(v, here)
         elif isinstance(n, list):
@@ -673,7 +675,54 @@ def _types(plan: dict) -> list[str]:
                 ay = ay if isinstance(ay, (int, float)) else 480
                 if isinstance(a_, dict) and (not 0 <= ax <= 1080 or not 120 <= ay <= 900):
                     errs.append(f"moment {i} (scene): glumac '{a_.get('id')}' je van pozornice (x 0–1080, y 120–900)")
+        errs += _lengths(i, it.get("kind"), d if isinstance(d, dict) else {})
     return errs[:20]
+
+
+def _t(x) -> str:
+    return x if isinstance(x, str) else str(x.get("text") or x.get("label") or "") if isinstance(x, dict) else ""
+
+
+def _lengths(i: int, kind, d: dict) -> list[str]:
+    """Najduži tekst koji šablon još čita: auto-fit ga smanjuje do ~60%, duži postaje sitan (QA 0.8.0, P1-23)."""
+    out = []
+
+    def cap(txt: str, mx: int, what: str):
+        if len(txt) > mx:
+            out.append(f"moment {i} ({kind}): {what} \"{txt[:40]}…\" ima {len(txt)} znakova (najviše {mx}) — skrati; "
+                       "ceo izgovor je već u titlu")
+    if kind == "faceoff":
+        for s_ in d.get("sides") or []:
+            if isinstance(s_, dict):
+                cap(_t(s_.get("name")), 28, "ime")
+                for v in s_.get("values") or []:
+                    cap(_t(v), 26, "vrednost")
+                    if isinstance(v, dict):
+                        cap(_t(v.get("label")), 40, "natpis")
+    elif kind == "pillars":
+        for b in d.get("bars") or []:
+            if isinstance(b, dict):
+                cap(_t(b.get("name")), 22, "ime stubića")
+        for s_ in d.get("sets") or []:
+            if isinstance(s_, dict):
+                cap(_t(s_.get("label")), 60, "natpis skupa")
+                cap(_t(s_.get("note")), 44, "note")
+                for x in s_.get("display") or []:
+                    cap(_t(x), 10, "prikaz vrednosti")
+    elif kind == "resource":
+        cap(_t(d.get("title")), 60, "naslov")
+        cap(_t(d.get("sub")), 90, "podnaslov")
+        cap(_t(d.get("badge")), 28, "badge")
+        for r in d.get("rows") if isinstance(d.get("rows"), list) else []:
+            cap(_t(r), 70, "red")
+    elif kind == "scene":
+        for b in d.get("beats") or []:
+            if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):
+                cap(_t(b.get("text")), 30, b["do"])
+        for a_ in d.get("actors") or []:
+            if isinstance(a_, dict) and isinstance(a_.get("text"), str):
+                cap(a_["text"], 60, "tekst glumca")
+    return out
 
 
 def save_plan(job, p: dict, path: Path) -> None:

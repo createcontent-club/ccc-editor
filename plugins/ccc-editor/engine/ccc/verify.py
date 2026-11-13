@@ -143,6 +143,16 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
     return problems
 
 
+def cache_key(p: dict) -> str:
+    """Otisak reza: isti segmenti i isti zadržani tekst = isti gotov zvuk → slušanje ne mora ponovo (svaki build
+    posle izmene titla/hooka/boje je ranije ponovo slušao ceo video, ~1.5× trajanja videa)."""
+    import hashlib
+    import json
+    seg = [(s["srcStart"], s["srcEnd"]) for s in p.get("segments", [])]
+    txt = [w["text"] for w in kept_words(p)]
+    return hashlib.sha1(json.dumps([seg, txt, bool(p.get("audio"))]).encode()).hexdigest()[:16]
+
+
 def lost_retakes(p: dict) -> list[str]:
     """Retake izbačen ručno, a nijedna njegova verzija nije zadržana (npr. obe "Fourth problem" obrisane)."""
     from .cut import resolve

@@ -95,6 +95,39 @@ const font = (w: number, size: number, lh = 1.15): React.CSSProperties =>
   ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em'});
 
 /**
+ * Auto-fit teksta (QA 0.8.0, P1-23): šabloni su birali veličinu po broju slova i `nowrap` — dugačko ime ili brojka
+ * izlazila je iz kartice / preko susednog stubića. Širina se meri pravim fontom (canvas u Chrome-u koji renderuje),
+ * pa se veličina smanji tačno toliko da stane (najmanje `min`). `ls` = letter-spacing u em (font(): -0.03).
+ */
+let MEASURE: CanvasRenderingContext2D | null = null;
+const textW = (s: string, w: number, size: number, ls = -0.03) => {
+  const str = String(s ?? '');
+  if (!MEASURE && typeof document !== 'undefined') MEASURE = document.createElement('canvas').getContext('2d');
+  if (!MEASURE) return str.length * size * 0.56;
+  MEASURE.font = `${w} ${size}px "${CAPTION_FONT}", sans-serif`;
+  return MEASURE.measureText(str).width + ls * size * str.length;
+};
+const fit = (s: string, w: number, size: number, maxW: number, min = Math.round(size * 0.5), ls = -0.03) => {
+  const tw = textW(s, w, size, ls) * 1.04;  // 4% rezerve: subpikseli, kerning u stvarnom layout-u
+  return tw <= maxW ? size : Math.max(min, Math.floor((size * maxW) / tw));
+};
+/** Koliko redova zauzima tekst koji se prelama u širini maxW (procena za visinu kartice). */
+const lines = (s: string, w: number, size: number, maxW: number) => {
+  let n = 1, cur = 0;
+  const space = textW(' ', w, size);
+  for (const word of String(s ?? '').split(/\s+/).filter(Boolean)) {
+    const ww = textW(word, w, size);
+    if (cur > 0 && cur + space + ww > maxW) { n += 1; cur = ww; } else cur += (cur > 0 ? space : 0) + ww;
+  }
+  return n;
+};
+/** Drži kutiju širine bw (centar x) u sigurnoj zoni po x. */
+const clampY = (y: number, bh: number) =>
+  bh >= ZONE.h ? ZONE.y + ZONE.h / 2 : Math.min(ZONE.y + ZONE.h - bh / 2, Math.max(ZONE.y + bh / 2, y));
+const clampX = (x: number, bw: number) =>
+  bw >= ZONE.w ? ZONE.x + ZONE.w / 2 : Math.min(ZONE.x + ZONE.w - bw / 2, Math.max(ZONE.x + bw / 2, x));
+
+/**
  * Vertikalna grupa koja se glatko re-centrira: delovi (visina h, pojava at) zauzimaju mesto od početka,
  * a grupa je pomerena tako da je VIDLJIVI deo uvek na sredini zone — kad stigne nov deo, sve klizne gore.
  */
@@ -825,6 +858,22 @@ const Resource: React.FC<{d: any}> = ({d}) => {
       overflow: 'hidden'}}>{children}</div>
   );
   const title = txt(d.title);
+  // Auto-fit (QA 0.8.0, P1-23): dug naslov ili 5 dugih redova su izlazili ispod stranice (overflow: hidden ih je sekao).
+  // Procena visine sadržaja → svi tekstovi se smanje istim faktorom dok ne stane (najviše do 62%).
+  const subT = d.sub ? txt(d.sub) : '';
+  const tBase = title.length > 18 ? 38 : title.length > 12 ? 44 : 56;
+  const TW = PW - 68, RW = TW - 40 - 30 - 28;
+  const bodyH = (f: number) => {
+    const ts = tBase * f, ss = 28 * f, rs = 29 * f;
+    let h = 116 + 30 + lines(title, 800, ts, TW) * ts * 1.05 + 24;
+    if (subT) h += 14 + lines(subT, 600, ss, TW) * ss * 1.2;
+    if (textRows) h += textRows.reduce((a, r) => a + Math.max(30, lines(txt(r), 700, rs, RW) * rs * 1.15) + 14, 0);
+    else h += rows * 38;
+    return h;
+  };
+  let F = 1;
+  while (F > 0.62 && bodyH(F) > PH - 24) F -= 0.04;
+  const titleSize = Math.min(Math.round(tBase * F), ...title.split(/\s+/).map((w) => fit(w, 800, Math.round(tBase * F), TW)));
   return (
     <div style={{position: 'relative', width: 900, height: PH + 20, ...pop(enter, 40)}}>
       {page(-7 * fan, -170 * fan, 1)}
@@ -838,15 +887,15 @@ const Resource: React.FC<{d: any}> = ({d}) => {
             <div style={{...font(800, 26, 1.1), letterSpacing: '0.12em', color: onAccent(c.acc)}}>{d.kicker ?? 'REPORT'}</div>
           </div>
           <div style={{padding: '30px 34px 0', display: 'flex', flexDirection: 'column', gap: 14}}>
-            <div style={{...pop(prog(c, tAt, 0.5), 14), ...font(800, title.length > 18 ? 38 : title.length > 12 ? 44 : 56, 1.05), letterSpacing: '-0.03em', color: c.th.ink}}>{title}</div>
-            {d.sub ? <div style={{...pop(prog(c, sAt, 0.5), 10), ...font(600, 28, 1.2), color: c.th.mut}}>{txt(d.sub)}</div> : null}
+            <div style={{...pop(prog(c, tAt, 0.5), 14), ...font(800, titleSize, 1.05), letterSpacing: '-0.03em', color: c.th.ink}}>{title}</div>
+            {d.sub ? <div style={{...pop(prog(c, sAt, 0.5), 10), ...font(600, Math.round(28 * F), 1.2), color: c.th.mut}}>{subT}</div> : null}
             <div style={{display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10}}>
               {Array.from({length: rows}, (_, i) => {
                 const k = ease(c.t, textRows ? at0(textRows[i], 0.25 + i * 0.22) : sAt + 0.15 + i * 0.16, 0.4);
                 if (textRows) return (
                   <div key={i} style={{display: 'flex', alignItems: 'center', gap: 14, ...pop(k, 10)}}>
                     <div style={{...font(800, 24, 1), color: c.acc, width: 40, fontVariantNumeric: 'tabular-nums'}}>{String(i + 1).padStart(2, '0')}</div>
-                    <div style={{...font(700, 29, 1.15), color: c.th.ink, flex: 1}}>{txt(textRows[i])}</div>
+                    <div style={{...font(700, Math.round(29 * F), 1.15), color: c.th.ink, flex: 1}}>{txt(textRows[i])}</div>
                     <Ph.CheckCircle size={30} weight="fill" color={c.acc} style={{opacity: k}} />
                   </div>
                 );
@@ -865,7 +914,8 @@ const Resource: React.FC<{d: any}> = ({d}) => {
       ))}
       {d.badge ? (
         <div style={{position: 'absolute', zIndex: 5, right: 140, top: -18, transform: `scale(${bk}) rotate(${(1 - bk) * -12 + 6}deg)`,
-          opacity: Math.min(1, bk * 1.5), ...font(800, 30, 1), letterSpacing: '0.08em', color: '#FFFFFF', background: '#FF3040',
+          opacity: Math.min(1, bk * 1.5), ...font(800, fit(txt(d.badge), 800, 30, 380, 20, 0.08), 1), letterSpacing: '0.08em', color: '#FFFFFF', background: '#FF3040',
+          whiteSpace: 'nowrap',
           padding: '14px 24px', borderRadius: 99, boxShadow: '0 14px 30px rgba(255,48,64,0.35)'}}>{txt(d.badge)}</div>
       ) : null}
     </div>
@@ -1402,8 +1452,8 @@ const Faceoff: React.FC<{d: any; sf: number}> = ({d, sf}) => {
                 </div>
               ) : null}
             </div>
-            <div style={{marginTop: s.logo?.src ? LOGO / 2 + 18 : 22, ...font(800, 44, 1.05), color: c.th.ink, textAlign: 'center',
-              whiteSpace: 'nowrap'}}>{s.name ?? ''}</div>
+            <div style={{marginTop: s.logo?.src ? LOGO / 2 + 18 : 22, ...font(800, fit(s.name ?? '', 800, 44, W + 40), 1.05), color: c.th.ink,
+              textAlign: 'center', whiteSpace: 'nowrap'}}>{s.name ?? ''}</div>
             <div style={{position: 'relative', height: 120, width: W + 120, marginTop: 6}}>
               {vals.map((x, j) => {
                 if (j !== cur && j !== cur - 1) return null;
@@ -1413,9 +1463,10 @@ const Faceoff: React.FC<{d: any; sf: number}> = ({d, sf}) => {
                 return (
                   <div key={j} style={{position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
                     opacity: kin * (1 - kout), transform: `translateY(${(1 - kin) * 18 - kout * 22}px)`}}>
-                    <div style={{...font(900, txt(x).length <= 8 ? 66 : txt(x).length <= 13 ? 52 : 40, 1.0), letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    <div style={{...font(900, fit(txt(x), 900, txt(x).length <= 8 ? 66 : txt(x).length <= 13 ? 52 : 40, W + 50, 26, -0.04), 1.0),
+                      letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
                       color: x.tone === 'bad' ? TONES.bad : x.tone === 'good' ? c.acc : c.th.ink}}>{countUp(txt(x), ease(c.t, times[j], 1.1))}</div>
-                    {x.label ? <div style={{...font(600, 30), color: c.th.mut, marginTop: 8, whiteSpace: 'nowrap'}}>{x.label}</div> : null}
+                    {x.label ? <div style={{...font(600, fit(x.label, 600, 30, W + 50, 20)), color: c.th.mut, marginTop: 8, whiteSpace: 'nowrap'}}>{x.label}</div> : null}
                   </div>
                 );
               })}
@@ -1454,6 +1505,7 @@ const Pillars: React.FC<{d: any}> = ({d}) => {
   };
   const totalW = n * BW + (n - 1) * GAP;
   const x0 = (ZONE.w - totalW) / 2;
+  const SLOT = Math.min(BW + GAP - 24, BW + 2 * x0 + 60);  // širina za vrednost/ime: ne prelazi u susedni stubić
   const setLabel = sets[cur]?.label;
   // isti natpis kao u prethodnom skupu ostaje miran (ne trepne) — principle 44
   const kl = cur > 0 && sets[cur - 1]?.label === setLabel ? 1 : ease(c.t, times[cur] ?? 0, 0.55);
@@ -1463,12 +1515,13 @@ const Pillars: React.FC<{d: any}> = ({d}) => {
   return (
     <div style={{width: ZONE.w, height: 680, position: 'relative'}}>
       {setLabel ? (
-        <div style={{position: 'absolute', left: 0, right: 0, top: 0, textAlign: 'center', ...font(700, 36), color: c.th.mut,
+        <div style={{position: 'absolute', left: 0, right: 0, top: 0, textAlign: 'center', ...font(700, fit(setLabel, 700, 36, ZONE.w, 24)), color: c.th.mut,
+          whiteSpace: 'nowrap',
           letterSpacing: '0.01em', opacity: kl, transform: `translateY(${(1 - kl) * 10}px)`}}>{setLabel}</div>
       ) : null}
       {note && kn > 0 ? (
         <div style={{position: 'absolute', left: '50%', top: 58, transform: `translateX(-50%) scale(${0.7 + 0.3 * kn})`, opacity: Math.min(1, kn * 1.4),
-          ...font(900, 46), color: onAccent(note.tone === 'bad' ? TONES.bad : c.acc), background: note.tone === 'bad' ? TONES.bad : c.acc,
+          ...font(900, fit(txt(note), 900, 46, ZONE.w - 60, 28)), color: onAccent(note.tone === 'bad' ? TONES.bad : c.acc), background: note.tone === 'bad' ? TONES.bad : c.acc,
           padding: '8px 24px', borderRadius: 16, whiteSpace: 'nowrap', boxShadow: `0 0 40px ${rgba(c.acc, 0.35)}`}}>{txt(note)}</div>
       ) : null}
       <div style={{position: 'absolute', left: x0 - 40, width: totalW + 80, top: BASE, height: 3, borderRadius: 3, background: c.th.line}} />
@@ -1505,9 +1558,9 @@ const Pillars: React.FC<{d: any}> = ({d}) => {
               )}
             </div>
             <div style={{position: 'absolute', left: left - 60, width: BW + 120, top: top - AV - 14 - 74, textAlign: 'center', opacity: kv,
-              ...font(900, 60, 1), letterSpacing: '-0.04em', color: tone === 'bad' ? TONES.bad : tone === 'good' ? c.acc : c.th.ink,
+              ...font(900, fit(shown, 900, 60, SLOT, 30, -0.04), 1), letterSpacing: '-0.04em', color: tone === 'bad' ? TONES.bad : tone === 'good' ? c.acc : c.th.ink,
               fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap'}}>{valueText}</div>
-            <div style={{position: 'absolute', left: left - 60, width: BW + 120, top: BASE + 16, textAlign: 'center', ...font(800, 38),
+            <div style={{position: 'absolute', left: left - 60, width: BW + 120, top: BASE + 16, textAlign: 'center', ...font(800, fit(b.name ?? '', 800, 38, SLOT, 22)),
               color: c.th.ink, opacity: inn, whiteSpace: 'nowrap'}}>{b.name ?? ''}</div>
           </React.Fragment>
         );
@@ -1526,6 +1579,14 @@ const Pillars: React.FC<{d: any}> = ({d}) => {
  *           "swap" {file} (nova slika u istom okviru) · "exit"
  * Sve se kreće stalno (lagano lebdenje), ništa ne skače: svaki pokret je meka kriva.
  */
+/** Tekst-glumac: font staje u širinu glumca, najduža reč u jedan red, najviše 3 reda (ranije je `size` = i font). */
+const textSize = (a: any, w: number) => {
+  let fs = a.fontSize ?? 64;
+  const words = String(a.text ?? '').split(/\s+/).filter(Boolean);
+  while (fs > 26 && (lines(a.text, 900, fs, w) > 3 || words.some((x) => textW(x, 900, fs) * 1.04 > w))) fs -= 2;
+  return fs;
+};
+
 const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
   const c = useC();
   const actors: any[] = d.actors ?? [];
@@ -1544,22 +1605,31 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
             borderRadius: a.frame ? 16 : 0, background: a.fit === 'contain' ? '#fff' : undefined}} />
         </div>))
       : a.icon ? <IconTile name={a.icon} size={Math.min(w, h)} at={0} />
-        : <div style={{...font(900, a.size ?? 64, 1.05), color: c.th.ink, textAlign: 'center', width: w}}>{a.text}</div>;
+        : <div style={{...font(900, textSize(a, w), 1.05), color: c.th.ink, textAlign: 'center', width: w}}>{a.text}</div>;
     return <div key={key} style={{position: 'absolute', left: 0, top: 0, ...extra}}>{inner}</div>;
   };
   const focusB = beats.filter((b) => b.do === 'focus');
+  // Sigurna zona (QA 0.8.0, P1-23/24): glumac, mreža klonova, krug i natpisi uvek staju u x 90–990, y 240–840.
+  const sizeOf = (a: any) => {
+    const w = a.size ?? 300;
+    if (a.text) { const fs = textSize(a, w); return [w, Math.round(lines(a.text, 900, fs, w) * fs * 1.05)]; }
+    return [w, a.icon ? w : Math.round(w * (a.aspect ?? (a.w && a.h ? a.h / a.w : 1.25)))];
+  };
   actors.forEach((a, ai) => {
     // `size` = širina glumca u px (w/h na čvoru su prave dimenzije slike koje engine upiše) → visina iz aspect ili slike
-    const w = a.size ?? 300, h = a.icon ? w : Math.round(w * (a.aspect ?? (a.w && a.h ? a.h / a.w : 1.25)));
+    const [w, h] = sizeOf(a);
     const tin = at0(a, 0);
     const kin = ease(c.t, tin, 0.7);
     if (kin <= 0) return;
-    let x = a.x ?? 540, y = a.y ?? height / 2, s = 1, op = 1, dim = 0;
+    let x = clampX(a.x ?? 540, w), y = clampY(a.y ?? height / 2, h), s = 1, op = 1, dim = 0;
     let img: any = null;
     const mine = forT(a.id);
     for (const b of mine) {
       const k = glide(b.T);
-      if (b.do === 'move') { x += ((b.x ?? x) - x) * k; y += ((b.y ?? y) - y) * k; s += ((b.scale ?? s) - s) * k; }
+      if (b.do === 'move') {
+        const ts = b.scale ?? s;
+        x += (clampX(b.x ?? x, w * ts) - x) * k; y += (clampY(b.y ?? y, h * ts) - y) * k; s += (ts - s) * k;
+      }
       if (b.do === 'dim') dim = Math.max(dim, ease(c.t, b.T, 0.6));
       if (b.do === 'exit') op *= 1 - ease(c.t, b.T, 0.5);
       if (b.do === 'swap' && c.t >= b.T && b.src) img = b;
@@ -1581,10 +1651,14 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
       const N = Math.max(1, Math.round(clone.n ?? 10));
       const cols = clone.cols ?? Math.ceil(Math.sqrt(N * 1.6));
       const rows = Math.ceil(N / cols);
-      const sc = clone.scale ?? 0.38;
-      const gap = clone.gap ?? 26;
+      let sc = clone.scale ?? 0.38;
+      let gap = clone.gap ?? 26;
+      // mreža veća od zone → cela se smanji (i razmak), pa centar ostaje u zoni
+      const gw = (cols - 1) * (w * sc + gap) + w * sc, gh = (rows - 1) * (h * sc + gap) + h * sc;
+      const shrink = Math.min(1, ZONE.w / gw, ZONE.h / gh);
+      sc *= shrink; gap *= shrink;
       const cw = w * sc + gap, ch = h * sc + gap;
-      const gx = clone.x ?? 540, gy = clone.y ?? height / 2 + 30;
+      const gx = clampX(clone.x ?? 540, gw * shrink), gy = clampY(clone.y ?? height / 2 + 30, gh * shrink);
       for (let k = 0; k < N; k++) {
         const r = Math.floor(k / cols), cc = k % cols;
         const inRow = Math.min(cols, N - r * cols);
@@ -1597,7 +1671,10 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
           const q = glide(cyc.T, 1.0);
           const om = (cyc.speed ?? 0.9) * Math.max(0, c.t - cyc.T);
           const th0 = (k / N) * Math.PI * 2 - Math.PI / 2 + om;
-          const rx = cyc.rx ?? 330, ry = cyc.ry ?? 220, cx = cyc.x ?? 540, cy = cyc.y ?? height / 2 + 20;
+          const cs = cyc.scale ?? sc * 0.85;
+          const rx = Math.min(cyc.rx ?? 330, Math.max(0, ZONE.w / 2 - (w * cs) / 2));
+          const ry = Math.min(cyc.ry ?? 220, Math.max(0, ZONE.h / 2 - (h * cs) / 2));
+          const cx = clampX(cyc.x ?? 540, 2 * rx + w * cs), cy = clampY(cyc.y ?? height / 2 + 20, 2 * ry + h * cs);
           const ex = cx + rx * Math.cos(th0), ey = cy + ry * Math.sin(th0);
           px += (ex - px) * q; py += (ey - py) * q;
           pS += ((cyc.scale ?? sc * 0.85) - pS) * q;
@@ -1609,7 +1686,10 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
       if (cyc) {
         const q = ease(c.t, cyc.T + 0.2, 0.7, Easing.bezier(0.34, 1.4, 0.64, 1));
         const I = (cyc.icon && ICONS[cyc.icon]) || Ph.ArrowsClockwise;
-        const cx = cyc.x ?? 540, cy = cyc.y ?? height / 2 + 20;
+        const cs = cyc.scale ?? sc * 0.85;
+        const rx = Math.min(cyc.rx ?? 330, Math.max(0, ZONE.w / 2 - (w * cs) / 2));
+        const ry = Math.min(cyc.ry ?? 220, Math.max(0, ZONE.h / 2 - (h * cs) / 2));
+        const cx = clampX(cyc.x ?? 540, 2 * rx + w * cs), cy = clampY(cyc.y ?? height / 2 + 20, 2 * ry + h * cs);
         nodes.push(
           <div key={`cyc${ai}`} style={{position: 'absolute', left: cx - 70, top: cy - 70, width: 140, height: 140, borderRadius: 999,
             background: c.acc, display: 'grid', placeItems: 'center', opacity: Math.min(1, q * 1.4), zIndex: 2000,
@@ -1624,13 +1704,17 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
     const k = ease(c.t, b.T, 0.55, Easing.bezier(0.34, 1.4, 0.64, 1));
     if (k <= 0) return;
     const tgt = actors.find((a) => a.id === b.target);
-    const x = b.x ?? tgt?.x ?? 540, y = b.y ?? (tgt ? (tgt.y ?? 480) : 780);
     const col = b.tone === 'bad' ? TONES.bad : c.acc;
     const stamp = b.do === 'stamp';
+    const ts = fit(stamp ? String(b.text ?? '').toUpperCase() : b.text, 900, b.size ?? (stamp ? 64 : 46), ZONE.w - 80 - (stamp ? 12 : 0), 26,
+      stamp ? 0.02 : -0.02);
+    const bw = textW(stamp ? String(b.text ?? '').toUpperCase() : b.text, 900, ts, stamp ? 0.02 : -0.02) + 52 + (stamp ? 12 : 0);
+    const bh = ts + 20 + (stamp ? 12 : 0);
+    const x = clampX(b.x ?? tgt?.x ?? 540, bw * (stamp ? 1 : 1)), y = clampY(b.y ?? (tgt ? (tgt.y ?? 480) : 780), bh);
     nodes.push(
       <div key={`t${i}`} style={{position: 'absolute', left: x, top: y, zIndex: 3000, whiteSpace: 'nowrap',
         transform: `translate(-50%, -50%) scale(${(stamp ? 1.5 - 0.5 * k : 0.7 + 0.3 * k)}) rotate(${stamp ? -8 : 0}deg)`, opacity: Math.min(1, k * 1.5),
-        ...font(900, b.size ?? (stamp ? 64 : 46), 1), letterSpacing: stamp ? '0.02em' : '-0.02em',
+        ...font(900, ts, 1), letterSpacing: stamp ? '0.02em' : '-0.02em',
         color: stamp ? col : onAccent(col), background: stamp ? 'rgba(0,0,0,0.35)' : col,
         border: stamp ? `6px solid ${col}` : undefined, padding: stamp ? '10px 26px' : '10px 26px', borderRadius: 18,
         textTransform: stamp ? 'uppercase' : undefined, boxShadow: `0 0 40px ${rgba(col, 0.35)}`}}>{b.text}</div>,
