@@ -11,6 +11,8 @@ import numpy as np
 
 HOP = 0.01      # 10 ms prozori
 RATE = 16000
+DIGITAL_SILENCE = -100.0  # dB: ispod ovoga je digitalna nula (noise gate, prazan kanal), ne šum sobe
+BELOW_SPEECH = 18.0       # dB: "jak zvuk" bez Silero potvrde mora biti najviše ovoliko ispod tipičnog govora
 
 
 class Energy:
@@ -23,7 +25,14 @@ class Energy:
         frames = audio[: len(audio) // n * n].reshape(-1, n)
         self.db = 20 * np.log10(np.sqrt((frames ** 2).mean(axis=1)) + 1e-9)
         # Prag se meri na ORIGINALU; za isečen zvuk prosleđujemo floor originala.
-        self.floor = float(np.percentile(self.db, 10)) if floor is None else floor
+        # Mikrofon sa noise gate-om daje DIGITALNU tišinu (~ −180 dB) između rečenica: ona nije šum sobe i ne sme da
+        # spusti floor (aazar-trial-1: floor −148 dB → sav šum sobe je ispao "glas", ~70 s mrtvog vazduha u rezu).
+        if floor is None:
+            live = self.db[self.db > DIGITAL_SILENCE]
+            ref = live if len(live) >= 0.2 * len(self.db) else self.db
+            self.floor = float(np.percentile(ref, 10))
+        else:
+            self.floor = floor
         self.hi = self.db > self.floor + 12
         self.lo = self.db > self.floor + 6
         self.duration = len(self.db) * HOP
@@ -112,6 +121,12 @@ class Voice:
         # Silero je preosetljiv na tihe zvukove (šapat, pozadina): glas mora biti bar +10 dB iznad šuma.
         silero = (self.prob > self.CORE_P) & (self.rel > self.MIN_REL)
         strong = self.rel > self.STRONG
+        # "Jak zvuk" se meri i prema GOVORU, ne samo prema šumu: kad je floor daleko ispod govora (noise gate, tiha
+        # soba), šum, disanje i mljackanje su +25 dB iznad floor-a a ipak 20–40 dB ispod govora — to nije glas.
+        # Kod normalnog snimka (šum −60, govor −25) ovaj uslov ništa ne menja.
+        core_db = base.db[self.prob > 0.8]
+        if len(core_db) > 50:
+            strong &= base.db > float(np.median(core_db)) - BELOW_SPEECH
         # Jak zvuk bez Silero potvrde mora trajati > 50 ms (inače je klik).
         k = 0
         while k < n:

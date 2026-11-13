@@ -805,7 +805,9 @@ const Resource: React.FC<{d: any}> = ({d}) => {
   const tAt = at0(d, 0.4);
   const sAt = at0(d.sub, tAt + 0.5);
   const bAt = typeof d.badgeAt === 'number' ? d.badgeAt : at0(d.badge, sAt + 0.6);
-  const rows = Math.min(5, Math.max(3, d.rows ?? 4));
+  // Pravi sadržaj resursa (principles.md 43): `rows: ["…"]` = stvarne sekcije, vidljive ODMAH od početka CTA-a.
+  const textRows: any[] | null = Array.isArray(d.rows) ? d.rows.slice(0, 5) : null;
+  const rows = textRows ? textRows.length : Math.min(5, Math.max(3, d.rows ?? 4));
   const enter = prog(c, 0, 0.7);
   const fan = ease(c.t, sAt, 0.8, Easing.bezier(0.34, 1.3, 0.64, 1));
   const bk = ease(c.t, bAt, 0.5, Easing.bezier(0.34, 1.6, 0.64, 1));
@@ -835,7 +837,14 @@ const Resource: React.FC<{d: any}> = ({d}) => {
             {d.sub ? <div style={{...pop(prog(c, sAt, 0.5), 10), ...font(600, 28, 1.2), color: c.th.mut}}>{txt(d.sub)}</div> : null}
             <div style={{display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10}}>
               {Array.from({length: rows}, (_, i) => {
-                const k = ease(c.t, sAt + 0.15 + i * 0.16, 0.4);
+                const k = ease(c.t, textRows ? at0(textRows[i], 0.25 + i * 0.22) : sAt + 0.15 + i * 0.16, 0.4);
+                if (textRows) return (
+                  <div key={i} style={{display: 'flex', alignItems: 'center', gap: 14, ...pop(k, 10)}}>
+                    <div style={{...font(800, 24, 1), color: c.acc, width: 40, fontVariantNumeric: 'tabular-nums'}}>{String(i + 1).padStart(2, '0')}</div>
+                    <div style={{...font(700, 29, 1.15), color: c.th.ink, flex: 1}}>{txt(textRows[i])}</div>
+                    <Ph.CheckCircle size={30} weight="fill" color={c.acc} style={{opacity: k}} />
+                  </div>
+                );
                 return (
                   <div key={i} style={{display: 'flex', alignItems: 'center', gap: 14, opacity: 0.25 + 0.75 * k}}>
                     <div style={{...font(800, 24, 1), color: k > 0.5 ? c.acc : c.th.mut, width: 40, fontVariantNumeric: 'tabular-nums'}}>{String(i + 1).padStart(2, '0')}</div>
@@ -1347,6 +1356,282 @@ const PersonCard: React.FC<{d: any}> = ({d}) => {
       <div style={{position: 'relative', height: 120, width: ZONE.w}}><NameTag d={d} top={22} /></div>
     </div>
   );
+};
+
+/**
+ * Face-off (recenzija aazar-trial-1 v1, s01–s03): kad se dve strane porede, OBE su u kadru od prvog frejma —
+ * gledalac odmah vidi KO se poredi, a onda se animira ono o čemu se priča. Svaka strana: kartica sa licem
+ * (centrirano iz detekcije), logo brenda zakačen na dnu kartice, ime ispod, pa vrednosti koje ulaze na reč i
+ * odbrojavaju (`values: [{text, at, tone, label}]` — nova zameni prethodnu, ista kartica ostaje). `tone: "bad"` =
+ * crvena vrednost + strana se blago utiša; `tone: "good"` = sjaj u boji brenda. Mirno: spor zoom i lagano lebdenje,
+ * bez jurnjave — pažnju nosi to ko je u kadru, ne brzina.
+ */
+const Faceoff: React.FC<{d: any; sf: number}> = ({d, sf}) => {
+  const c = useC();
+  const sides: any[] = (d.sides ?? []).slice(0, 2);
+  const W = 390, Hc = 430, LOGO = 112;
+  const vs = ease(c.t, 0.3, 0.7, Easing.bezier(0.34, 1.4, 0.64, 1));
+  return (
+    <div style={{width: ZONE.w, height: 640, position: 'relative', display: 'flex', justifyContent: 'center', gap: 110, marginTop: 30}}>
+      {sides.map((s, i) => {
+        const inn = ease(c.t, i * 0.14, 0.85);
+        const vals: any[] = s.values ?? [];
+        const times = vals.map((v, j) => at0(v, 0.8 + j * 1.2));
+        let cur = -1;
+        times.forEach((tt, j) => { if (c.t >= tt) cur = j; });
+        const v = cur >= 0 ? vals[cur] : null;
+        const kv = cur >= 0 ? ease(c.t, times[cur], 0.6) : 0;
+        const bad = v?.tone === 'bad' ? kv : 0;
+        const good = v?.tone === 'good' ? kv : 0;
+        const bob = Math.sin((c.t + i * 1.3) * 1.6) * 5;
+        return (
+          <div key={i} style={{width: W, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            opacity: Math.min(1, inn * 1.5), transform: `translateY(${(1 - inn) * 60 + bob}px)`}}>
+            <div style={{position: 'relative', borderRadius: 32,
+              boxShadow: good > 0.01 ? `0 0 ${70 * good}px ${rgba(c.acc, 0.55 * good)}` : undefined,
+              filter: bad > 0.01 ? `brightness(${1 - 0.28 * bad}) saturate(${1 - 0.45 * bad})` : undefined}}>
+              <MediaBox f={{...s, mkind: s.mkind === 'video' ? 'video' : 'image'}} w={W} h={Hc} sf={sf} r={32} />
+              {s.logo?.src ? (
+                <div style={{position: 'absolute', left: '50%', bottom: -LOGO / 2, transform: 'translateX(-50%)'}}>
+                  <LogoPlate f={s.logo} size={LOGO} at={0.2 + i * 0.14} />
+                </div>
+              ) : null}
+            </div>
+            <div style={{marginTop: s.logo?.src ? LOGO / 2 + 18 : 22, ...font(800, 44, 1.05), color: c.th.ink, textAlign: 'center',
+              whiteSpace: 'nowrap'}}>{s.name ?? ''}</div>
+            <div style={{position: 'relative', height: 120, width: W + 120, marginTop: 6}}>
+              {vals.map((x, j) => {
+                if (j !== cur && j !== cur - 1) return null;
+                const kin = ease(c.t, times[j], 0.6);
+                const kout = j < cur ? ease(c.t, times[cur], 0.45) : 0;
+                if (kin <= 0) return null;
+                return (
+                  <div key={j} style={{position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    opacity: kin * (1 - kout), transform: `translateY(${(1 - kin) * 18 - kout * 22}px)`}}>
+                    <div style={{...font(900, txt(x).length <= 8 ? 66 : txt(x).length <= 13 ? 52 : 40, 1.0), letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                      color: x.tone === 'bad' ? TONES.bad : x.tone === 'good' ? c.acc : c.th.ink}}>{countUp(txt(x), ease(c.t, times[j], 1.1))}</div>
+                    {x.label ? <div style={{...font(600, 30), color: c.th.mut, marginTop: 8, whiteSpace: 'nowrap'}}>{x.label}</div> : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{position: 'absolute', left: '50%', top: Hc / 2, width: 118, height: 118, marginLeft: -59, marginTop: -59,
+        borderRadius: 999, background: c.acc, display: 'grid', placeItems: 'center', opacity: Math.min(1, vs * 1.4),
+        transform: `scale(${0.4 + 0.6 * vs})`, boxShadow: `0 0 ${50 * vs}px ${rgba(c.acc, 0.5)}`,
+        ...font(900, 50, 1), letterSpacing: '-0.02em', color: onAccent(c.acc)}}>VS</div>
+    </div>
+  );
+};
+
+/**
+ * Pillars (recenzija aazar-trial-1 v3, s02/s27): brojke dve-tri strane kao stubići, a na vrhu SVAKOG stubića lice/logo
+ * te strane — zna se čiji je koji. `sets`: [{label, at, values: [n…], display: ["$4.2M"…], tones: ["good","bad"],
+ * note: {text, at}}] — svaki skup ulazi na reč, stubići glatko narastu/smanje se na nove vrednosti (pratioci → prihod),
+ * lica putuju sa vrhom stubića. Ime ispod osnove.
+ */
+const Pillars: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const bars: any[] = (d.bars ?? []).slice(0, 3);
+  const sets: any[] = d.sets ?? [];
+  const n = bars.length;
+  // vrh najvišeg stubića: vrednost (70) + lice (AV) ispod natpisa skupa i "note" (0–120) — ništa se ne dodiruje (principle 13)
+  const BW = n === 3 ? 170 : 200, GAP = n === 3 ? 90 : 170, AV = 132, BASE = 610, MAXH = 230, MINH = 34;
+  const times = sets.map((s, i) => at0(s, i === 0 ? 0.25 : 0.8 + i));
+  let cur = 0;
+  times.forEach((tt, i) => { if (c.t >= tt) cur = i; });
+  const hOf = (si: number, bi: number) => {
+    const vals: number[] = (sets[si]?.values ?? []).map(Number);
+    const mx = Math.max(1e-9, ...vals);
+    return MINH + (MAXH - MINH) * Math.max(0, (vals[bi] ?? 0) / mx);
+  };
+  const totalW = n * BW + (n - 1) * GAP;
+  const x0 = (ZONE.w - totalW) / 2;
+  const setLabel = sets[cur]?.label;
+  // isti natpis kao u prethodnom skupu ostaje miran (ne trepne) — principle 44
+  const kl = cur > 0 && sets[cur - 1]?.label === setLabel ? 1 : ease(c.t, times[cur] ?? 0, 0.55);
+  const note = sets[cur]?.note;
+  const noteT = note ? at0(note, (times[cur] ?? 0) + 0.9) : 0;
+  const kn = note ? ease(c.t, noteT, 0.6, Easing.bezier(0.34, 1.4, 0.64, 1)) : 0;
+  return (
+    <div style={{width: ZONE.w, height: 680, position: 'relative'}}>
+      {setLabel ? (
+        <div style={{position: 'absolute', left: 0, right: 0, top: 0, textAlign: 'center', ...font(700, 36), color: c.th.mut,
+          letterSpacing: '0.01em', opacity: kl, transform: `translateY(${(1 - kl) * 10}px)`}}>{setLabel}</div>
+      ) : null}
+      {note && kn > 0 ? (
+        <div style={{position: 'absolute', left: '50%', top: 58, transform: `translateX(-50%) scale(${0.7 + 0.3 * kn})`, opacity: Math.min(1, kn * 1.4),
+          ...font(900, 46), color: onAccent(note.tone === 'bad' ? TONES.bad : c.acc), background: note.tone === 'bad' ? TONES.bad : c.acc,
+          padding: '8px 24px', borderRadius: 16, whiteSpace: 'nowrap', boxShadow: `0 0 40px ${rgba(c.acc, 0.35)}`}}>{txt(note)}</div>
+      ) : null}
+      <div style={{position: 'absolute', left: x0 - 40, width: totalW + 80, top: BASE, height: 3, borderRadius: 3, background: c.th.line}} />
+      {bars.map((b, i) => {
+        const inn = ease(c.t, i * 0.12, 0.8);
+        // visina: od prethodnog skupa ka trenutnom (glatko), prvi skup raste od nule
+        const prev = cur > 0 ? hOf(cur - 1, i) : 0;
+        const k = ease(c.t, (times[cur] ?? 0) + i * 0.12, 1.0, CAM_GLIDE);
+        const h = (prev + (hOf(cur, i) - prev) * k) * (cur === 0 ? 1 : 1);
+        const hh = cur === 0 ? hOf(0, i) * k : h;
+        const tone = sets[cur]?.tones?.[i];
+        const col = tone === 'bad' ? TONES.bad : tone === 'good' ? c.acc : c.th.hi;
+        const shown = sets[cur]?.display?.[i] ?? String(sets[cur]?.values?.[i] ?? '');
+        // Ono što je već na ekranu se NE resetuje kad stigne novi skup (recenzija aazar-trial-1 v4, s02, principle 44):
+        // nepromenjena vrednost stoji puna; promenjena prelazi iz stare u novu (bez vraćanja na nulu).
+        const before = cur > 0 ? (sets[cur - 1]?.display?.[i] ?? String(sets[cur - 1]?.values?.[i] ?? '')) : null;
+        const same = before !== null && before === shown;
+        const kv = same ? 1 : k;
+        const valueText = same ? shown : countUp(shown, k);
+        const left = x0 + i * (BW + GAP);
+        const top = BASE - hh;
+        return (
+          <React.Fragment key={i}>
+            <div style={{position: 'absolute', left, width: BW, top, height: hh, borderRadius: '22px 22px 6px 6px',
+              background: `linear-gradient(180deg, ${rgba(col.startsWith('#') ? col : '#FFFFFF', 0.95)} 0%, ${rgba(col.startsWith('#') ? col : '#FFFFFF', 0.45)} 100%)`,
+              boxShadow: tone === 'good' ? `0 0 50px ${rgba(c.acc, 0.45 * kv)}` : undefined, opacity: inn}} />
+            <div style={{position: 'absolute', left: left + BW / 2 - AV / 2, top: top - AV - 14, width: AV, height: AV, opacity: inn,
+              transform: `scale(${0.85 + 0.15 * inn})`}}>
+              {b.logo?.src && !b.src ? <LogoPlate f={b.logo} size={AV} at={0} /> : (
+                <div style={{width: AV, height: AV, borderRadius: 999, overflow: 'hidden', border: `5px solid ${tone === 'bad' ? TONES.bad : c.acc}`,
+                  boxShadow: '0 16px 40px rgba(0,0,0,0.45)', background: '#000'}}>
+                  <Img src={staticFile(b.src ?? '')} style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: facePos(b, AV, AV)}} />
+                </div>
+              )}
+            </div>
+            <div style={{position: 'absolute', left: left - 60, width: BW + 120, top: top - AV - 14 - 74, textAlign: 'center', opacity: kv,
+              ...font(900, 60, 1), letterSpacing: '-0.04em', color: tone === 'bad' ? TONES.bad : tone === 'good' ? c.acc : c.th.ink,
+              fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap'}}>{valueText}</div>
+            <div style={{position: 'absolute', left: left - 60, width: BW + 120, top: BASE + 16, textAlign: 'center', ...font(800, 38),
+              color: c.th.ink, opacity: inn, whiteSpace: 'nowrap'}}>{b.name ?? ''}</div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Scena — full-screen custom animacija (recenzija aazar-trial-1 v3 + vlasnik): kad govornik objašnjava nešto što
+ * gledalac treba da ZAMISLI, ceo gornji deo postaje pozornica i stvari o kojima se priča odglume to na reč.
+ * Glumci su PRAVI asseti (reklama, proizvod, logo, lice); grafika (ikonica/tekst) samo kad asseta nema.
+ *   actors: [{id, file | icon | text, x, y, size, aspect?, at?, frame?, round?}] — x/y = centar u px gornjeg dela (1080 × visina), size = širina
+ *   beats:  [{at, do, target?, …}] — do: "move" {x, y, scale} · "clone" {n, cols, x, y, scale, gap} · "cycle" {rx, ry,
+ *           speed, icon} · "tag" {text, x, y, tone} · "stamp" {text, tone} · "dim" · "focus" (ostali se utišaju) ·
+ *           "swap" {file} (nova slika u istom okviru) · "exit"
+ * Sve se kreće stalno (lagano lebdenje), ništa ne skače: svaki pokret je meka kriva.
+ */
+const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
+  const c = useC();
+  const actors: any[] = d.actors ?? [];
+  const beats: any[] = (d.beats ?? []).map((b: any, i: number) => ({...b, T: at0(b, 0.8 + i * 0.9)})).sort((a: any, b: any) => a.T - b.T);
+  const forT = (id: string) => beats.filter((b) => b.target === id);
+  const nodes: React.ReactNode[] = [];
+  const glide = (T: number, len = 0.9) => ease(c.t, T, len, CAM_GLIDE);
+  const actorBox = (a: any, w: number, h: number, key: string, extra: React.CSSProperties, img?: any) => {
+    const f = img ?? a;
+    const logo = isLogo(f);
+    const inner = f.src
+      ? (logo ? <LogoPlate f={f} size={Math.min(w, h)} at={0} /> : (
+        <div style={{width: w, height: h, borderRadius: a.round ? 999 : 22, overflow: 'hidden', background: a.frame ? '#fff' : '#000',
+          padding: a.frame ? 8 : 0, boxSizing: 'border-box', boxShadow: '0 24px 60px rgba(0,0,0,0.5)', border: `1.5px solid ${c.th.line}`}}>
+          <Img src={staticFile(f.src)} style={{width: '100%', height: '100%', objectFit: a.fit ?? 'cover', objectPosition: facePos(f, w, h),
+            borderRadius: a.frame ? 16 : 0, background: a.fit === 'contain' ? '#fff' : undefined}} />
+        </div>))
+      : a.icon ? <IconTile name={a.icon} size={Math.min(w, h)} at={0} />
+        : <div style={{...font(900, a.size ?? 64, 1.05), color: c.th.ink, textAlign: 'center', width: w}}>{a.text}</div>;
+    return <div key={key} style={{position: 'absolute', left: 0, top: 0, ...extra}}>{inner}</div>;
+  };
+  const focusB = beats.filter((b) => b.do === 'focus');
+  actors.forEach((a, ai) => {
+    // `size` = širina glumca u px (w/h na čvoru su prave dimenzije slike koje engine upiše) → visina iz aspect ili slike
+    const w = a.size ?? 300, h = a.icon ? w : Math.round(w * (a.aspect ?? (a.w && a.h ? a.h / a.w : 1.25)));
+    const tin = at0(a, 0);
+    const kin = ease(c.t, tin, 0.7);
+    if (kin <= 0) return;
+    let x = a.x ?? 540, y = a.y ?? height / 2, s = 1, op = 1, dim = 0;
+    let img: any = null;
+    const mine = forT(a.id);
+    for (const b of mine) {
+      const k = glide(b.T);
+      if (b.do === 'move') { x += ((b.x ?? x) - x) * k; y += ((b.y ?? y) - y) * k; s += ((b.scale ?? s) - s) * k; }
+      if (b.do === 'dim') dim = Math.max(dim, ease(c.t, b.T, 0.6));
+      if (b.do === 'exit') op *= 1 - ease(c.t, b.T, 0.5);
+      if (b.do === 'swap' && c.t >= b.T && b.src) img = b;
+    }
+    for (const f of focusB) {
+      if (f.target !== a.id && c.t >= f.T) dim = Math.max(dim, 0.6 * ease(c.t, f.T, 0.5));
+    }
+    const clone = mine.find((b) => b.do === 'clone');
+    const cyc = mine.find((b) => b.do === 'cycle');
+    const bob = Math.sin((c.t + ai * 0.9) * 1.7) * 5;
+    const style = (px: number, py: number, sc: number, o: number, rot = 0): React.CSSProperties => ({
+      transform: `translate(${px - (w * sc) / 2}px, ${py - (h * sc) / 2 + bob}px) scale(${sc}) rotate(${rot}deg)`, transformOrigin: '0 0',
+      opacity: o * Math.min(1, kin * 1.4),
+      filter: dim > 0.01 ? `grayscale(${0.8 * dim}) brightness(${1 - 0.4 * dim})` : undefined,
+    });
+    if (!clone) {
+      nodes.push(actorBox(a, w, h, `a${ai}`, style(x, y, s * (0.92 + 0.08 * kin), op), img));
+    } else {
+      const N = Math.max(1, Math.round(clone.n ?? 10));
+      const cols = clone.cols ?? Math.ceil(Math.sqrt(N * 1.6));
+      const rows = Math.ceil(N / cols);
+      const sc = clone.scale ?? 0.38;
+      const gap = clone.gap ?? 26;
+      const cw = w * sc + gap, ch = h * sc + gap;
+      const gx = clone.x ?? 540, gy = clone.y ?? height / 2 + 30;
+      for (let k = 0; k < N; k++) {
+        const r = Math.floor(k / cols), cc = k % cols;
+        const inRow = Math.min(cols, N - r * cols);
+        const tx = gx + (cc - (inRow - 1) / 2) * cw, ty = gy + (r - (rows - 1) / 2) * ch;
+        const p = k === 0 ? glide(clone.T, 0.8) : glide(clone.T + 0.12 + k * 0.07, 0.75);
+        let px = x + (tx - x) * p, py = y + (ty - y) * p;
+        let pS = s + (sc - s) * p;
+        let rot = 0;
+        if (cyc) {
+          const q = glide(cyc.T, 1.0);
+          const om = (cyc.speed ?? 0.9) * Math.max(0, c.t - cyc.T);
+          const th0 = (k / N) * Math.PI * 2 - Math.PI / 2 + om;
+          const rx = cyc.rx ?? 330, ry = cyc.ry ?? 220, cx = cyc.x ?? 540, cy = cyc.y ?? height / 2 + 20;
+          const ex = cx + rx * Math.cos(th0), ey = cy + ry * Math.sin(th0);
+          px += (ex - px) * q; py += (ey - py) * q;
+          pS += ((cyc.scale ?? sc * 0.85) - pS) * q;
+          rot = q * Math.sin(th0) * 6;
+        }
+        const o = k === 0 ? op : op * Math.min(1, p * 1.6);
+        if (o > 0.01) nodes.push(actorBox(a, w, h, `a${ai}c${k}`, {...style(px, py, pS, o, rot), zIndex: Math.round(py)}, img));
+      }
+      if (cyc) {
+        const q = ease(c.t, cyc.T + 0.2, 0.7, Easing.bezier(0.34, 1.4, 0.64, 1));
+        const I = (cyc.icon && ICONS[cyc.icon]) || Ph.ArrowsClockwise;
+        const cx = cyc.x ?? 540, cy = cyc.y ?? height / 2 + 20;
+        nodes.push(
+          <div key={`cyc${ai}`} style={{position: 'absolute', left: cx - 70, top: cy - 70, width: 140, height: 140, borderRadius: 999,
+            background: c.acc, display: 'grid', placeItems: 'center', opacity: Math.min(1, q * 1.4), zIndex: 2000,
+            transform: `scale(${0.4 + 0.6 * q}) rotate(${(c.t - cyc.T) * 160}deg)`, boxShadow: `0 0 60px ${rgba(c.acc, 0.55)}`}}>
+            <I size={84} weight="bold" color={onAccent(c.acc)} />
+          </div>,
+        );
+      }
+    }
+  });
+  beats.filter((b) => b.do === 'tag' || b.do === 'stamp').forEach((b, i) => {
+    const k = ease(c.t, b.T, 0.55, Easing.bezier(0.34, 1.4, 0.64, 1));
+    if (k <= 0) return;
+    const tgt = actors.find((a) => a.id === b.target);
+    const x = b.x ?? tgt?.x ?? 540, y = b.y ?? (tgt ? (tgt.y ?? 480) : 780);
+    const col = b.tone === 'bad' ? TONES.bad : c.acc;
+    const stamp = b.do === 'stamp';
+    nodes.push(
+      <div key={`t${i}`} style={{position: 'absolute', left: x, top: y, zIndex: 3000, whiteSpace: 'nowrap',
+        transform: `translate(-50%, -50%) scale(${(stamp ? 1.5 - 0.5 * k : 0.7 + 0.3 * k)}) rotate(${stamp ? -8 : 0}deg)`, opacity: Math.min(1, k * 1.5),
+        ...font(900, b.size ?? (stamp ? 64 : 46), 1), letterSpacing: stamp ? '0.02em' : '-0.02em',
+        color: stamp ? col : onAccent(col), background: stamp ? 'rgba(0,0,0,0.35)' : col,
+        border: stamp ? `6px solid ${col}` : undefined, padding: stamp ? '10px 26px' : '10px 26px', borderRadius: 18,
+        textTransform: stamp ? 'uppercase' : undefined, boxShadow: `0 0 40px ${rgba(col, 0.35)}`}}>{b.text}</div>,
+    );
+  });
+  return <div style={{position: 'absolute', inset: 0}}>{nodes}</div>;
 };
 
 // ------------------------------------------------------------------ pravi asseti sa interneta (PLAN §12)
@@ -1939,6 +2224,16 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
       );
     }
   }
+  if (it.kind === 'scene') {  // full-screen custom animacija: cela gornja polovina je pozornica
+    return (
+      <C.Provider value={ctx}>
+        <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: (1 - out) * Math.min(1, ease(t - it.start, 0, 0.3) * 1.2),
+          filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
+          <Scene d={d} sf={sf} height={height} />
+        </div>
+      </C.Provider>
+    );
+  }
   const portrait = d.w && d.h && d.h / d.w > 1.15;
   if (it.kind === 'spotlight' || ((it.kind === 'video' || (it.kind === 'image' && !d.alpha)) && portrait && d.src)) {
     return (
@@ -1982,6 +2277,8 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
     : it.kind === 'news' ? <News d={d} />
     : it.kind === 'photo' ? <PersonCard d={d} />
     : it.kind === 'mediatext' ? <MediaText d={d} sf={sf} />
+    : it.kind === 'faceoff' ? <Faceoff d={d} sf={sf} />
+    : it.kind === 'pillars' ? <Pillars d={d} />
     : it.kind === 'resource' ? <Resource d={d} />
     : it.kind === 'posts' ? <PostStack d={d} />
     : it.kind === 'post' && d.src ? <Screenshot d={d} />

@@ -44,7 +44,15 @@ KINDS = {
                                                              "headline", "verified", "likes", "comments", "reposts",
                                                              "views", "highlight", "file", "at"]},
     "image": {"required": ["file"], "optional": ["note", "caption"]},   # caption: tekst ili {"text","at"}
-    "mediatext": {"required": ["file", "lines"], "optional": ["title", "side", "start", "more"]},  # slika/snimak + rečenice {"text","at"}; more: [{"file","at"}] — još slika u istom okviru
+    "mediatext": {"required": ["file", "lines"], "optional": ["title", "side", "start", "more"]},
+    # Dve strane koje se porede, OBE u kadru od početka (recenzija aazar-trial-1 v1, s01–s03):
+    # sides: [{file, name, logo: {file}, values: [{text, at, tone, label}]}] × 2 — vrednosti ulaze na reč i smenjuju se.
+    "faceoff": {"required": ["sides"], "optional": []},
+    # Stubići sa licem/logom na vrhu svakog (recenzija aazar-trial-1 v3, s02/s27): bars: [{file, name, logo}] × 2–3,
+    # sets: [{label, at, values: [n…], display: ["$4.2M"…], tones: [...], note: {text, at, tone}}] — skup se smenjuje na reč.
+    "pillars": {"required": ["bars", "sets"], "optional": []},
+    # Full-screen custom animacija (principles.md 36): actors [{id, file|icon|text, x, y, size, aspect, at}] + beats [{at, do, target…}].
+    "scene": {"required": ["actors"], "optional": ["beats"]},  # slika/snimak + rečenice {"text","at"}; more: [{"file","at"}] — još slika u istom okviru
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -313,6 +321,45 @@ def validate_plan(plan: dict, job) -> list[str]:
                     errs.append(f"moment {i}: nepoznata ikonica '{x['icon']}'")
         if k == "chart" and not (2 <= len(d.get("bars") or []) <= 7):
             errs.append(f"moment {i}: chart ima 2–7 stubića")
+        if k == "pillars":
+            bars, sets = d.get("bars") or [], d.get("sets") or []
+            if not 2 <= len(bars) <= 3:
+                errs.append(f"moment {i}: pillars ima 2–3 stubića (bars)")
+            for b in bars:
+                if not isinstance(b, dict) or not (b.get("file") or b.get("logo")):
+                    errs.append(f"moment {i}: svaki stubić traži file (lice) ili logo — da se zna čiji je")
+            for s in sets:
+                if len(s.get("values") or []) != len(bars):
+                    errs.append(f"moment {i}: pillars skup '{s.get('label', '')}' ima {len(s.get('values') or [])} vrednosti za {len(bars)} stubića")
+        if k == "scene":
+            ids = [a.get("id") for a in d.get("actors") or [] if isinstance(a, dict)]
+            for a in d.get("actors") or []:
+                if not isinstance(a, dict) or not a.get("id") or not (a.get("file") or a.get("icon") or a.get("text")):
+                    errs.append(f"moment {i}: svaki glumac scene traži id i file | icon | text")
+                elif a.get("icon") and a["icon"] not in ICONS:
+                    errs.append(f"moment {i}: nepoznata ikonica '{a['icon']}'")
+            DOS = ("move", "clone", "cycle", "tag", "stamp", "dim", "focus", "swap", "exit")
+            for b in d.get("beats") or []:
+                if b.get("do") not in DOS:
+                    errs.append(f"moment {i}: scene beat 'do' je {' | '.join(DOS)} (dobijeno {b.get('do')!r})")
+                if b.get("target") and b["target"] not in ids:
+                    errs.append(f"moment {i}: scene beat cilja nepostojećeg glumca '{b['target']}'")
+                if b.get("do") in ("move", "clone", "cycle", "dim", "focus", "swap", "exit") and not b.get("target"):
+                    errs.append(f"moment {i}: scene beat '{b.get('do')}' traži target")
+                if b.get("do") == "cycle" and not any(x.get("do") == "clone" and x.get("target") == b.get("target") for x in d.get("beats") or []):
+                    errs.append(f"moment {i}: 'cycle' vrti kopije — prvo 'clone' istog glumca")
+        if k == "faceoff":
+            sides = d.get("sides") or []
+            if len(sides) != 2:
+                errs.append(f"moment {i}: faceoff ima tačno 2 strane (sides) — obe u kadru istovremeno")
+            for j, s in enumerate(sides):
+                if not isinstance(s, dict) or not s.get("file"):
+                    errs.append(f"moment {i}: faceoff strana {j + 1} traži file (prava slika osobe/proizvoda)")
+                elif set(s) - {"file", "name", "logo", "values"}:
+                    errs.append(f"moment {i}: faceoff strana {j + 1}: nepoznata polja {sorted(set(s) - {'file', 'name', 'logo', 'values'})}")
+                for v in (s.get("values") or []) if isinstance(s, dict) else []:
+                    if not isinstance(v, dict) or not v.get("text"):
+                        errs.append(f"moment {i}: faceoff vrednost traži {{text, at}} (npr. \"$4.2M\" na reč)")
         def files_in(n):
             if isinstance(n, dict):
                 if isinstance(n.get("file"), str):
@@ -537,6 +584,9 @@ def describe(p: dict, job=None) -> str:
         parts = d.get("items") or d.get("nodes") or d.get("words") or d.get("messages") or []
         if d.get("left"):
             parts = [d["left"], d["right"]]
+        if d.get("sides"):  # faceoff: "Ime (vrednosti) VS Ime (vrednosti)"
+            parts = [{"text": f"{s.get('name', '')} ({' → '.join(v.get('text', '') for v in s.get('values') or [])})"}
+                     for s in d["sides"]]
         what = (d.get("file") or d.get("value") or d.get("line1") or d.get("text") or d.get("label") or
                 " · ".join(t(x) for x in parts))
         beats = []

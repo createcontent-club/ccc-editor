@@ -326,4 +326,14 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                                           - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom, crop=src_c)).mean()))
             out_f += s["vFrames"]
         res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
+
+        # 7. Izvozni fajl se pušta normalno svuda: ≤ 60 fps i trajanje = trajanje zvuka.
+        # (aazar-trial-1: Split Screen 2× od snimka od 60 fps = izvoz od 120 fps → telefoni/QuickTime ga puštaju
+        # usporeno, pa je 2-minutni video izgledao kao 6 minuta. Nijedna provera to nije uhvatila.)
+        from .media import probe
+        info = probe(rendered)
+        res.append((info["fps"] <= 60.5 and not info["vfr"],
+                    f"fps izvoza: {info['fps']:g} (≤ 60, stalan{'' if not info['vfr'] else ' — NIJE stalan'})"))
+        res.append((abs(info["duration"] - p["stats"]["voice"]) <= 0.1,
+                    f"trajanje izvoza: {info['duration']:.2f}s / zvuk {p['stats']['voice']:.2f}s (razlika ≤ 0.1s)"))
     return res

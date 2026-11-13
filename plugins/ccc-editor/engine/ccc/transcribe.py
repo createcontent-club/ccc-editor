@@ -18,6 +18,18 @@ from .project import MODELS
 # Whisper inače "počisti" poštapalice iz teksta; ovaj prompt ga tera da ih zapiše.
 FILLER_PROMPT = "Umm, let me think like, hmm... Okay, here's what I'm, like, thinking. Uh, so, you know, I mean."
 PAD = 0.15  # malo tišine oko svakog dela da Whisper ne odseče prvu/poslednju reč
+LONG_PART = 28.0  # s: duži deo paket ne transkribuje do kraja (limit 30 s) → pojedinačna transkripcija
+
+
+class _Shift:
+    """Segment pojedinačne transkripcije pomeren na vreme celog snimka (isti oblik kao segmenti iz paketa)."""
+    class _W:
+        def __init__(self, w, d):
+            self.word, self.start, self.end, self.probability = w.word, w.start + d, w.end + d, w.probability
+
+    def __init__(self, sg, d: float):
+        self.text, self.start, self.end = sg.text, sg.start + d, sg.end + d
+        self.words = [self._W(w, d) for w in sg.words or []]
 
 
 def transcribe(audio_path, utterance_gap: float, language: str = "en") -> dict:
@@ -36,12 +48,29 @@ def transcribe(audio_path, utterance_gap: float, language: str = "en") -> dict:
                               batch_size=8, initial_prompt=FILLER_PROMPT, condition_on_previous_text=False)
     segs = list(segs)
 
+    # Paket (BatchedInferencePipeline) transkribuje SAMO prvih 30 s svakog dela, a reči posle toga nestanu ili dobiju
+    # "slepljena" vremena; deo segmenta može i da "ispadne" u susedni kratak deo (aazar-trial-1: u41 od 0.35 s sa 58
+    # reči). Takve delove ponovo transkribujemo pojedinačno (bez paketa, Whisper sam ide kroz ceo deo).
+    redo: dict[int, list] = {}
+    for ui, (us, ue) in enumerate(utts):
+        inside = [sg for sg in segs if us - PAD <= (sg.start + sg.end) / 2 <= ue + PAD]
+        nw = sum(len(sg.words or []) for sg in inside)
+        glued = sum(1 for sg in inside for w in sg.words or [] if w.end - w.start < 0.03)
+        if ue - us > LONG_PART or (nw and nw / max(0.2, ue - us) > 7.0) or glued > 2:
+            s0 = max(0.0, us - PAD)
+            clip = audio[int(s0 * 16000):int(min(dur, ue + PAD) * 16000)]
+            rs, _ = model.transcribe(clip, language=language, word_timestamps=True, vad_filter=False,
+                                     condition_on_previous_text=False, initial_prompt=FILLER_PROMPT)
+            redo[ui] = [_Shift(sg, s0) for sg in rs]
+    if redo:
+        print(f"  ponovo transkribovano bez paketa (dugi/slepljeni delovi): {len(redo)}")
+
     words: list[dict] = []
     utterances: list[dict] = []
     for ui, (us, ue) in enumerate(utts):
         first = len(words)
         texts = []
-        for sg in segs:
+        for sg in (redo[ui] if ui in redo else segs):
             mid = (sg.start + sg.end) / 2
             if not (us - PAD <= mid <= ue + PAD):
                 continue
@@ -58,6 +87,12 @@ def transcribe(audio_path, utterance_gap: float, language: str = "en") -> dict:
                 words.append({"id": f"w{len(words)}", "text": text, "u": ui,
                               "start": round(max(w.start, us), 3), "end": round(min(w.end, ue), 3),
                               "prob": round(w.probability, 3)})
+        # Halucinacija na kratkom šumu: Whisper "čuje" celu frazu ("Okay, here we go.", "We'll be right back.") u
+        # delu od 0.1–0.3 s — više od 8 reči u sekundi to ne može da bude govor → deo ostaje bez reči (šum).
+        n_new = len(words) - first
+        if n_new >= 3 and n_new / max(0.05, ue - us) > 8.0 and ue - us < 1.0:
+            del words[first:]
+            texts = []
         utterances.append({"id": f"u{ui}", "start": us, "end": ue, "text": " ".join(texts),
                            "from": words[first]["id"] if len(words) > first else None,
                            "to": words[-1]["id"] if len(words) > first else None})

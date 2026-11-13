@@ -133,6 +133,89 @@ Each principle: the rule, then **Why** (the thinking behind it), then where the 
     regular text, "Reply", the heart — clean and professional. The whole card is big enough to read; the keyword is
     not blown up.
 
+## The hook — how to decide what goes in it (review aazar-trial-1 v1 + the owner's own answers, 13 Nov 2026)
+
+The hook is not "the first scene". It is the first CLAIM of the video shown as one connected visual. Decide it in this
+order, every time, before planning anything else:
+
+30. **First: WHO or WHAT is this video about? Show exactly that, recognizably, from the first frame.** The faces,
+    the products, the brands the video is about — the thing a viewer recognizes at a glance and that tells them what
+    the video will be about. That is what stops the scroll, not speed.
+    **Why (owner):** "it doesn't have to be crazy dynamic — just present what will catch the viewer's attention and
+    hints at what the video will talk about." Two logo tiles were "too slow and didn't show what's adequate" because a
+    logo alone doesn't say who is fighting; the founders' faces do. *Engine:* first moment without a real picture of the
+    subject while research.json has one → warning.
+31. **Is the video a comparison / a conflict ("X vs Y", "A did this, B did that")? Then BOTH sides are in frame at the
+    same time, for the whole comparison — and the animation happens ON them** (`faceoff`: two cards side by side, VS
+    in the middle, each side's numbers land on their word, the losing side in red and slightly muted). Never one side,
+    then the other in a separate shot; never the two sides as separate scenes.
+    **Why (owner, s03):** "they are compared the whole time, which by itself says both have to be in frame at the same
+    time, and then animate what is being talked about." *Engine:* the first claim says "vs"/names two subjects that
+    research has pictures of, and the opening isn't a two-sided visual → warning.
+32. **The hook lasts until the first claim is complete, as ONE sequence** — here "Beauty Wars … Rare did 4.2M while
+    Kylie only did 740K" (~10 s), and it keeps going while the next sentences are still about the same comparison
+    ("you might think Selena has a smaller audience… wrong, 430M vs 390M"). New information arrives on the same
+    picture (a value, a label), the picture does not change.
+    **Why:** the opening sets up the question the video answers; cutting it into 3-second scenes breaks the setup and
+    makes the opening look like scenes from the middle.
+33. **Numbers of the first claim live on the subject they belong to** — Rare's revenue under Selena/Rare, Kylie's under
+    Kylie — never as a separate stat card next to a picture of something else.
+34. **Calm is fine; empty or abstract is not.** The hook may be still and simple (slow zoom, gentle float, values
+    counting up) as long as the subject is big and clear. A plain headline, an icon, a screenshot or a lone logo is
+    never the hook when the real subject exists (principles 3, 12).
+35. **The speaker reading the script aloud is not content.** A title or outline read out to remind himself ("Kylie
+    Cosmetics vs Rare Beauty" right after the hook line, said flatly, not to the viewer) is cut as `off-script` in the
+    editorial pass — check every line in the first ~15 s against: is he telling the viewer something, or reading?
+
+## Recreate the process — custom animation over templates (review aazar-trial-1 v3 + the owner's answers)
+
+36. **When the speaker explains something the viewer has to IMAGINE, recreate that process as a full-screen custom
+    animation (`scene`)** — the top half becomes the stage and the things being described act it out on their words:
+    "running the same ad with 10 different versions, recycled over and over" → one real ad in the middle, it multiplies
+    into 10 copies, the copies cycle around a recycle loop, "just pushing the product" lands as a tag. The actors are
+    the REAL assets (the actual ad, product, logo, face); graphics only where no real asset exists.
+    **Why (owner):** "a custom card that says one ad is duplicated 10 times means nothing to them — you catch attention
+    by recreating the process being explained. Use the template cards as little as possible: custom animations that
+    show something happening all the time, combined with the main assets. Templates only when there is literally no
+    other solution, or for something abstract that isn't worth explaining in a custom animation."
+    *Engine:* a moment with a template card while the sentence describes an action on concrete things → warning.
+37. **One presentation stays on screen 3–5 s at most** — the idea and the people may continue (keep following the two
+    founders), but the way the information is shown changes: faces face-off → their revenue as pillars → the question
+    on their faces → follower pillars that turn into revenue pillars. Real video clips may run longer (they move on
+    their own), up to ~6–8 s. This refines 32: the hook is one continuous IDEA, not one frozen layout.
+    **Why (owner, s01):** "20 seconds of the same scene must never happen; after 3–5 seconds it has to change."
+    *Engine:* non-clip moment longer than 5 s, or a moment whose last new beat is > 5 s before its end → warning.
+38. **Numbers of two compared subjects → pillars with each subject's face on top of its own bar** (`pillars`), so the
+    viewer sees whose bar is whose and the gap itself ("6x") — never a lone "6x" stat card.
+    **Why (owner, s02/s27):** "two pillar charts with their pictures on top of each, so it's clear which chart belongs
+    to whom."
+39. **A concrete thing that is mentioned is shown with the real thing** — a type of ad ("before and after with reviews
+    layered on top"), an offer ("free shipping over $40"), a fact ("it's sold out") — the actual ad, page or article,
+    with animation only if it adds something. Extends 15–16 to ad formats, offers and features, not only people.
+40. **A connector only connects things that are both on screen.** An arrow from left to right needs the left thing
+    visible from the start; never an arrow, line or "→" pointing from empty space.
+    **Why (owner, s14):** "it makes no sense that the arrow points from left to right while there is no visual on the
+    left from the start."
+41. **Never two similar-looking animations back to back** — not only the same template: two lists (checklist then
+    notify), two card stacks, two number cards in a row read as the same thing and the viewer scrolls away.
+    *Engine:* consecutive moments from the same visual family → warning.
+42. **The people the video is about stay visible through the whole video**, not only in the opening — in every
+    comparison and wherever the speaker describes what they do (real clips of Selena making content, telling her
+    founder story, showing before/after).
+    **Why (owner, s24):** "the two of them are missing a lot in the video, since the whole topic is about them."
+43. **CTA: show the content of what is being sent right away** — at the first words of the CTA the resource opens and
+    its real contents are visible (sections, pages, the framework of the video delivered), so the viewer waits to hear
+    how to get it. That keeps them watching to the end.
+    **Why (owner, s28):** "show the data of the document right away so people wait to hear what they need to do to get
+    it — which increases watch time."
+
+44. **What is already on screen never resets when something new arrives.** When the next value, set or line
+    lands, only the thing that CHANGED animates; everything that stays the same (a number already counted up, a label,
+    a face, a bar height) stays exactly as it was — no recount from zero, no fade-out/fade-in, no jump.
+    **Why (owner, v4 s02):** "when Kylie's counter appeared, the counter above Selena that was already in frame reset —
+    a random error." It reads as a glitch and breaks trust in the whole graphic. *Template:* `pillars` keeps unchanged
+    values and labels still; new templates must follow the same rule (test: render a frame just after the second beat).
+
 ## How new feedback becomes a principle (dev)
 
 Every storyboard comment is read as a **principle and a way of thinking**, not a one-scene fix (the owner's explicit

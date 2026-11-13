@@ -18,6 +18,16 @@ def captions_from(p: dict) -> float:
     return 0.0
 
 
+MAX_FPS = 60.5  # izvoz nikad iznad 60 fps (Instagram/TikTok/telefoni)
+
+
+def fps_mult(p: dict) -> int:
+    """Koliko puta više frejmova od izvora renderujemo: Split Screen 2× (25 → 50, 30 → 60), ali nikad preko 60 fps."""
+    if (p.get("layout") or {}).get("type") != "split":
+        return 1
+    return max(1, min(2, int(MAX_FPS // float(p["fps"]))))
+
+
 def render_props(job: Job, p: dict) -> Path:
     props = {
         "video": p["media"]["video"],
@@ -36,7 +46,9 @@ def render_props(job: Job, p: dict) -> Path:
         "captionsFrom": captions_from(p),
         "top": top_spec(job, p),            # Split Screen: momenti gornje polovine
         # Split Screen: render u 2× fps (npr. 25 → 50) — animacije gornje polovine su glatke; snimak se ne menja.
-        "fpsMult": 2 if (p.get("layout") or {}).get("type") == "split" else 1,
+        # Nikad iznad MAX_FPS: snimak od 60 fps je dao izvoz od 120 fps (aazar-trial-1) — telefoni i QuickTime
+        # ne stignu da ga dekodiraju u realnom vremenu, pa video izgleda usporeno i "traje" minutima.
+        "fpsMult": fps_mult(p),
     }
     path = job.dir / "render-props.json"
     path.write_text(json.dumps(props, ensure_ascii=False))

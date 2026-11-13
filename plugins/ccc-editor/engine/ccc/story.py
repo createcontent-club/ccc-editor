@@ -23,7 +23,7 @@ from .project import HOME
 # Šabloni (animacije bez pravog materijala). Pravi materijal: image, video, photo, screenshot, logo, news, post.
 TEMPLATES = {"stat", "week", "steps", "flow", "versus", "chart", "checklist", "chat", "filter", "headline", "resource",
              "notify", "key", "comment", "search"}
-REAL = {"image", "video", "photo", "screenshot", "logo", "news", "post", "mediatext", "posts", "spotlight"}
+REAL = {"image", "video", "photo", "screenshot", "logo", "news", "post", "mediatext", "posts", "spotlight", "faceoff", "pillars", "scene"}
 MAX_SAME = 2          # isti šablon najviše 2 puta po videu
 SIMILAR = 0.6         # sličnost sa ranijim videom od koje se upozorava
 HISTORY = HOME / "history" / "structures.json"
@@ -143,6 +143,64 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
     if subj.get("name") and not subj.get("assets") and subj.get("status") not in ("asked client", "client file"):
         out.append(f"glavna tema '{subj['name']}' nema pravi materijal — nađi snimak/fotografiju; ako postoji samo na "
                    "Instagramu/TikToku i ne može da se preuzme, zamoli klijenta da ga ubaci (status: \"asked client\")")
+
+    # 1b) hook (principles.md 30–34, recenzija aazar-trial-1 v1): otvaranje = KO/ŠTA je tema, prepoznatljivo od prvog
+    # frejma; poređenje ("X vs Y", dve strane sa slikama) = obe strane u kadru istovremeno (faceoff).
+    HOOK_S = 12.0
+    first = items[0]
+
+    def pics(e: dict) -> set[str]:  # lica / proizvodi / snimci — ne logo i ne stranica
+        return {a for a in (e.get("assets") or []) if isinstance(a, str) and not a.startswith(("web-logo-", "web-shot-"))}
+
+    early = [w for w in kept if t_of[w["id"]] < HOOK_S]
+    seen = [e for e in ents if pics(e) and _mentions(early, e.get("match") or [])]
+    shown = _files(first.get("data"))
+    if seen and (first["kind"] not in REAL or first["kind"] == "logo") and not any(shown & pics(e) for e in seen):
+        out.append(f"hook (moment 1, {first['kind']}): prva tvrdnja pominje {', '.join(repr(e.get('name')) for e in seen)}, "
+                   "a otvaranje ne pokazuje pravu sliku/snimak toga — hook je KO/ŠTA je tema, prepoznatljivo od prvog "
+                   "frejma (principles.md 30; sam logo nije dovoljan, 34)")
+    early_txt = " ".join(re.sub(r"[^a-z]+", "", w["text"].lower()) for w in early)
+    sides = [e for e in seen if e.get("type") in ("person", "character", "brand", "product") and not e.get("_subject")]
+    if len(sides) >= 2 and first["kind"] != "faceoff":
+        vs = " (rečeno je i \"vs\")" if re.search(r"\b(vs|versus)\b", early_txt) else ""
+        out.append(f"hook (moment 1, {first['kind']}): prva tvrdnja poredi dve strane ({', '.join(repr(e.get('name')) for e in sides[:2])}){vs} — "
+                   "obe moraju biti u kadru ISTOVREMENO od prvog frejma, pa se animira ono o čemu se priča "
+                   "(`faceoff`, principles.md 31); hook traje do kraja prve tvrdnje kao jedan moment (32)")
+
+    # 1c) jedan prikaz najduže ~5 s (principles.md 37): ideja i likovi mogu da ostanu, način prikaza se menja.
+    # Pravi snimak (video/spotlight sa klipom) sme do ~8 s — kreće se sam.
+    def _beats(n, acc):
+        if isinstance(n, dict):
+            if isinstance(n.get("atT"), (int, float)):
+                acc.append(float(n["atT"]))
+            for v in n.values():
+                _beats(v, acc)
+        elif isinstance(n, list):
+            for v in n:
+                _beats(v, acc)
+        return acc
+
+    for i, it in enumerate(items):
+        dur = it["end"] - it["start"]
+        clip = it["kind"] == "video" or str((it.get("data") or {}).get("file", "")).lower().endswith((".mp4", ".mov", ".webm"))
+        lim = 8.0 if clip else 5.0
+        ts = sorted({0.0, dur, *[t for t in _beats(it.get("data"), []) if 0 <= t <= dur]})
+        gap = max(b - a for a, b in zip(ts, ts[1:])) if len(ts) > 1 else dur
+        if gap > lim + 0.05:
+            out.append(f"moment {i + 1} ({it['kind']}, {it['start']:.1f}s, {dur:.1f}s): {gap:.1f}s bez ičeg novog — prikaz se "
+                       f"menja najkasnije posle {lim:.0f} s (principles.md 37): iste osobe/ideja mogu da ostanu, ali "
+                       "informacija stiže drugačije (nova vrednost, nov oblik, nov kadar)")
+
+    # 1d) nikad dva vizuelno slična oblika zaredom (principles.md 41): lista pa lista, broj pa broj, tekst pa tekst
+    FAMILY = {"checklist": "lista", "notify": "lista", "steps": "lista", "posts": "lista",
+              "stat": "broj", "chart": "broj", "week": "broj", "pillars": "broj",
+              "headline": "tekst", "key": "tekst"}
+    for i in range(1, len(items)):
+        a, b = FAMILY.get(items[i - 1]["kind"]), FAMILY.get(items[i]["kind"])
+        if a and a == b and items[i - 1]["kind"] != items[i]["kind"] and "steps" not in (items[i - 1]["kind"], items[i]["kind"]):
+            out.append(f"momenti {i} i {i + 1} ({items[i - 1]['kind']} → {items[i]['kind']}) izgledaju isto ({a} pa {a}) — "
+                       "gledalac to čita kao istu scenu i skroluje dalje (principles.md 41); jedan od njih drugačije, "
+                       "najbolje pravim materijalom ili `scene`")
 
     # 2) raznovrsnost unutar videa
     kinds = [it["kind"] for it in items]

@@ -135,6 +135,7 @@ def _build(job: Job, name: str) -> None:
     from .fonts import get as get_font
     print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']} · pacing: {p['pacing']}")
     print("▶ Rezovi (pacing)"); main(["cut", name])
+    print("▶ Slušanje reza (gotov zvuk → zaostali pokušaji, isečen govor, tačna vremena reči)"); main(["verify", name])
     color, cs, hs = choices.get("color"), choices["caption_style"], choices.get("hook_style")
 
     print("▶ Titlovi"); main(["captions", name, "--style", cs] + (["--color", color] if color and cs == "karaoke" else []))
@@ -188,10 +189,16 @@ def main(argv: list[str]) -> None:
     sub.add_parser("name").add_argument("video")
     sub.add_parser("doctor").add_argument("--quick", action="store_true")
     sub.add_parser("formats")
-    for c in ("transcript", "cut", "review", "check", "retime", "previews", "build", "report", "keys"):
+    for c in ("transcript", "cut", "review", "check", "retime", "previews", "build", "report", "keys", "verify"):
         sub.add_parser(c).add_argument("name")
     sr = sub.add_parser("remove"); sr.add_argument("name"); sr.add_argument("words"); sr.add_argument("reason")
     sk = sub.add_parser("keep"); sk.add_argument("name"); sk.add_argument("words")
+    # Isecanje zvuka koji NIJE u transkriptu (zaostali pokušaj koji je Whisper "progutao", vidi `ccc verify`):
+    # izvorne sekunde start–end postaju prazan deo (kao dah/šum) — preživi svaki ponovni rez.
+    so = sub.add_parser("cutout"); so.add_argument("name"); so.add_argument("start", type=float); so.add_argument("end", type=float)
+    so.add_argument("reason", nargs="?", default="retake")
+    # Brza provera vizuala bez celog rendera: kadrovi gotove kompozicije u zadatim sekundama (izlaz) → work/<ime>/stills/
+    st = sub.add_parser("stills"); st.add_argument("name"); st.add_argument("times", nargs="+", type=float)
     sn = sub.add_parser("render"); sn.add_argument("name"); sn.add_argument("--final", action="store_true")
     su = sub.add_parser("audio"); su.add_argument("name"); su.add_argument("--off", action="store_true")
     sc = sub.add_parser("camera"); sc.add_argument("name"); sc.add_argument("--off", action="store_true")
@@ -391,9 +398,44 @@ def main(argv: list[str]) -> None:
         p["decisions"].append(d)
         p = _recut(job, p)
         print(f"✓ {a.cmd} {frm}–{to} · trajanje {p['stats']['after']}s")
+        if a.cmd == "remove":
+            from .verify import lost_retakes
+            for m in lost_retakes(p):
+                print("! " + m)
     elif a.cmd == "cut":
         p = _recut(job, p)
         print(f"✓ {p['stats']['before']}s → {p['stats']['after']}s, {len(p['segments'])} segmenata")
+    elif a.cmd == "stills":
+        import subprocess
+        from .project import REMOTION, remotion_cli
+        from .render import fps_mult, render_props
+        props = render_props(job, p)
+        fps = p["fps"] * fps_mult(p)
+        out_dir = job.dir / "stills"
+        out_dir.mkdir(exist_ok=True)
+        for t in a.times:
+            f = out_dir / f"still-{t:06.2f}.png"
+            r = subprocess.run(remotion_cli("still", "CccEdit", str(f), f"--props={props}", f"--frame={int(t * fps)}",
+                                            "--scale=0.5"), cwd=REMOTION, capture_output=True, text=True)
+            print(f"  {t:6.2f}s → {f}" if r.returncode == 0 else f"  {t:6.2f}s ✗ {(r.stderr or r.stdout).strip()[-300:]}")
+    elif a.cmd == "cutout":
+        if not (0 <= a.start < a.end <= p["source"]["duration"] + 0.01):
+            raise SystemExit(f"Neispravan raspon {a.start}–{a.end} s (snimak traje {p['source']['duration']:.1f} s)")
+        inside = [w for w in p["words"] if w["start"] < a.end and w["end"] > a.start]
+        p["utterances"].append({"id": f"u{len(p['utterances'])}", "start": round(a.start, 3), "end": round(a.end, 3),
+                                "text": "", "from": None, "to": None, "cutout": a.reason})
+        p = _recut(job, p)
+        print(f"✓ cutout {a.start:.2f}–{a.end:.2f}s ({a.reason}) · trajanje {p['stats']['after']}s"
+              + (f" · u rasponu su i reči {inside[0]['id']}–{inside[-1]['id']} — proveri da nisu isečene" if inside else ""))
+    elif a.cmd == "verify":
+        # Slušanje gotovog reza (engine/ccc/verify.py): vremena reči iz gotovog zvuka + upozorenja.
+        from .verify import listen, lost_retakes
+        msgs = lost_retakes(p) + listen(job, p, retime=True)
+        job.save(p)
+        warn = [m for m in msgs if not m.startswith("(info)")]
+        for m in msgs:
+            print(("  " if m.startswith("(info)") else "! ") + m)
+        print(f"✓ slušanje reza: {len(warn)} upozorenja" if warn else "✓ slušanje reza: čisto")
     elif a.cmd == "review":
         from .review import cut_review
         text = cut_review(p)

@@ -86,6 +86,12 @@ Each line is one spoken chunk with word ids. Remove with `ccc remove <name> wA-w
 - **Retakes / false starts:** the same sentence started again → keep the **last complete** version, remove the earlier attempts, including the abandoned fragment.
 - **Leftovers around retakes:** after removing a retake, read the lines right before and after it again — a lone "bye", "okay", laugh or half word between two takes must go too (`ccc remove … off-script`). Every cut must be clean (`principles.md` 23).
 - **Check unclear words by listening, never by guessing.** Words marked `nesigurno` in the hook or the first sentence, a name the speaker says (people, products — the transcript often swallows them into a neighbour word, e.g. "Her name is… And" where "Fang Taozi, and" was said), and any line that reads oddly: `ccc listen <name> <start> <end>` (original-video seconds, a few seconds around it) prints what was actually said (`?` = still unsure). Fix captions with `ccc word <name> wID "Correct"` (one id may hold several words, e.g. `"Fang Taozi, and"`; `""` hides a ghost word); spell names as your research sources do.
+- **Script read aloud is off-script** (`principles.md` 35): a title or outline the speaker reads flatly to remind himself ("Kylie Cosmetics vs Rare Beauty" right after the hook line) is cut — check every line of the first ~15 s: is he telling the viewer, or reading?
+- **Keep exactly one version of everything that is content** — especially structure markers ("First problem", "Step 2", "Fourth problem"): when all takes of a line are retakes, keep the last complete one. `ccc remove` prints `! retake … nijedna njegova verzija nije zadržana` when you removed every version → `ccc keep` the last one.
+- **Listen to the cut before building:** `ccc verify <name>` transcribes the FINISHED audio three times (whole + two sets of short windows) and prints:
+  - `čuje se ponovljeno "…"` at a source time — a leftover take the transcript didn't show (Whisper often writes two takes as one). `ccc listen <name> <t-3> <t+3>` to see both takes, then remove the earlier one: with `ccc remove` if its words are in the transcript, else `ccc cutout <name> <start> <end>` (source seconds, cut between the two takes at a quiet moment).
+  - `se ne čuju` — kept words that aren't heard: listen there; a removal cut real speech → `ccc keep`.
+  - It also moves every kept word's timing to where it is actually heard (captions land exactly on the voice). `ccc build` runs it automatically; fix every `!` line it prints before delivering. A natural one-word repeat the speaker meant ("more, more connected") may stay — then say so in the summary.
 - **Keep** anything that is content, even if unusual. When in doubt, keep it.
 - Never rewrite or invent words.
 
@@ -110,6 +116,8 @@ Run it in the background (~3–5 min). Tell the client it's being edited and rou
 | `boja naglaska … pretamna` (color too dark) | ask the client for a lighter shade or suggest one from the palette → `ccc choices <name> color=…` |
 | `glas bez titla` / `poslednji titl` | run `ccc captions <name>` again, then build |
 | `isečen glas` / `bez detektovanog glasa` | a removal you made cut real speech → `ccc transcript <name>`, `ccc keep` the affected words |
+| `fps izvoza` / `trajanje izvoza` | the export would play wrong on phones (above 60 fps, or file length ≠ audio length) — an engine problem, not a choice: use the support line |
+| (not ❌, but `! slušanje reza: …` during the build) | a leftover take or unheard words — fix as in Step 3 (`ccc verify`), then build again |
 | anything else | run `ccc check <name>` for details; fix the cause, never hide a failing check |
 
 Never deliver a video whose check failed. If the same check fails twice after your fix, use the support line.
