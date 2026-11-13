@@ -1,0 +1,64 @@
+# Every release is installed from scratch and edits a real (short) video on the three kinds of client computers.
+# A red run means: don't let clients update until it's fixed.
+name: install + edit
+
+# release/** first: an update is pushed to a release branch, and reaches clients (main) only after all three pass.
+on:
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+jobs:
+  client:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14          # Apple Silicon
+          - os: macos-15-intel    # Intel Mac
+          - os: windows-latest    # Windows + Git Bash (what Claude Code uses)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Speech model cache (1.6 GB)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ccc-data/tools/models/whisper
+          key: whisper-large-v3-turbo-0a363e9
+
+      - name: Setup (as a client runs it)
+        run: |
+          bash plugins/ccc-editor/setup/bootstrap.sh "$RUNNER_TEMP/ccc-data" | tee setup-out.txt
+          grep -q '^SETUP_OK' setup-out.txt
+
+      - name: Install check
+        run: |
+          out="$(bash plugins/ccc-editor/setup/bootstrap.sh "$RUNNER_TEMP/ccc-data" --check)"
+          echo "$out"
+          test "$out" = "INSTALLED"
+
+      - name: Setup again (update path, must be quick and still OK)
+        run: |
+          bash plugins/ccc-editor/setup/bootstrap.sh "$RUNNER_TEMP/ccc-data" | tee setup-again.txt
+          grep -q '^SETUP_OK' setup-again.txt
+
+      - name: Edit a test video
+        run: bash tests/ci-edit.sh "$RUNNER_TEMP/ccc-data"
+
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/ccc-data/setup.log
+            ${{ runner.temp }}/ccc-data/logs/
+            ${{ runner.temp }}/ccc-data/support-info.txt
+            ${{ runner.temp }}/ccc ci (test) folder/*.mp4
+          if-no-files-found: ignore
+          retention-days: 14

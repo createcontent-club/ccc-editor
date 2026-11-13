@@ -16,6 +16,31 @@ os.environ["PYTHONPATH"] = here + os.pathsep + os.environ.get("PYTHONPATH", "") 
 
 from ccc.__main__ import EXIT_CRASH, main  # noqa: E402
 
+
+def _version_guard() -> None:
+    """Plugin kod i instalacija (Remotion kod, paketi) moraju biti iste verzije. Stara Claude sesija posle
+    ažuriranja je mešala stari engine sa novim Remotion kodom (QA 0.8.0, P1-4)."""
+    import json
+    code = os.path.dirname(here)
+    pj, inst = os.path.join(code, ".claude-plugin", "plugin.json"), os.path.join(os.environ.get("CCC_HOME", ""), "installed.json")
+    if not (os.path.exists(pj) and os.path.exists(inst)) or (args[:1] and args[0] in ("doctor", "support-info")):
+        return
+    try:
+        want = json.load(open(pj, encoding="utf-8")).get("version", "")
+        have = json.load(open(inst, encoding="utf-8")).get("version", "")
+        v = lambda x: tuple(int(p) for p in x.split("."))  # noqa: E731
+        newer, older = v(have) > v(want), v(have) < v(want)
+    except (OSError, ValueError):
+        return
+    if newer:
+        raise SystemExit(f"CCC_RESTART_NEEDED: the editor was updated to {have} while this chat was open (this chat "
+                         f"still runs {want}) — restart Claude Code and continue there; nothing is lost.")
+    if older:
+        raise SystemExit(f"CCC_UPDATE_NEEDED: the editor code is {want} but setup is {have} — run setup first (Step 0).")
+
+
+_version_guard()
+
 try:
     main(args)
 except (SystemExit, KeyboardInterrupt):

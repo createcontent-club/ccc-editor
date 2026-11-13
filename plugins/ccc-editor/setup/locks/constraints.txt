@@ -1,0 +1,2 @@
+# Proverene verzije (transkripcija je testirana na njima)
+ctranslate2==4.8.5

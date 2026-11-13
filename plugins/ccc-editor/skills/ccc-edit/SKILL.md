@@ -43,7 +43,7 @@ CCC_HOME="${CLAUDE_PLUGIN_DATA}" bash "${CLAUDE_PLUGIN_ROOT}/ccc"
 | 4 | `CCC_CHECK_FAILED` — the finished video failed a check, **nothing was exported** | fix the ❌ lines (Step 5 table), build again |
 | 5 | `CCC_CRASH` — a bug in the engine (details in the log file it names) | don't retry in a loop: once more at most, then the support line + the log path |
 
-**Support line** — whenever something fails that you can't fix yourself (setup keeps failing, the video can't be processed, a check keeps failing), tell the client: *"Something went wrong that I can't fix on my own — please message us in your 1-on-1 chat on Discord and we'll help."* Add one short sentence about what failed.
+**Support line** — whenever something fails that you can't fix yourself (setup keeps failing, the video can't be processed, a check keeps failing), run `ccc support-info` and tell the client: *"Something went wrong that I can't fix on my own — please message us in your 1-on-1 chat on Discord and paste the block below, we'll help."* Add one short sentence about what failed, then show the block it printed (versions, system, install state, last error — no personal data; it is also saved as `support-info.txt` in the editor's data folder if they prefer to send a file).
 
 ## Formats
 
@@ -56,12 +56,23 @@ Each CCC format has its own dashboard in the menu and its own rules. `ccc format
 ## Step 0 — Editor installed and up to date?
 
 ```
-bash "${CLAUDE_PLUGIN_ROOT}/setup/bootstrap.sh" "${CLAUDE_PLUGIN_DATA}" --check     → INSTALLED / NOT_INSTALLED / UPDATE_NEEDED
+bash "${CLAUDE_PLUGIN_ROOT}/setup/bootstrap.sh" "${CLAUDE_PLUGIN_DATA}" --check     → INSTALLED / NOT_INSTALLED / UPDATE_NEEDED / REPAIR_NEEDED: <what>
 ```
 
 - **NOT_INSTALLED** (first use): tell the client *"Setting up the editor on your computer — one time only, about 5–10 minutes. You don't need to do anything."* and run in the background `bash "${CLAUDE_PLUGIN_ROOT}/setup/bootstrap.sh" "${CLAUDE_PLUGIN_DATA}"`. It ends with `SETUP_OK` or `SETUP_FAILED` (+ the reason). While it runs you may already ask for the video path (Step 1). On `SETUP_FAILED`: if it's a download/internet problem, ask the client to check the connection and run it once more; otherwise use the support line.
-- **UPDATE_NEEDED** (the plugin was updated): run the same bootstrap command — it only redoes what changed (usually under a minute).
-- **INSTALLED**: continue. If anything later looks broken, `ccc doctor --quick` shows what's missing.
+- **UPDATE_NEEDED** (the plugin was updated) or **REPAIR_NEEDED: …** (a part is missing or damaged, e.g. a deleted model): run the same bootstrap command — it only redoes what changed or broke (usually under a minute; a missing speech model ~5 min). Tell the client in one line for REPAIR: *"A part of the editor was missing — fixing it, one moment."*
+- **INSTALLED**: continue. If anything later looks broken, `ccc support-info` shows the install state.
+
+`SETUP_FAILED` is followed by `SETUP_REASON:` — tell the client:
+
+| reason | Say |
+|---|---|
+| `network` | *"The download was interrupted — check your internet connection and I'll try again."* Then run setup once more (it continues where it stopped). |
+| `disk` | *"Your disk is almost full — the editor needs about N GB (see the line above). Free some space and I'll continue."* |
+| `os` | the line above says what's needed (macOS 12+, no Windows on ARM) — relay it; nothing else to try. |
+| `permission` / `other` | support line. |
+
+Any `ccc` command can also stop with `CCC_RESTART_NEEDED` (the editor was updated while this chat was open → *"The editor just updated — please restart Claude Code and send your video again; nothing is lost."*) or `CCC_UPDATE_NEEDED` (run the bootstrap command above, then retry).
 
 ## Step 1 — The video
 

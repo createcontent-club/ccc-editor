@@ -21,7 +21,7 @@ You pick a format and style on a simple page, and the rest happens automatically
 
 | | |
 |---|---|
-| Computer | **Mac** (macOS 12 or newer) or **Windows 10 / 11** PC |
+| Computer | **Mac** (macOS 12 or newer, Apple Silicon or Intel) or **Windows 10 / 11** PC with an Intel/AMD processor (Windows on ARM isn't supported yet) |
 | Disk space | about **6 GB free** |
 | Internet | needed for the one-time setup (it downloads about 2.5 GB) |
 | Claude | a Claude account with **Claude Code** (Pro or Max plan) |
@@ -157,3 +157,4 @@ This also deletes the downloaded tools (about 5 GB). Your original and edited vi
 ## Need help?
 
 **Message us in your 1-on-1 chat on Discord** — tell us what you were doing and what Claude said, and we'll help.
+To make it quick, ask Claude: *"show my editor support info"* — and paste the block it shows into the chat.
