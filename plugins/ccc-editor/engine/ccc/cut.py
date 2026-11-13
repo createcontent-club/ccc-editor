@@ -33,19 +33,43 @@ def _retakes(words: list[dict], utterances: list[dict]) -> set[int]:
         a = [t for t in a if t and t not in FILLERS]
         if len(a) < 2:
             continue
-        cut_off = utterances[i]["text"].rstrip().endswith(("...", "…", "-", "—"))
-        for j in (i + 1, i + 2):
-            if j >= len(toks):
-                break
+        text = utterances[i]["text"].rstrip()
+        cut_off = text.endswith(("...", "…", "-", "—"))
+        complete = not cut_off and text.endswith((".", "!", "?"))
+        # sledeća 1–2 dela SA rečima (prazni delovi i samo "um" između dva pokušaja se preskaču)
+        nxt, j = [], i + 1
+        while j < len(toks) and len(nxt) < 2 and j <= i + 5:
+            if any(t and t not in FILLERS for t in toks[j]):
+                nxt.append(j)
+            j += 1
+        for j in nxt:
             b = [t for t in toks[j] if t and t not in FILLERS]
             prefix = 0
             while prefix < min(len(a), len(b)) and a[prefix] == b[prefix]:
                 prefix += 1
             ratio = difflib.SequenceMatcher(None, a, b[: len(a)]).ratio()
-            if (prefix >= 2 and (cut_off or ratio >= 0.75)) or ratio >= 0.85:
+            # Paralelizam nije retake (QA 0.8.0, P0): "You don't need more time. / You don't need more money.",
+            # "It's not about the money. / It's not about the fame." — obe rečenice su cele, iste dužine, a razlikuju
+            # se samo u poslednjih 1–2 reči kojih u drugoj nema. Pravi retake ponavlja i kraj ("…mental health." →
+            # "…her mental health.") ili je prvi pokušaj prekinut.
+            rest_a, rest_b = a[prefix:], b[prefix:]
+            parallel = (complete and prefix >= 2 and 0 < len(rest_a) <= 2 and rest_b and abs(len(a) - len(b)) <= 1
+                        and not set(rest_a) & set(b[prefix:]) and ratio < 0.999)
+            if parallel:
+                continue
+            # 5+ istih reči na početku = isti početak rečenice ponovo (preformulisan pokušaj, aazar-trial-1 "First
+            # problem, Kylie statics are just glossy product…" ×3) — retake i kad se nastavak razlikuje.
+            if (prefix >= 2 and (cut_off or ratio >= 0.75)) or ratio >= 0.85 or prefix >= 5:
                 out.add(i)
                 break
     return out
+
+
+# Mucanje = ponovljena FUNKCIJSKA reč ("I I think", "the the") ili vrlo brzo ponavljanje (< 80 ms između).
+# Sadržajne reči se ponavljaju namerno ("much much better", "please please", "knock knock") — QA 0.8.0, P0.
+STUTTER_WORDS = {"i", "a", "an", "the", "to", "and", "but", "or", "of", "in", "on", "at", "it", "its", "it's", "im",
+                 "i'm", "we", "you", "they", "he", "she", "this", "my", "your", "our", "for", "with", "if", "as", "be",
+                 "we're", "you're", "they're", "there", "what", "when", "how", "can", "do", "did", "was", "are"}
 
 
 def auto_removals(words: list[dict], utterances: list[dict]) -> dict[str, str]:
@@ -63,7 +87,8 @@ def auto_removals(words: list[dict], utterances: list[dict]) -> dict[str, str]:
         elif i + 1 < len(words):
             nxt = words[i + 1]
             if (n and n == norm(nxt["text"]) and n not in REPEAT_OK and nxt["u"] == w["u"]
-                    and not re.search(r"[.,!?;:]$", w["text"]) and nxt["start"] - w["end"] < 0.5):
+                    and not re.search(r"[.,!?;:]$", w["text"]) and nxt["start"] - w["end"] < 0.5
+                    and (n in STUTTER_WORDS or nxt["start"] - w["end"] < 0.08)):
                 out[w["id"]] = "stutter"
     return out
 
@@ -180,6 +205,14 @@ def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], 
     pieces = [(s, e) for s, e in pieces
               if (e - s >= MIN_PIECE or any(ws < e and s < we for ws, we in inner))
               and any(ws < e and we > s for ws, we in word_spans)]
+    # Komad BEZ ijedne zadržane reči (dah pred rečju, rep izbačenog ponavljanja posle rupe) ulazi u toleranciju
+    # reči, ali je zaseban zvuk: ostaje samo kad se naslanja (≤ tol) na komad koji ima reč — tad je to početak
+    # ili rep reči koji Whisper nije pokrio (aazar-trial-1: tri samostalna komada daha od 0.2–0.4 s u rezu).
+    def has_word(s: float, e: float) -> bool:
+        return any(ws < e and s < we for ws, we in inner)
+    anchored = [(s, e) for s, e in pieces if has_word(s, e)]
+    pieces = [(s, e) for s, e in pieces
+              if has_word(s, e) or any(max(0.0, a - e, s - b) <= tol for a, b in anchored)]
     if not pieces:
         raise SystemExit("Ništa ne ostaje posle sečenja.")
 

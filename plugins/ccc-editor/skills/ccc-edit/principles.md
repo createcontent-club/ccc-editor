@@ -5,7 +5,19 @@ shows animated or real visuals** (Split Screen today, every future format). A fo
 its own layout and exceptions. Read this file before planning any visuals.
 
 Each principle: the rule, then **Why** (the thinking behind it), then where the engine checks it (`!` lines in
-`ccc visuals` / the build check — fix every one).
+`ccc visuals` / the build check — fix every `[must]`; `[aim]` lines get at most 2 plan revisions, see SKILL.md Step 4).
+
+## Timing — the ONE table (every other mention of seconds points here)
+
+| What | Rule |
+|---|---|
+| One look (layout) on screen | 3–5 s, then the presentation changes (same people/idea may continue — principle 37) |
+| New beat (a value, a line, a tag, a new card) | at least every ~3 s; never more than 5 s without anything new |
+| A single moment | at least 1.2 s; every element stays long enough to read (the engine prints `[must]` when it doesn't) |
+| Real video clip (subject footage, interview, ad) | may run up to 8 s on its own — it moves by itself |
+| Client's own screen recording | may run up to 15 s |
+| The hook | one IDEA for the whole first claim (often ~10 s), built as 2–3 consecutive moments that keep the same subjects (principles 30–34) |
+| Clip downloads | ≤ 20 s each, only the part you will show |
 
 ## Meaning first — show the idea, not a picture of something related
 
@@ -152,10 +164,11 @@ order, every time, before planning anything else:
     **Why (owner, s03):** "they are compared the whole time, which by itself says both have to be in frame at the same
     time, and then animate what is being talked about." *Engine:* the first claim says "vs"/names two subjects that
     research has pictures of, and the opening isn't a two-sided visual → warning.
-32. **The hook lasts until the first claim is complete, as ONE sequence** — here "Beauty Wars … Rare did 4.2M while
+32. **The hook lasts until the first claim is complete, as ONE idea** — here "Beauty Wars … Rare did 4.2M while
     Kylie only did 740K" (~10 s), and it keeps going while the next sentences are still about the same comparison
-    ("you might think Selena has a smaller audience… wrong, 430M vs 390M"). New information arrives on the same
-    picture (a value, a label), the picture does not change.
+    ("you might think Selena has a smaller audience… wrong, 430M vs 390M"). The same subjects stay on screen the
+    whole time, but the look changes every 3–5 s (principle 37 and the timing table): faces face-off → their
+    revenue as pillars → the question on their faces → follower pillars.
     **Why:** the opening sets up the question the video answers; cutting it into 3-second scenes breaks the setup and
     makes the opening look like scenes from the middle.
 33. **Numbers of the first claim live on the subject they belong to** — Rare's revenue under Selena/Rare, Kylie's under
@@ -215,9 +228,3 @@ order, every time, before planning anything else:
     **Why (owner, v4 s02):** "when Kylie's counter appeared, the counter above Selena that was already in frame reset —
     a random error." It reads as a glitch and breaks trust in the whole graphic. *Template:* `pillars` keeps unchanged
     values and labels still; new templates must follow the same rule (test: render a frame just after the second beat).
-
-## How new feedback becomes a principle (dev)
-
-Every storyboard comment is read as a **principle and a way of thinking**, not a one-scene fix (the owner's explicit
-rule). For each comment: name the general rule → add it here (or to the format file if it is truly about one layout) →
-make the engine check it or the template do it automatically → fix the scene. Record the round in `PLAN.md` §13.1.

@@ -122,9 +122,20 @@ def _build(job: Job, name: str) -> None:
     from .formats import DEV
     if fmt["status"] != "ready" and not DEV:
         raise SystemExit(f"Format {fmt['id']} još nije spreman (status {fmt['status']}).")
+    src = p.get("source") or {}
+    if fmt.get("layout") != "split" and src.get("width") and src["width"] >= src["height"]:
+        # QA 0.8.0, P0: Basic sa horizontalnim/kvadratnim snimkom je renderovao sliku na vrhu i crno ispod, pa
+        # tek na kraju pao na proveri bez objašnjenja — sad se zaustavlja odmah, sa rešenjem.
+        raise SystemExit(f"CCC_NEEDS_VERTICAL: this video is {'square' if src['width'] == src['height'] else 'horizontal'} "
+                         f"({src['width']}×{src['height']}); {fmt['title']} needs a vertical (9:16) video. "
+                         "Split Screen reframes horizontal videos automatically: ccc choices <name> format=split-screen …")
     p["choices"] = choices
     p["font"] = choices.get("font") or "ccc"  # set fontova: titlovi + hook (meri ga i hook, i render)
     p["pacing"] = choices.get("pacing") or "fast"
+    if not choices.get("color"):  # boja brenda uklonjena → nazad na podrazumevanu (ranije je ostajala stara)
+        p.pop("caption_accent", None)
+        if isinstance(p.get("hook"), dict):
+            p["hook"].pop("bg", None)
     if fmt.get("layout") == "split":  # 50/50: sadržaj gore, govornik dole (crop računa korak Titlovi)
         p["layout"] = {"type": "split", "line": SPLIT_LINE, **{k: v for k, v in (p.get("layout") or {}).items()
                                                               if k == "cropY"}}
@@ -177,15 +188,24 @@ def _build(job: Job, name: str) -> None:
         print(f"\nSTORYBOARD v{sb['version']}: {sb['html']} ({sb['scenes']} scena) — objavi ga kao Artifact (vidi CLAUDE.md)")
 
 
+READ_ONLY = {"transcript", "review", "report", "keys", "listen", "research", "check"}
+
+
+REASONS = {"off-script", "retake", "false-start", "filler", "stutter"}
+
+
 def _range(spec: str) -> tuple[str, str]:
+    """"w3-w7" (prihvata i "–"/"—" kakve ispisuje `ccc transcript`) → ("w3", "w7")."""
+    spec = spec.replace("–", "-").replace("—", "-").strip()
     a, _, b = spec.partition("-")
-    return a, (b or a)
+    return a.strip(), (b.strip() or a.strip())
 
 
 def main(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(prog="ccc", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("prepare"); sp.add_argument("video"); sp.add_argument("--name")
+    sp.add_argument("--force", action="store_true", help="ispočetka: briše postojeći projekat ovog imena")
     sub.add_parser("name").add_argument("video")
     sub.add_parser("doctor").add_argument("--quick", action="store_true")
     sub.add_parser("formats")
@@ -270,8 +290,21 @@ def main(argv: list[str]) -> None:
         return
 
     if a.cmd == "name":
-        from .project import slug
-        print(slug(Path(a.video).stem))
+        # 1. red = ime projekta (jedinstveno: drugi fajl istog imena dobija -2, -3…); 2. red = orijentacija —
+        # Claude je zna PRE menija (horizontalan/kvadratan snimak → Split Screen, Basic traži uspravan).
+        from .media import probe
+        from .project import unique_name
+        src = Path(a.video).expanduser()
+        if not src.is_file():
+            raise SystemExit(f"CCC_NO_FILE: there is no video file at {src}")
+        print(unique_name(src.resolve()))
+        try:
+            i = probe(src)
+            kind = "vertical" if i["height"] > i["width"] else "square" if i["height"] == i["width"] else "horizontal"
+            print(f"orientation: {kind} {i['width']}x{i['height']} · {i['duration']:.0f}s · "
+                  f"{'sound' if i['has_audio'] else 'NO SOUND'}")
+        except SystemExit as e:
+            print(f"orientation: unknown ({e})")
         return
 
     if a.cmd == "picker":  # ne zavisi od pripreme — izbori idu u zaseban fajl
@@ -321,6 +354,7 @@ def main(argv: list[str]) -> None:
     if a.cmd == "assets":  # Split Screen: klijentovi fajlovi — priprema + pregled za Claude-a (engine/ccc/assets.py)
         from .assets import add, describe, prepare
         job = Job(a.name)
+        job.lock()
         if a.add_file:
             print(f"✓ dodat fajl: {add(job, Path(a.add_file).expanduser(), a.note)}")
         cf = job.dir / "choices.json"
@@ -331,6 +365,7 @@ def main(argv: list[str]) -> None:
     if a.cmd == "choices":  # ne zavisi od pripreme
         from .picker import validate
         job = Job(a.name)
+        job.lock()
         f = job.dir / "choices.json"
         cur = json.loads(f.read_text()) if f.exists() else {}
         new_fmt = next((kv.partition("=")[2].strip() for kv in a.pairs if kv.startswith("format=")), None)
@@ -356,25 +391,60 @@ def main(argv: list[str]) -> None:
         from .media import normalize, probe
         from .transcribe import transcribe
         src = Path(a.video).expanduser().resolve()
-        from .project import slug
-        job = Job(a.name or slug(src.stem))
+        if not src.is_file():
+            raise SystemExit(f"CCC_NO_FILE: there is no video file at {src}")
+        from .project import same_source, unique_name
+        job = Job(a.name or unique_name(src))
+        job.lock()
+        if job.exists:
+            # QA 0.8.0, P0: ponovni prepare je tiho brisao sve odluke, a drugi video istog imena preuzimao tuđe
+            # izbore, assete i izvoz (u Split Screen-u čak sliku starog videa).
+            try:
+                old = job.load()
+            except (OSError, json.JSONDecodeError):
+                old = {}
+            if not a.force:
+                if same_source(old, src):
+                    raise SystemExit(f"CCC_PROJECT_EXISTS: '{job.name}' is already prepared for this video — keep "
+                                     "using it (changes go through `ccc build`). Only to start over from scratch: "
+                                     "`ccc prepare <video> --force` (deletes its edits).")
+                raise SystemExit(f"CCC_NAME_TAKEN: project '{job.name}' belongs to another video — run without "
+                                 "--name (or use the name `ccc name` prints).")
+        if a.force:  # ispočetka: ništa od starog projekta ne sme da ostane (video-wide, assets, izbori, izvoz)
+            for d in (job.public,):
+                shutil.rmtree(d, ignore_errors=True)
+            for f in job.dir.iterdir() if job.dir.exists() else []:
+                if f.name != ".lock":
+                    shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
         info = probe(src)
         if not info["has_audio"]:
-            raise SystemExit("Snimak nema zvuk — nema šta da se transkribuje.")
-        if info["width"] > info["height"]:
-            print("! Horizontalan snimak — Split Screen ga automatski reframe-uje (kamera prati lice); "
-                  "za ostale formate reframe u 9:16 još ne postoji.")
+            raise SystemExit("CCC_NO_SOUND: this video has no sound — the editor needs the spoken audio.")
+        try:
+            info["size"] = src.stat().st_size
+        except OSError:
+            pass
+        if info["width"] >= info["height"]:
+            print("! HORIZONTAL_VIDEO: horizontalan/kvadratan snimak — Split Screen ga automatski reframe-uje "
+                  "(kamera prati lice); Basic Edit traži uspravan snimak.")
+        if info.get("audio_tracks", 1) > 1:
+            print(f"  zvuk: {info['audio_tracks']} audio trake — uzeta traka {info['audio_index'] + 1} (u njoj je govor)")
+        if abs(info.get("av_offset") or 0) > 0.01:
+            print(f"  zvuk je pomeren {info['av_offset'] * 1000:+.0f} ms u odnosu na sliku — poravnato")
         print(f"▶ Prijem: {info['width']}×{info['height']}, {info['fps']} fps, {info['duration']:.1f}s, {info['codec']}")
         job.dir.mkdir(parents=True, exist_ok=True)
         norm = normalize(src, info, job.public / "video.mp4", job.dir / "source-audio.wav")
-        print(f"  {'re-enkodovano (CFR)' if norm['reencoded'] else 'video kopiran bez gubitka'} → {norm['fps']} fps")
+        print(f"  {'re-enkodovano' if norm['reencoded'] else 'video kopiran bez gubitka'} → {norm['fps']} fps"
+              + (" · uspravan kadar doveden na 1080×1920" if norm.get("portrait_fit") else "")
+              + (" · HDR → SDR" if norm.get("hdr_to_sdr") else ""))
         print("▶ Transkripcija (Whisper, deo po deo)…")
         tr = transcribe(job.dir / "source-audio.wav", DEFAULT_CUT["utterance_gap"])
-        print(f"  {len(tr['utterances'])} izgovorenih delova, {len(tr['words'])} reči za {tr['seconds']}s")
+        print(f"  {len(tr['utterances'])} izgovorenih delova, {len(tr['words'])} reči za {tr['seconds']}s "
+              f"(jezik: {tr['detected']['language']}, {tr['detected']['probability']:.0%})")
         p = {
             "version": 1, "name": job.name, "source": {"path": str(src), **info}, "fps": norm["fps"],
             "media": {"video": job.public_rel("video.mp4"), "voice": job.public_rel("voice.wav")},
-            "language": tr["language"], "words": tr["words"], "utterances": tr["utterances"],
+            "language": tr["language"], "language_detected": tr["detected"],
+            "words": tr["words"], "utterances": tr["utterances"],
             "cut": dict(DEFAULT_CUT), "decisions": [], "approved": {"cut": False},
         }
         p = _recut(job, p)
@@ -383,21 +453,30 @@ def main(argv: list[str]) -> None:
         return
 
     job = Job(a.name)
+    if a.cmd not in READ_ONLY:  # sve što menja projekat čeka svoj red (paralelne komande su gubile izmene)
+        job.lock()
     p = job.load()
     if a.cmd == "transcript":
         from .review import transcript
         print(transcript(p))
     elif a.cmd in ("remove", "keep"):
-        frm, to = _range(a.words)
-        ids = {w["id"] for w in p["words"]}
-        if frm not in ids or to not in ids:
-            raise SystemExit(f"Nepoznat ID reči: {a.words}")
-        d = {"from": frm, "to": to, "action": a.cmd}
-        if a.cmd == "remove":
-            d["reason"] = a.reason
-        p["decisions"].append(d)
+        if a.cmd == "remove" and a.reason not in REASONS:
+            raise SystemExit(f"CCC_BAD_REASON: '{a.reason}' — use one of: {', '.join(sorted(REASONS))}")
+        idx = {w["id"]: i for i, w in enumerate(p["words"])}
+        done = []
+        for spec in [x for x in a.words.replace(" ", "").split(",") if x]:  # više opsega: w1-w3,w10-w12
+            frm, to = _range(spec)
+            if frm not in idx or to not in idx:
+                raise SystemExit(f"CCC_BAD_WORDS: unknown word id in '{spec}' (ids look like w12; see ccc transcript)")
+            if idx[frm] > idx[to]:  # obrnut opseg je ranije tiho prolazio sa ✓ i ništa nije sekao
+                frm, to = to, frm
+            d = {"from": frm, "to": to, "action": a.cmd}
+            if a.cmd == "remove":
+                d["reason"] = a.reason
+            p["decisions"].append(d)
+            done.append(f"{frm}–{to} \"{' '.join(w['text'] for w in p['words'][idx[frm]:idx[to] + 1])[:60]}\"")
         p = _recut(job, p)
-        print(f"✓ {a.cmd} {frm}–{to} · trajanje {p['stats']['after']}s")
+        print(f"✓ {a.cmd} {'; '.join(done)} · trajanje {p['stats']['after']}s")
         if a.cmd == "remove":
             from .verify import lost_retakes
             for m in lost_retakes(p):
@@ -466,6 +545,11 @@ def main(argv: list[str]) -> None:
         p["captionY"], face = caption_y(job, p)
         if face.get("faces"):
             p["face"] = face
+        else:
+            # QA 0.8.0, P0: bez detektovanog lica hook nije mogao da se postavi ("Prvo pokreni captions" u krug).
+            # Pretpostavljeno lice tipičnog uspravnog kadra (glava gore-sredina); titl i hook idu na svoja mesta.
+            p["face"] = {"faces": 0, "assumed": True, "chin": 1000, "face_h": 320, "head_top": 600, "chin_spread": 0}
+            print("! NO_FACE: lice nije pronađeno — titl i hook su na podrazumevanim mestima (proveri kadar)")
         if (p.get("layout") or {}).get("type") == "split":
             from .captions import split_place
             split_place(p)

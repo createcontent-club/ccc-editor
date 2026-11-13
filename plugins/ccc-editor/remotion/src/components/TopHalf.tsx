@@ -205,6 +205,11 @@ const Highlight: React.FC<{children: React.ReactNode; at: number; size: number; 
 
 // ------------------------------------------------------------------ šabloni
 const countUp = (v: string, k: number) => {
+  // QA 0.8.0, P0: odbrojavanje je menjalo izgovorene brojeve ("Since 2019" → "Since 2,019", "4,2 Mio" → "42 Mio").
+  // Pravila: na kraju animacije UVEK tačno tekst govornika; godine (1900–2099), decimalni zarez ("4,2") i tačke
+  // kao hiljade ("1.000.000") ili verzije ("v1.2.3") se ne odbrojavaju uopšte.
+  if (k >= 0.999) return v;
+  if (/(^|[^0-9.,])(19|20)\d\d(?![0-9])/.test(v) || /\d,\d{1,2}(?!\d)/.test(v) || /\d\.\d+\.\d/.test(v)) return v;
   // Raspon ("3–4 hrs") ili više brojeva: bez odbrojavanja (međuvrednosti tipa "1–4" zbunjuju) — animaciju nosi vizual.
   const nums = v.match(/[0-9][0-9,.]*/g) || [];
   if (nums.length > 1) {

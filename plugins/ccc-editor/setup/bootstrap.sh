@@ -11,6 +11,11 @@ HOME_DIR="${1:?usage: bootstrap.sh <data folder> [--check|--no-whisper]}"
 shift
 MODE="${1:-}"
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) WIN=1 ;; *) WIN=0 ;; esac
+# Windows: "C:/Users/…" → "/c/Users/…" (dvotačka u PATH-u), i UTF-8 izlaz — Python na Windows-u u pipe piše
+# cp1252 pa bi install.py pao na prvom "→ ✓" pre nego što išta instalira (QA 0.8.0, P0).
+if command -v cygpath >/dev/null 2>&1; then HOME_DIR="$(cygpath -u "$HOME_DIR")"; fi
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+unset PYTHONHOME
 
 py_path() {
   if [ -x "$HOME_DIR/.venv/bin/python" ]; then echo "$HOME_DIR/.venv/bin/python"
@@ -46,7 +51,9 @@ echo "  ✓ uv"
 
 # 2) Python 3.12 (managed by uv) + packages
 if [ -z "$(py_path)" ]; then
-  "$UV" venv --quiet --python 3.12 "$HOME_DIR/.venv" || { echo "SETUP_FAILED"; exit 1; }
+  # --clear: prekinuta ili pokvarena .venv (python nestao) se sama popravi umesto "already exists" zauvek
+  "$UV" venv --quiet --clear --managed-python --python 3.12 "$HOME_DIR/.venv" \
+    || "$UV" venv --quiet --clear --python 3.12 "$HOME_DIR/.venv" || { echo "SETUP_FAILED"; exit 1; }
 fi
 PY="$(py_path)"
 "$UV" pip install --quiet --python "$PY" -r "$CODE/requirements.txt" || { echo "  ✗ Python packages"; echo "SETUP_FAILED"; exit 1; }

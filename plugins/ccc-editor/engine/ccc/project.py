@@ -51,12 +51,48 @@ PACING = {
 }
 
 
+_HELD: dict = {}  # brave koje ovaj proces drži (ime projekta → otvoren fajl)
+
+
 class Job:
     def __init__(self, name: str):
+        # Ime je jedan folder — nikad putanja ("../../x" bi pisao van work/), bez razmaka i kontrolnih znakova.
+        if not name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", name) or ".." in name:
+            raise SystemExit(f"CCC_BAD_NAME: '{name}' is not a valid project name (use the name `ccc name` printed).")
         self.name = name
         self.dir = WORK / name
         self.public = PUBLIC_JOBS / name
         self.file = self.dir / "project.json"
+        self._lock = None
+
+    def lock(self, wait_s: float = 1800.0) -> None:
+        """Ekskluzivna brava projekta do kraja procesa (OS je otpušta i kad proces pukne).
+        QA 0.8.0, P0: tri paralelna `ccc remove` su javila ✓, a sačuvana je samo jedna odluka."""
+        import time
+        if self.name in _HELD:  # isti proces (build poziva cut/captions/hook…) već drži bravu
+            return
+        self.dir.mkdir(parents=True, exist_ok=True)
+        f = open(self.dir / ".lock", "a+")
+        t0, said = time.time(), False
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._lock = f
+                _HELD[self.name] = f  # drži se do kraja procesa
+                return
+            except OSError:
+                if time.time() - t0 > wait_s:
+                    raise SystemExit(f"CCC_BUSY: another editor command is still working on '{self.name}'.")
+                if not said:
+                    print(f"… čekam da se završi druga komanda na projektu '{self.name}'", flush=True)
+                    said = True
+                time.sleep(0.5)
 
     @property
     def exists(self) -> bool:
@@ -69,7 +105,7 @@ class Job:
 
     def save(self, p: dict) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.file.with_suffix(".tmp")
+        tmp = self.file.with_suffix(f".{os.getpid()}.tmp")
         tmp.write_text(json.dumps(p, indent=1, ensure_ascii=False))
         tmp.replace(self.file)
 
@@ -79,7 +115,38 @@ class Job:
 
 
 def slug(stem: str) -> str:
-    """Ime projekta iz imena fajla: mala slova, cifre i crtice ("My Video (final).MOV" → "my-video-final")."""
+    """Ime projekta iz imena fajla: mala slova, cifre i crtice ("My Video (final).MOV" → "my-video-final").
+    Ime bez latiničnih slova ("Видео.mov", "视频.mov", "🎬.mov") dobija kratki otisak umesto zajedničkog "video"."""
     s = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode()
-    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
-    return s[:60] or "video"
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60].strip("-")
+    if len(s.replace("-", "")) < 2:
+        import hashlib
+        s = "video-" + hashlib.sha1(stem.encode("utf-8")).hexdigest()[:6]
+    return s
+
+
+def same_source(p: dict, src: Path) -> bool:
+    """Da li projekat pripada baš ovom fajlu (putanja + veličina — ponovo snimljen fajl istog imena nije isti)."""
+    s = p.get("source") or {}
+    try:
+        return Path(s.get("path", "")).resolve() == src.resolve() and \
+            (not s.get("size") or int(s["size"]) == src.stat().st_size)
+    except OSError:
+        return False
+
+
+def unique_name(src: Path) -> str:
+    """Ime projekta za ovaj fajl: postojeći projekat istog fajla, ili novo ime koje ne gazi tuđi projekat
+    (IMG_0001.MOV iz dva foldera, "final.mp4"…) — QA 0.8.0, P0: dva videa su delila i prepisivala jedan projekat."""
+    base = slug(src.stem)
+    name, i = base, 2
+    while True:
+        f = WORK / name / "project.json"
+        if not f.exists():
+            return name
+        try:
+            if same_source(json.loads(f.read_text()), src):
+                return name
+        except (OSError, json.JSONDecodeError):
+            pass
+        name, i = f"{base}-{i}", i + 1

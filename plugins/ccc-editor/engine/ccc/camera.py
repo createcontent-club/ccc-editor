@@ -104,10 +104,20 @@ def build(job, p: dict) -> list[dict]:
 def hidden_jumps(job, p: dict) -> list[dict]:
     """Vidljivi skokovi na kojima se kadar NIJE promenio (za proveru)."""
     plan = {c["seg"]: c for c in p.get("camera") or []}
+    # Početak svakog kadra (izlazno vreme): skok koji planer NAMERNO nije menjao jer je stigao < MIN_SHOT posle
+    # prethodne promene kadra (ili od početka) nije greška — provera ga je ranije kažnjavala (QA 0.8.0, P0).
+    fps, f, start, shot_start = p["fps"], 0, [], {}
+    for g in p["segments"]:
+        start.append(f / fps)
+        f += g["vFrames"]
+    for c in sorted(plan.values(), key=lambda c: c["seg"]):
+        shot_start.setdefault(c["shot"], start[c["seg"]] if c["seg"] < len(start) else 0.0)
     out = []
     for j in visible_jumps(job, p):
         a, b = plan.get(j["seg"] - 1), plan.get(j["seg"])
         if j["visible"] and a and b and a["shot"] == b["shot"]:
+            if j["seg"] < len(start) and start[j["seg"]] - shot_start.get(b["shot"], 0.0) < MIN_SHOT:
+                continue
             out.append(j)
     return out
 

@@ -261,8 +261,8 @@ def warnings(items: list[dict]) -> list[str]:
             out.append(f"mediatext od {it['start']:.2f}s traje {it['end'] - it['start']:.1f}s sa jednom slikom — dodaj 1–2 slike "
                        "(more: [{file, at}]) da se smenjuju na reč")
     if items and items[0]["kind"] in ("headline", "key", "stat"):
-        out.append(f"prvi moment je '{items[0]['kind']}' — otvaranje (dok traje hook) mora biti hero vizual: "
-                   f"flow, versus, chart, filter ili week")
+        out.append(f"prvi moment je '{items[0]['kind']}' — otvaranje mora pokazati pravu temu videa "
+                   f"(video, spotlight, faceoff, photo ili scene — principles.md 30–34), ne naslov/broj")
     for it in items:
         if it["kind"] != "headline":
             continue
@@ -373,7 +373,7 @@ def validate_plan(plan: dict, job) -> list[str]:
                     yield from files_in(v)
         if k == "post" and d.get("platform") not in ("x", "reddit", "linkedin", "threads"):
             errs.append(f"moment {i} (post): platform mora biti x | reddit | linkedin | threads")
-        if k in ("logo", "screenshot", "news", "photo", "post", "search"):
+        if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow"):
             from .assets import nfc, prepare
             man = prepare(job)
             for f in files_in(d):
@@ -607,7 +607,73 @@ def describe(p: dict, job=None) -> str:
     if job is not None:
         from .story import story_warnings
         story = story_warnings(job, p, items)
-    return "\n".join(lines + [f"! {x}" for x in problems + warnings(items) + story])
+    return "\n".join(lines + [f"! [must] {x}" for x in problems]
+                     + [f"! [{severity(x)}] {x}" for x in warnings(items)] + [f"! [aim] {x}" for x in story])
+
+
+# [must] = mora da se popravi pre build-a (čitljivost, tajming, prazan kadar); [aim] = cilj koji zavisi od materijala
+# (pravi materijal %, raznovrsnost, portreti…) — najviše 2 kruga ispravki, pa objasniti u rezimeu (QA 0.8.0, P0:
+# "popravi svaki !" je vodilo u beskonačne ispravke ili u ignorisanje svega).
+MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen", "van momenta", "ne postoji",
+                "nema reči", "prazn")
+
+
+def severity(msg: str) -> str:
+    return "must" if any(m in msg for m in MUST_MARKERS) else "aim"
+
+
+LIST_FIELDS = ("items", "nodes", "words", "bars", "sets", "actors", "beats", "lines", "rows", "messages", "sides",
+               "logos", "more", "marks", "values", "highlight", "x", "display", "tones")
+
+
+def _types(plan: dict) -> list[str]:
+    """Tipovi polja koje šabloni koriste bez provere: `from`/`at` su id reči (tekst), liste su liste, brojevi brojevi."""
+    errs: list[str] = []
+    items = plan.get("items")
+    if not isinstance(items, list):
+        return ["plan mora imati listu 'items'"]
+
+    def walk(n, path):
+        if isinstance(n, dict):
+            for key, v in n.items():
+                here = f"{path}.{key}"
+                if key in ("from", "at") and not isinstance(v, str):
+                    errs.append(f"{here}: mora biti id reči kao tekst (npr. \"w42\"), a ne {type(v).__name__}")
+                elif key in LIST_FIELDS and key not in ("highlight", "x") and v is not None and not isinstance(v, list):
+                    errs.append(f"{here}: mora biti lista")
+                elif key in ("text", "label", "name", "title", "line1", "line2", "kicker") and v is not None \
+                        and not isinstance(v, (str, dict)):
+                    errs.append(f"{here}: mora biti tekst (npr. \"$4.2M\"), a ne {type(v).__name__}")
+                elif key in ("n", "size", "x", "y", "rx", "ry", "scale", "speed", "cols", "gap", "aspect") \
+                        and v is not None and not isinstance(v, (int, float, list)):
+                    errs.append(f"{here}: mora biti broj")
+                walk(v, here)
+        elif isinstance(n, list):
+            for j, v in enumerate(n):
+                walk(v, f"{path}[{j}]")
+
+    for i, it in enumerate(items, 1):
+        if not isinstance(it, dict):
+            errs.append(f"moment {i}: mora biti objekat {{from, kind, why, data}}")
+            continue
+        walk(it, f"moment {i}")
+        d = it.get("data") or {}
+        if it.get("kind") == "pillars":
+            for s_ in d.get("sets") or []:
+                if isinstance(s_, dict) and any(not isinstance(v, (int, float)) or v < 0 for v in s_.get("values") or []):
+                    errs.append(f"moment {i} (pillars): values su brojevi ≥ 0 (visine stubića); tekst ide u display")
+        if it.get("kind") == "scene":
+            for b in d.get("beats") or []:
+                nn = b.get("n") if isinstance(b, dict) else None
+                if isinstance(b, dict) and b.get("do") == "clone" and isinstance(nn, (int, float)) and not 2 <= nn <= 24:
+                    errs.append(f"moment {i} (scene): clone n je broj 2–24 (više kopija ne staje na ekran)")
+            for a_ in d.get("actors") or []:
+                ax, ay = (a_.get("x"), a_.get("y")) if isinstance(a_, dict) else (None, None)
+                ax = ax if isinstance(ax, (int, float)) else 540
+                ay = ay if isinstance(ay, (int, float)) else 480
+                if isinstance(a_, dict) and (not 0 <= ax <= 1080 or not 120 <= ay <= 900):
+                    errs.append(f"moment {i} (scene): glumac '{a_.get('id')}' je van pozornice (x 0–1080, y 120–900)")
+    return errs[:20]
 
 
 def save_plan(job, p: dict, path: Path) -> None:
@@ -618,7 +684,18 @@ def save_plan(job, p: dict, path: Path) -> None:
         raise SystemExit(f"Plan nije sačuvan: fajl {path} ne postoji")
     except json.JSONDecodeError as err:
         raise SystemExit(f"Plan nije sačuvan: neispravan JSON ({err})")
-    errs = validate_plan(plan, job)
+    errs = _types(plan) or validate_plan(plan, job)
+    if not errs:
+        # Probni prolaz na KOPIJI pre čuvanja: plan koji prođe proveru oblika, a ruši timeline/describe, ranije se
+        # sačuvao pa je svaka sledeća komanda (visuals, stills, build) pucala dok se ne postavi novi (QA 0.8.0, P0).
+        import copy
+        q = copy.deepcopy(p)
+        q["visuals"] = {"items": copy.deepcopy(plan["items"])}
+        try:
+            describe(q, None)
+        except Exception as err:  # noqa: BLE001
+            errs = [f"plan ne može da se prikaže ({type(err).__name__}: {err}) — proveri tipove polja (from/at = id reči "
+                    "kao tekst, liste kao liste, tekstovi kao tekst)"]
     if errs:
         raise SystemExit("Plan nije sačuvan:\n" + "\n".join(f"  ✗ {x}" for x in errs))
     p["visuals"] = {"items": plan["items"]}

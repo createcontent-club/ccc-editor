@@ -7,6 +7,10 @@ HOME_DIR="${CCC_HOME:-}"
 if [ -z "$HOME_DIR" ]; then
   if [ -d "$CODE/.venv" ]; then HOME_DIR="$CODE"; else HOME_DIR="$HOME/.ccc-editor"; fi
 fi
+# Windows (Git Bash): Claude Code daje putanju kao "C:/Users/…" — dvotačka posle slova diska bi rascepila PATH
+# ("C" i "/Users/…/bin") pa se ffmpeg/node ne bi našli. cygpath je pretvara u "/c/Users/…" (QA 0.8.0, P0).
+if command -v cygpath >/dev/null 2>&1; then HOME_DIR="$(cygpath -u "$HOME_DIR")"; fi
+unset PYTHONHOME  # nasleđen PYTHONHOME (Anaconda, stari instaleri) bi pokvario naš venv
 
 if   [ -x "$HOME_DIR/.venv/bin/python" ];         then PY="$HOME_DIR/.venv/bin/python"
 elif [ -x "$HOME_DIR/.venv/Scripts/python.exe" ]; then PY="$HOME_DIR/.venv/Scripts/python.exe"

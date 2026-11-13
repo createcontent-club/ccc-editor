@@ -42,6 +42,23 @@ def transcribe(audio_path, utterance_gap: float, language: str = "en") -> dict:
     t0 = time.time()
     model = WhisperModel(str(MODELS / "whisper" / "large-v3-turbo"), device="cpu", compute_type="int8",
                          cpu_threads=os.cpu_count() or 4)
+    if not utts:
+        raise SystemExit("CCC_NO_SPEECH: no speech was found in this video's sound (silent, or only music/noise).")
+    # Jezik se proverava PRE transkripcije: Whisper je zaključan na engleski, pa bi nemački/srpski govor dao
+    # besmislene engleske titlove, a sve provere bi prošle (QA 0.8.0, P0). Uzorak = prvih ~30 s samog govora.
+    sample, n = [], 0
+    for s, e in utts:
+        seg = audio[int(s * 16000):int(e * 16000)]
+        sample.append(seg)
+        n += len(seg)
+        if n >= 30 * 16000:
+            break
+    import numpy as np
+    lang, prob, _ = model.detect_language(audio=np.concatenate(sample)[:30 * 16000])
+    detected = {"language": lang, "probability": round(float(prob), 3)}
+    if language == "en" and lang != "en" and prob >= 0.6:
+        raise SystemExit(f"CCC_NOT_ENGLISH:{lang}:{prob:.2f}: the speech in this video is not English "
+                         f"(detected '{lang}', {prob:.0%} sure). The editor supports English speech only.")
     pipe = BatchedInferencePipeline(model)
     clips = [{"start": max(0.0, s - PAD), "end": min(dur, e + PAD)} for s, e in utts]
     segs, _ = pipe.transcribe(audio, language=language, clip_timestamps=clips, word_timestamps=True,
@@ -97,7 +114,8 @@ def transcribe(audio_path, utterance_gap: float, language: str = "en") -> dict:
                            "from": words[first]["id"] if len(words) > first else None,
                            "to": words[-1]["id"] if len(words) > first else None})
     retime_numbers(audio_path, words, utterances, model)
-    return {"language": language, "words": words, "utterances": utterances, "seconds": round(time.time() - t0, 1)}
+    return {"language": language, "detected": detected, "words": words, "utterances": utterances,
+            "seconds": round(time.time() - t0, 1)}
 
 
 # ------------------------------------------------------------------ brojevi

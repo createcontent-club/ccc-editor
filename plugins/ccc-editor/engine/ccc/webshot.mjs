@@ -101,14 +101,38 @@ const CLEAN = `(() => {
 
 if (!o.svg) {
   // Cookie/consent baneri: klik na "Accept/Agree/OK…", pa uklanjanje preostalih fiksnih slojeva i lepljivih zaglavlja.
+  // QA 0.8.0, P0 (bezbednost): klik je ranije išao na PRVO vidljivo "continue/ok…" dugme bilo gde na stranici —
+  // na testu je poslao formular ("Continue to checkout" → porudžbina). Sada: samo dugme UNUTAR consent banera
+  // (cookie/consent/cmp… u id/klasi/aria oznaci pretka, ili dijalog koji pominje kolačiće), cela fraza, nikad submit
+  // dugme formulara ni link koji vodi na drugu stranu; ako se adresa ipak promeni → prekid.
+  const before = await js(`location.href`);
   await js(`(() => {
-    const re = /^\\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree( and close)?|got it|ok(ay)?|continue|yes,? i agree|prihvat|slažem|alle akzeptieren|akzeptieren|tout accepter|accepter|aceptar( todo)?|accetta)/i;
+    const re = /^\\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree( and close)?|got it|ok(ay)?|yes,? i agree|prihvat(i|am)?( sve)?|slažem se|alle akzeptieren|akzeptieren|tout accepter|accepter|aceptar( todo)?|accetta( tutto)?)\\s*[.!]?\\s*$/i;
+    const CONSENT = /cookie|consent|cmp|gdpr|onetrust|didomi|quantcast|usercentrics|truste|cookiebot|osano|sp_message|fc-consent|privacy-banner|notice/i;
     const all = (root) => { const out = [...root.querySelectorAll('*')]; for (const e of [...out]) if (e.shadowRoot) out.push(...all(e.shadowRoot)); return out; };
+    const inConsent = (e) => {
+      for (let n = e, d = 0; n && d < 12; n = n.parentElement || (n.getRootNode && n.getRootNode().host), d++) {
+        const tag = (n.id || '') + ' ' + (typeof n.className === 'string' ? n.className : '') + ' ' + (n.getAttribute && (n.getAttribute('aria-label') || '') || '');
+        if (CONSENT.test(tag)) return true;
+        const role = n.getAttribute && n.getAttribute('role');
+        if ((role === 'dialog' || role === 'alertdialog' || n.tagName === 'DIALOG') && /cookie|consent|privacy/i.test(n.textContent || '')) return true;
+      }
+      return false;
+    };
+    const safe = (e) => {
+      if (e.matches('input[type=submit], button[type=submit]') && e.closest('form')) return false;
+      if (e.tagName === 'BUTTON' && !e.getAttribute('type') && e.closest('form')) return false;  // podrazumevano = submit
+      if (e.tagName === 'A') { const h = e.getAttribute('href') || ''; if (h && h !== '#' && !h.startsWith('javascript:')) return false; }
+      return true;
+    };
     const els = all(document).filter((e) => e.matches('button, a, [role=button], input[type=button], input[type=submit]'));
-    const b = els.find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && re.test((e.innerText || e.value || '').trim()); });
+    const b = els.find((e) => { const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && re.test((e.innerText || e.value || '').trim()) && inConsent(e) && safe(e); });
     if (b) b.click();
   })()`);
   await sleep(700);
+  const after = await js(`location.href`);
+  if (after !== before) done({ok: false, error: `stranica je promenila adresu posle klika na baner (${after}) — snimak nije napravljen`}, 1);
   await js(CLEAN);
 }
 

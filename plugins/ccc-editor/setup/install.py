@@ -245,6 +245,12 @@ def enable_auto_update() -> None:
 
 
 def main() -> None:
+    # Windows: konzola/pipe u cp1252 ne može da ispiše "→ ✓ ✗" (QA 0.8.0, P0) — uvek UTF-8.
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--home", required=True)
     ap.add_argument("--no-whisper", action="store_true", help="skip the 1.6 GB speech model (testing only)")

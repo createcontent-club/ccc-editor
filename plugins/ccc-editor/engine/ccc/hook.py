@@ -16,6 +16,8 @@ Stilovi (izgled je u remotion/src/components/Hook.tsx):
 """
 from __future__ import annotations
 
+import re
+
 from PIL import ImageFont
 
 from . import fonts as F
@@ -122,9 +124,9 @@ SPLIT_BEFORE = {"in", "with", "for", "to", "and", "so", "because", "without", "w
 
 def split_stack(text: str) -> list[str]:
     """Tekst za dva oblika: klijentova crta '|' ili prirodno mesto (ispred predloga/veznika, ~40–65% reči)."""
-    if "|" in text:
-        a, b = (s.strip() for s in text.split("|", 1))
-        return [a, b] if b else [a]
+    if "|" in text:  # prvi NE-prazan deo gore, sve ostalo dole ("| tekst" ili "a | b | c" ne prave prazan oblik)
+        parts = [s.strip() for s in text.split("|") if s.strip()]
+        return [parts[0], " ".join(parts[1:])] if len(parts) > 1 else parts[:1] or [text.replace("|", "").strip()]
     words = text.split()
     if len(words) < 4:
         return [text]
@@ -199,6 +201,11 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
     in_window = [c for c in cuts if END_WINDOW[0] <= c <= END_WINDOW[1]]
     end = min(in_window, key=lambda c: abs(c - END_DEFAULT)) if in_window else round(END_DEFAULT * fps) / fps
     text = sentence_case(text.strip())
+    # "|" je samo znak za prelom u Stacked stilu; u ostalim stilovima bi se video na ekranu ("How to grow | without")
+    # — npr. kad klijent sa Stacked pređe na Box (QA 0.8.0). Novi redovi i višestruki razmaci → jedan razmak.
+    if style != "stack":
+        text = re.sub(r"\s*\|\s*", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     extra = {}
     if style == "stack":
         lay = _stack_layout(text, fid)

@@ -130,8 +130,19 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     # soba u pauzi (pacing) izgledala kao dah.
     gain = max(0.0, float(np.median(out_v.rel[out_v.mask]) - np.median(src_v.rel[src_v.mask]))) \
         if out_v.mask.any() and src_v.mask.any() else 0.0
-    breaths = [(t, d) for t, d in gaps
-               if (out_v.rel[int(t / HOP):int((t + d) / HOP)] - gain > 8).sum() >= 5 and not in_word(t, d)]
+    def bump(t: float, d: float) -> int:
+        """Frejmovi iznad +8 dB koji NISU rep prethodne reči (zvuk koji samo opada) ni početak sledeće (zvuk koji
+        samo raste ka reči — 'F' u "Fourth"): dah je zaseban talas između njih (aazar-trial-1: rupa od 60 ms
+        između "it." i "Fourth" je ranije bila "uzdah")."""
+        r = out_v.rel[int(t / HOP):int((t + d) / HOP)] - gain
+        a, b = 0, len(r)
+        # Samo zvuk koji STVARNO opada/raste (> 0.5 dB po frejmu) — ravan dah odmah posle reči nije rep.
+        while a + 1 < b and r[a + 1] < r[a] - 0.5:
+            a += 1
+        while b - 1 > a and r[b - 2] < r[b - 1] - 0.5:
+            b -= 1
+        return int((r[a:b] > 8).sum()) if b - a > 1 else 0
+    breaths = [(t, d) for t, d in gaps if bump(t, d) >= 5 and not in_word(t, d)]
     g = np.array([d for _, d in gaps]) * fps if gaps else np.array([0.0])
     res.append((not long_gaps, f"rupe bez glasa > {limit * 1000:.0f} ms: {len(long_gaps)}"
                 + (" → " + ", ".join(f"{t:.2f}s ({d * 1000:.0f} ms)" for t, d in long_gaps[:6]) if long_gaps else "")
@@ -217,8 +228,11 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                     f"gornja polovina: {len(items)} momenata, pokriveno 0–{items[-1]['end'] if items else 0:.2f}s od {total:.2f}s"
                     + ("" if not problems else " → " + "; ".join(problems[:4]))))
         from .story import story_warnings
-        for w in warnings(items) + story_warnings(job, p, items):
-            print(f"  · {w}")
+        from .visuals import severity
+        for w in warnings(items):
+            print(f"  · [{severity(w)}] {w}")
+        for w in story_warnings(job, p, items):
+            print(f"  · [aim] {w}")
         # Klijentovi fajlovi: svaki je iskorišćen ili prijavljen (skill kaže klijentu koji nije i zašto).
         from .assets import nfc, originals, prepare
         from .web import _from_link, sources
@@ -307,7 +321,15 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     if rendered and rendered.exists():
         src = job.public / "video.mp4"
         diffs, out_f = [], 0
-        picks = {len(segs) // 4, len(segs) // 2, len(segs) - 1}
+        # Uzorci posle kraja hooka: kutije hooka same pređu prag razlike, pa je kod kratkih videa sa hookom provera
+        # padala bez greške (QA 0.8.0, P0). Kandidati = segmenti koji počinju posle hooka, raspoređeni kroz video.
+        hook_end = float((p.get("hook") or {}).get("end") or 0.0)
+        starts, ff = [], 0
+        for s_ in segs:
+            starts.append(ff / fps)
+            ff += s_["vFrames"]
+        cand = [k for k, s_ in enumerate(segs) if s_["vFrames"] >= 2 and starts[k] >= hook_end + 0.1]
+        picks = {cand[len(cand) // 4], cand[len(cand) // 2], cand[-1]} if cand else set()
         for k, s in enumerate(segs):
             if k in picks and s["vFrames"] >= 2:
                 mid = s["vFrames"] // 2
@@ -325,7 +347,10 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                 diffs.append(float(np.abs(_frame(rendered, (out_f + mid + 0.5) / fps, crop=out_c)
                                           - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom, crop=src_c)).mean()))
             out_f += s["vFrames"]
-        res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
+        if diffs:
+            res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
+        else:
+            res.append((True, "frejmovi odgovaraju izvoru: video je kraći od hooka — nema kadra za poređenje"))
 
         # 7. Izvozni fajl se pušta normalno svuda: ≤ 60 fps i trajanje = trajanje zvuka.
         # (aazar-trial-1: Split Screen 2× od snimka od 60 fps = izvoz od 120 fps → telefoni/QuickTime ga puštaju

@@ -43,11 +43,19 @@ bash "${CLAUDE_PLUGIN_ROOT}/setup/bootstrap.sh" "${CLAUDE_PLUGIN_DATA}" --check 
 
 ## Step 1 — The video
 
-Get the video path (ask once if missing). It must exist and have sound. Then:
+Get the video path (ask once if missing). A dragged path may arrive with escaped spaces (`My\ Video.mov`) — un-escape it before quoting. Then:
 
 ```
-ccc name "<video path>"          → the project name, e.g. my-video-final
+ccc name "<video path>"          → line 1: the project name (unique: another file with the same name gets -2, -3…)
+                                   line 2: orientation: vertical|horizontal|square W×H · length · sound / NO SOUND
 ```
+
+Use exactly the name it prints. Before opening the Style Menu, act on line 2:
+- **NO SOUND** → stop: *"This file has no sound — send the original recording with your voice and I'll edit it."*
+- **horizontal / square** → Basic Edit needs a vertical video, so open Split Screen directly (`ccc picker <name> --format split-screen`) and say: *"Your video is horizontal — Split Screen turns it into a vertical reel automatically, so I opened that one."*
+- **longer than ~3 minutes** → ask once: *"CCC reels are short — should I edit all N minutes, or just a part (tell me roughly which)?"*
+
+**Quoting:** always put values in **single quotes** (`hook_text='How I made $10k'`): in double quotes the shell eats `$…` and the hook silently loses it. **One `ccc` command per project at a time** — never run two commands on the same project in parallel (the engine makes the second wait); `remove`/`keep` accept several ranges in one call (`w3-w7,w20-w22`).
 
 ## Step 2 — Prepare + Style Menu, at the same time
 
@@ -64,11 +72,22 @@ Tell the client: *"A page just opened in your browser — pick a format, then yo
 
 When `picker` ends with exit code 0, the choices (including `format`) are in `${CLAUDE_PLUGIN_DATA}/work/<name>/choices.json`. Now read `formats/<format>.md`.
 
+**When `prepare` stops** (its first line says why), tell the client in plain words and stop — never retry blindly:
+
+| prepare says | Do |
+|---|---|
+| `CCC_NOT_ENGLISH:<lang>` | *"Right now the editor only works with English speech — this video is in <language>. Send an English take and I'll edit it right away."* |
+| `CCC_NO_SOUND` / `CCC_NO_SPEECH` | *"I can't hear any speech in this file (no sound / only music). Send the recording with your voice."* |
+| `CCC_PROJECT_EXISTS` | this exact video was already prepared — keep using that project (go to Step 6 for changes). Only if the client clearly wants to start over: `ccc prepare "<video>" --force` (deletes the old edit). |
+| `CCC_NAME_TAKEN` | you passed a `--name` that belongs to another video — run `ccc name` again and use what it prints |
+| `CCC_BAD_FILE` / `CCC_NO_VIDEO` / `CCC_CONVERT_FAILED` | *"This file can't be opened as a video — could you export it again (MP4 or MOV) and send it?"* |
+
 **Fallback** — exit code 2 (no choice within 30 min) or the browser could not open: ask in Claude Code with AskUserQuestion. First the format (only `ready` ones from `ccc formats`; skip the question if only one is ready), then only the options that format allows (`ccc formats` shows them; a single allowed value is fixed — don't ask). Basic options: first "Do you want a text hook?" (Yes / No — captions only); only on Yes ask the hook text (via "Other"), hook style: TikTok Box / Editorial Serif / Color Block / Stacked, and hook position: below captions / above the head; caption style: Clean / Karaoke / Box Fill / Minimal; font for captions + hook: CCC Signature (default) / Poppins / Plus Jakarta Sans / Bricolage Grotesque (Editorial Serif hook always keeps its serif); brand color only if Karaoke, Color Block or Stacked was chosen (palette name or hex); pacing: Fast-paced (default) / Chill (a touch more breathing room, e.g. phone-in-hand); camera: zoom / static. Split Screen adds: top half Dark / Light, "Find real visuals online?" (Yes — default / No, animated only) and "Any links to articles, products or posts you mention?" (optional, via "Other"). Save with:
 
 ```
-ccc choices <name> format=basic hook_text="…" hook_style=stack hook_position=below caption_style=karaoke font=ccc color=#FF5A1F pacing=fast camera=zoom
+ccc choices <name> format=basic hook_text='…' hook_style=stack hook_position=below caption_style=karaoke font=ccc color=#FF5A1F pacing=fast camera=zoom
 ```
+(It prints the saved choices — check that `hook_text` came through exactly as the client wrote it.)
 
 Values: `format` an id from `ccc formats` · `hook_style` box|serif|color|stack · `hook_position` below|above · `caption_style` clean|karaoke|box|minimal · `font` ccc|poppins|jakarta|bricolage · `pacing` fast|chill · `color` hex or yellow|green|blue|orange|pink|red|purple|cyan · `camera` zoom|static · empty `hook_text=` means no hook · Split only: `top_style` dark|light · `web` on|off · `links="url url"`.
 
@@ -80,7 +99,9 @@ The engine already removed pauses, breaths, fillers, stutters and obvious retake
 ccc transcript <name>
 ```
 
-Each line is one spoken chunk with word ids. Remove with `ccc remove <name> wA-wB <reason>` (reason: `off-script`, `retake`, `false-start`), restore with `ccc keep <name> wA-wB`:
+Each line is one spoken chunk with word ids. Remove with `ccc remove <name> wA-wB <reason>` (reason: `off-script`, `retake`, `false-start` — anything else is refused), restore with `ccc keep <name> wA-wB`. Several ranges in one call: `ccc remove <name> w3-w7,w20-w22 retake`. The command echoes the exact words it cut — read them back to be sure you hit the right ones.
+
+- **Automatic retakes need a look, not trust:** the engine marks a part `⟵ retake` when the next part starts the same way. Parallel sentences said on purpose ("It's not about the money. It's not about the fame.") are no longer marked, but if a `⟵ retake` line is actually a deliberate repetition, `ccc keep` it.
 
 - **Off-script:** warm-up before the real start ("All right", "I, I, I…", "Hey hey"), talking to the camera operator ("go a little bit up", "okay"), sounds/words after the last real sentence ("Yeah. Okay. Click.").
 - **Retakes / false starts:** the same sentence started again → keep the **last complete** version, remove the earlier attempts, including the abandoned fragment.
@@ -95,9 +116,17 @@ Each line is one spoken chunk with word ids. Remove with `ccc remove <name> wA-w
 - **Keep** anything that is content, even if unusual. When in doubt, keep it.
 - Never rewrite or invent words.
 
-## Step 4 — Format details that need judgment
+## Step 4 — Format work (everything the format needs before building)
 
-Follow the "Judgment" section of `formats/<format>.md` (e.g. for Basic: how to split a Stacked hook, which word is bold in Minimal captions).
+Do every step the format file requires, in this order, before `ccc build`:
+- **Basic:** only its "Judgment" items (how to split a Stacked hook, which word is bold in Minimal captions).
+- **Split Screen** (all in `formats/split-screen.md`): client files (`ccc assets <name>`) → client links → research (real assets; with `web: true`) → story map → visual plan → `ccc visuals <name> --set <plan.json>` until it saves → the Judgment items. Skipping any of these makes the build fail with "nema plana" or deliver a weak video.
+
+**Engine warnings come in two kinds** (`ccc visuals` and the build print them):
+- `! [must] …` — fix every one before building (an element too short to read, an `at` outside its moment, a missing file).
+- `! [aim] …` — goals that depend on what material exists (share of real visuals, variety, portraits). Do at most **2** plan revisions for them; whatever is left because the material doesn't exist stays — say so in one line of the summary. Never loop on `[aim]` lines.
+
+`ccc stills <name> <seconds…>` renders single frames of the finished composition in seconds (no full render) — use it to look at a template change or a tricky moment before building (principle 44: check a frame right after a moment's second beat).
 
 ## Step 5 — Build
 
@@ -108,19 +137,26 @@ ccc build <name>        # the format's steps → final render → 15+ automatic 
 Run it in the background (~3–5 min). Tell the client it's being edited and roughly how long. When it ends:
 
 - **Success:** the last lines are the client report and the exported file `<original name>-CCC-edit.mp4` next to their original video. Relay the report in your own friendly words (length before → after, what was cut with times, styles used) and give the file path.
+- **The build stops before rendering** with a `CCC_…` line:
+  - `CCC_NEEDS_VERTICAL` — Basic was chosen for a horizontal/square video: switch to Split Screen (`ccc choices <name> format=split-screen` + its options, Step 4), tell the client in one line, build again.
+  - `CCC_BUSY` — another command is still working on this project; wait for it, then retry once.
 - **Exit 1 (a check failed):** read the ❌ lines and fix, then run `ccc build <name>` again:
 
 | ❌ line mentions | Fix |
 |---|---|
-| `hook … NEMA MESTA` (hook too long) | Stacked hook with your own `\|`: save the same text **without** `\|` (`ccc choices <name> hook_text="…"`) — the engine picks a split where both lines fit (never after "a/the/to…"), then build. Only if it still doesn't fit, this is the one case where you ask the client: *"Your hook is a bit long for the screen — can you shorten it?"* |
+| `hook … NEMA MESTA` (hook too long) | Stacked hook with your own `\|`: save the same text **without** `\|` (`ccc choices <name> hook_text='…'`) — the engine picks a split where both lines fit (never after "a/the/to…"), then build. Only if it still doesn't fit, this is the one case where you ask the client: *"Your hook is a bit long for the screen — can you shorten it?"* |
 | `boja naglaska … pretamna` (color too dark) | ask the client for a lighter shade or suggest one from the palette → `ccc choices <name> color=…` |
-| `glas bez titla` / `poslednji titl` | run `ccc captions <name>` again, then build |
-| `isečen glas` / `bez detektovanog glasa` | a removal you made cut real speech → `ccc transcript <name>`, `ccc keep` the affected words |
+| `glas bez titla` / `poslednji titl` | `ccc verify <name>` (re-times the words to the voice), fix its `!` lines, then build |
+| `isečen glas` | a removal cut real speech → `ccc transcript <name>`, `ccc keep` the affected words |
+| `bez detektovanog glasa` | the word is a transcription ghost or has a wrong time: `ccc listen` around it — not spoken → `ccc remove <name> wID off-script`; spoken → `ccc verify <name>`, then build |
+| `split: … teme` (head too high/low for the bottom half) | the recording's framing — offer Basic Edit of this video, or ask for a take with a little room above the head |
 | `fps izvoza` / `trajanje izvoza` | the export would play wrong on phones (above 60 fps, or file length ≠ audio length) — an engine problem, not a choice: use the support line |
 | (not ❌, but `! slušanje reza: …` during the build) | a leftover take or unheard words — fix as in Step 3 (`ccc verify`), then build again |
 | anything else | run `ccc check <name>` for details; fix the cause, never hide a failing check |
 
-Never deliver a video whose check failed. If the same check fails twice after your fix, use the support line.
+Never deliver a video whose check failed. If the same check fails twice after your fix, use the support line — except for your own plan's lines (`gornja polovina`, `[must]` plan timing): those you fix yourself.
+
+If the build printed `! NO_FACE`, captions and hook went to default positions — look at one frame (`ccc stills <name> 4`) and mention it to the client.
 
 ## Step 6 — Changes after delivery
 
@@ -148,5 +184,5 @@ If `ccc choices` answers that the format always uses something, tell the client 
 ## Limits — say so instead of guessing
 
 - English speech only; one speaker on camera; vertical (9:16) video. A horizontal video works in **Split Screen** (the engine reframes it automatically: a virtual camera follows the speaker's face in the bottom half); other formats don't reframe it yet — tell the client and offer Split Screen.
-- No face found → captions and hook fall back to a default position; mention it.
+- No face found → captions and hook fall back to a default position (the build prints `! NO_FACE`); mention it.
 - No sound in the file → cannot edit; ask for the original recording.
