@@ -127,6 +127,10 @@ def _build(job: Job, name: str) -> None:
     except OSError:
         p["exported"] = str(job.dir / "final.mp4")
     job.save(p)
+    if (p.get("layout") or {}).get("type") == "split":  # struktura ovog videa — samo da sledeći ne liči na njega
+        from .story import remember
+        from .visuals import timeline
+        remember(job, timeline(p)[0])
     print("\n" + client_report(p, p["exported"]))
 
 
@@ -171,6 +175,8 @@ def main(argv: list[str]) -> None:
     ss.add_argument("--crop", action="store_true", help="samo traženi element (npr. objava), ne ceo ekran")
     ss.add_argument("--as", dest="as_name")
     ss.add_argument("--keep", action="store_true", help="sačuvaj i kad engine misli da je zid (pogledao si sliku i dobra je)")
+    ss.add_argument("--mark", action="append", dest="marks", default=[],
+                    help="tačna fraza sa stranice (ime, cifra) koja se ističe markerom kad se izgovori; može više puta")
     sl = sub.add_parser("logo"); sl.add_argument("name"); sl.add_argument("brand"); sl.add_argument("--domain")
     sc2 = sub.add_parser("clip"); sc2.add_argument("name"); sc2.add_argument("url"); sc2.add_argument("--for", dest="for_word")
     sc2.add_argument("--from", dest="t_from", type=float, required=True); sc2.add_argument("--to", dest="t_to", type=float, required=True)
@@ -233,8 +239,13 @@ def main(argv: list[str]) -> None:
         if a.cmd == "fetch":
             print(f"✓ preuzeto: {web.fetch(job, a.url, a.for_word, a.as_name)}")
         elif a.cmd == "shot":
-            name, res = web.shot(job, a.url, a.for_word, a.find, a.selector, a.mobile, a.as_name, a.crop, a.keep)
+            name, res = web.shot(job, a.url, a.for_word, a.find, a.selector, a.mobile, a.as_name, a.crop, a.keep, a.marks)
             r = res.get("rect")
+            for m in res.get("marks") or []:
+                print(f"  {'✓' if m.get('rect') else '✗'} oznaka \"{m['text']}\"" + ("" if m.get("rect") else
+                      " nije nađena na vidljivom delu stranice (proveri tačan tekst ili skroluj --find bliže)"))
+            if res.get("partial"):
+                print(f"  ⚠ \"{a.find or a.selector}\" je veći od ekrana — deo je isečen; uzmi kraću frazu (naslov, jedna rečenica)")
             print(f"✓ screenshot: {name} · {res.get('w')}×{res.get('h')} · \"{(res.get('title') or '')[:70]}\""
                   + (f" · deo \"{a.find or a.selector}\": x {r['x']} y {r['y']} w {r['w']} h {r['h']} (za focus/highlight)" if r else "")
                   + ("" if res.get("found") else f" · ⚠ \"{a.find or a.selector}\" nije nađen na stranici"))
@@ -466,7 +477,7 @@ def main(argv: list[str]) -> None:
             save_plan(job, p, Path(a.plan))
             job.save(p)
             print("✓ plan gornje polovine sačuvan")
-        print(describe(p) or "(nema plana — gornja polovina je prazna)")
+        print(describe(p, job) or "(nema plana — gornja polovina je prazna)")
     elif a.cmd == "previews":
         from .energy import Voice
         from .media import decode_mono

@@ -197,11 +197,23 @@ WALL_HINT = {
 
 
 # ------------------------------------------------------------------ shot
+def _blank_share(png: Path) -> float:
+    """Koliki deo snimka je prazan (jednobojni redovi): prazno mesto za reklamu, beli prostor, neučitana stranica."""
+    from PIL import Image, ImageStat
+    im = Image.open(png).convert("L")
+    im.thumbnail((200, 200))
+    w, h = im.size
+    flat = sum(1 for y in range(h) if ImageStat.Stat(im.crop((0, y, w, y + 1))).stddev[0] < 4)
+    return flat / max(1, h)
+
+
 def shot(job, url: str, for_word: str | None, find: str | None = None, selector: str | None = None,
-         mobile: bool = False, as_name: str | None = None, crop: bool = False, keep: bool = False) -> tuple[str, dict]:
+         mobile: bool = False, as_name: str | None = None, crop: bool = False, keep: bool = False,
+         marks: list[str] | None = None) -> tuple[str, dict]:
     host = urllib.parse.urlparse(url).netloc.removeprefix("www.") or "page"
     out = _target(job, as_name or (host + ("-" + find[:30] if find else "")), ".png")
-    res = _webshot({"url": url, "out": str(out), "mobile": mobile, "find": find, "selector": selector, "crop": crop})
+    res = _webshot({"url": url, "out": str(out), "mobile": mobile, "find": find, "selector": selector, "crop": crop,
+                    "marks": marks or []})
     if not res.get("ok"):
         out.unlink(missing_ok=True)
         raise SystemExit(f"Screenshot nije uspeo: {res.get('error') or 'nepoznata greška'} — probaj drugu stranicu ili izvor.")
@@ -212,13 +224,21 @@ def shot(job, url: str, for_word: str | None, find: str | None = None, selector:
         out.replace(bad)  # samo za pregled — van liste asseta, bez porekla
         raise SystemExit(f"Nije sačuvano: {WALL_HINT.get(wall, wall)} ({host}). Pregled: {bad} — ako je slika ipak dobra, "
                          f"ponovi sa --keep; inače drugi izvor (zvanični sajt, druga vest, Wikipedia) ili `news`/`post` kartica.")
+    blank = _blank_share(out)
+    if blank > 0.5 and not keep and not crop:
+        wall = "empty"
+        (adir(job) / "_candidates").mkdir(exist_ok=True)
+        bad = adir(job) / "_candidates" / (out.stem + "-blocked.png")
+        out.replace(bad)
+        raise SystemExit(f"Nije sačuvano: {blank:.0%} snimka je prazno (mesto za reklamu, beo prostor ili neučitan sadržaj). "
+                         f"Pregled: {bad} — skroluj do sadržaja (--find), probaj --mobile ili drugi izvor; --keep ako je ipak dobro.")
     if crop and not res.get("found"):
         out.unlink(missing_ok=True)
         raise SystemExit(f"Element \"{selector or find}\" nije nađen, pa nema šta da se iseče — proveri link "
                          f"(objava obrisana/privatna?) ili uzmi ceo ekran bez --crop.")
     _record(job, out.name, res.get("url") or url, "screenshot", for_word,
             {"title": res.get("title"), "rect": res.get("rect"), "find": find, "mobile": mobile, "w": res.get("w"), "h": res.get("h"),
-             "crop": crop})
+             "crop": crop, "marks": [m for m in res.get("marks") or [] if m.get("rect")], "partial": res.get("partial")})
     return out.name, res
 
 

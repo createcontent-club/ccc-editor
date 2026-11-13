@@ -109,7 +109,7 @@ def client_report(p: dict, exported: str | None) -> str:
     if hook:
         pos = hook.get("position", "")
         lines.append(f"Text hook: {HOOK_NAMES.get(hook['style'], hook['style'])}, "
-                     f"{'above your head' if pos.startswith('iznad') else 'below the captions'}"
+                     f"{'on the split line' if pos.startswith('na liniji') else 'above your head' if pos.startswith('iznad') else 'below the captions'}"
                      + (f" — moved there because the chosen spot had no room" if "izabrano" in pos else ""))
     else:
         lines.append("Text hook: none")

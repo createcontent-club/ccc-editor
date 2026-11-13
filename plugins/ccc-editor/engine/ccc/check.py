@@ -191,7 +191,8 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         res.append((not problems and cover,
                     f"gornja polovina: {len(items)} momenata, pokriveno 0–{items[-1]['end'] if items else 0:.2f}s od {total:.2f}s"
                     + ("" if not problems else " → " + "; ".join(problems[:4]))))
-        for w in warnings(items):
+        from .story import story_warnings
+        for w in warnings(items) + story_warnings(job, p, items):
             print(f"  · {w}")
         # Klijentovi fajlovi: svaki je iskorišćen ili prijavljen (skill kaže klijentu koji nije i zašto).
         from .assets import nfc, originals, prepare

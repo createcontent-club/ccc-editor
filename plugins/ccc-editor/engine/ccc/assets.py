@@ -94,6 +94,10 @@ def _image(f: Path, ready: Path, preview: Path, u: str) -> dict:
     alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
     im = im.convert("RGBA" if alpha else "RGB")
     im.thumbnail((MAX_IMG, MAX_IMG))
+    if not alpha and "logo" in f.stem.lower():  # logo na beloj podlozi → bela podloga postaje providna (pločica, ne beo kvadrat)
+        cut = _knock_out_white(im)
+        if cut is not None:
+            im, alpha = cut, True
     out = ready / (u + (".png" if alpha else ".jpg"))
     im.save(out, **({} if alpha else {"quality": 90}))
     th = im.convert("RGB")
@@ -101,6 +105,27 @@ def _image(f: Path, ready: Path, preview: Path, u: str) -> dict:
     th.save(preview / (u + ".jpg"), quality=85)
     return {"kind": "image", "ready": out.name, "w": im.width, "h": im.height, **_edge(im), **_logo_tone(im),
             **_face(out)}
+
+
+def _knock_out_white(im: Image.Image):
+    """Bela (skoro bela) podloga koja dodiruje ivice → providna. Samo kad je ivica slike skoro sva bela."""
+    rgb = im.convert("RGB")
+    w, h = rgb.size
+    px = rgb.load()
+    border = [px[x, y] for x in range(0, w, max(1, w // 60)) for y in (0, h - 1)] + \
+             [px[x, y] for y in range(0, h, max(1, h // 60)) for x in (0, w - 1)]
+    white = sum(1 for c in border if min(c) >= 232)
+    if white < 0.9 * len(border):
+        return None
+    from PIL import ImageDraw
+    rgba = rgb.convert("RGBA")
+    marker = (255, 0, 255, 0)
+    for xy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+        if min(rgba.getpixel(xy)[:3]) >= 232:
+            ImageDraw.floodfill(rgba, xy, marker, thresh=40)
+    data = [(0, 0, 0, 0) if c == marker else c for c in rgba.getdata()]
+    rgba.putdata(data)
+    return rgba
 
 
 def _face(img: Path) -> dict:

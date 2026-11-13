@@ -24,7 +24,7 @@ KINDS = {
     "stat": {"required": ["value"], "optional": ["label", "sub", "at", "ring", "of", "tone", "source"]},
     "week": {"required": ["value"], "optional": ["label", "per", "days", "sub", "at"]},
     "steps": {"required": ["items"], "optional": ["active", "title"]},          # items: tekst ili {"text","at"}
-    "flow": {"required": ["nodes"], "optional": ["title", "hero"]},             # nodes: {"icon","label","at"}
+    "flow": {"required": ["nodes"], "optional": ["title", "hero", "layout"]},   # nodes: {"icon","label","at"}; layout: row|column|quad
     "versus": {"required": ["left", "right"], "optional": ["title"]},           # {"label","sub","at"}
     "chart": {"required": ["bars"], "optional": ["label", "value", "at", "y", "x", "note", "tone", "source"]},  # bars: brojevi
     "checklist": {"required": ["items"], "optional": ["title"]},               # items: tekst ili {"text","at"}
@@ -35,13 +35,16 @@ KINDS = {
     "key": {"required": ["line1"], "optional": ["icon", "line2"]},
     "comment": {"required": ["text"], "optional": ["user", "reply", "at", "platform", "author"]},
     "logo": {"required": [], "optional": ["file", "name", "sub", "logos", "title", "at"]},      # pravi logo(i) sa interneta
-    "screenshot": {"required": ["file"], "optional": ["focus", "highlight", "device", "zoomAt", "url"]},  # stranica: zoom + highlight
+    "screenshot": {"required": ["file"], "optional": ["focus", "highlight", "device", "zoomAt", "url", "marks"]},  # marks: [{"text","at"}] iz ccc shot --mark
     "news": {"required": ["headline", "outlet"], "optional": ["logo", "image", "date", "highlight", "at"]},
     "photo": {"required": ["file"], "optional": ["name", "sub", "at", "focus"]},   # prava fotografija (osoba/proizvod/mesto)
     "post": {"required": ["platform", "text"], "optional": ["name", "handle", "avatar", "time", "title", "community",
                                                              "headline", "verified", "likes", "comments", "reposts",
                                                              "views", "highlight", "file", "at"]},
     "image": {"required": ["file"], "optional": ["note", "caption"]},   # caption: tekst ili {"text","at"}
+    "mediatext": {"required": ["file", "lines"], "optional": ["title", "side", "start"]},  # slika/snimak + rečenice {"text","at"}
+    "posts": {"required": ["items"], "optional": []},
+    "spotlight": {"required": ["file"], "optional": ["title", "logo", "start"]},  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
 }
 ICONS = ["clock", "calendar", "chart", "trending", "money", "users", "user", "message", "mail", "target", "zap",
@@ -167,9 +170,23 @@ def warnings(items: list[dict]) -> list[str]:
                 for v in n:
                     walk(v)
         walk(it["data"])
-        last = max([b for b, _ in beats], default=0.0)
+        alltimes = []  # svaki takt (i objave/slike bez teksta) je promena na ekranu
+
+        def walk_t(n):
+            if isinstance(n, dict):
+                if "atT" in n:
+                    alltimes.append(n["atT"])
+                for v in n.values():
+                    walk_t(v)
+            elif isinstance(n, list):
+                for v in n:
+                    walk_t(v)
+        walk_t(it["data"])
+        last = max(alltimes + [b for b, _ in beats], default=0.0)
         # "Nešto novo na 1.5–3 s": dug moment je u redu samo ako ima taktove — ne sme dugo da stoji bez promene.
-        if dur > MAX_LEN and dur - last > 2.5 and it["kind"] != "video":  # video se sam kreće
+        moving = it["kind"] == "video" or (it["kind"] in ("mediatext", "spotlight") and
+                                           str(it["data"].get("file", "")).lower().endswith(tuple(VIDEO_EXT)))
+        if dur > MAX_LEN and dur - last > 2.5 and not moving:  # snimak se sam kreće
             out.append(f"moment '{it['kind']}' od {it['start']:.2f}s traje {dur:.1f}s, a poslednja promena je posle "
                        f"{last:.1f}s — {dur - last:.1f}s bez ičeg novog; podeli ga ili dodaj takt")
         # Tekst koji gledalac mora da PROČITA (naslov vesti, objava): ~3.5 reči/s + ulaz.
@@ -244,6 +261,12 @@ def validate_plan(plan: dict, job) -> list[str]:
             errs.append(f"moment {i}: steps ima 2–5 stavki")
         if k == "flow" and not (2 <= len(d.get("nodes") or []) <= 4):
             errs.append(f"moment {i}: flow ima 2–4 čvora")
+        if k == "flow" and d.get("layout") not in (None, "row", "column", "quad"):
+            errs.append(f"moment {i}: flow layout je row | column | quad")
+        if k == "flow" and d.get("layout") == "quad" and len(d.get("nodes") or []) < 3:
+            errs.append(f"moment {i}: quad raspored traži 3–4 čvora")
+        if not str(it.get("why") or "").strip():
+            errs.append(f"moment {i} ({k}): nedostaje \"why\" — jedna rečenica zašto baš taj vizual za tu rečenicu")
         for key in ("nodes", "items"):
             for x in d.get(key) or []:
                 if isinstance(x, dict) and x.get("icon") and x["icon"] not in ICONS:
@@ -274,6 +297,64 @@ def validate_plan(plan: dict, job) -> list[str]:
                     errs.append(f"moment {i}: '{f}' nije slika ({m.get('error') or m['kind']})")
             if k == "logo" and not d.get("file") and not d.get("logos"):
                 errs.append(f"moment {i} (logo): potreban je data.file ili data.logos")
+        if k == "screenshot":
+            hl = d.get("highlight") if isinstance(d.get("highlight"), dict) else {}
+            if any(key in hl for key in ("x", "y", "w", "h")) or d.get("focus"):
+                errs.append(f"moment {i} (screenshot): ručne koordinate isticanja/fokusa nisu dozvoljene (seku tekst) — "
+                            "uzmi ih iz stranice: ccc shot --find \"<fraza>\" (fokus) i --mark \"<ime/cifra>\" (oznake)")
+            if d.get("marks"):
+                from .web import sources
+                src = sources(job).get(str(d["file"])) or {}
+                got = {str(x.get("text", "")).lower(): x for x in src.get("marks") or []}
+                main = src.get("rect")
+                for mk in d["marks"]:
+                    x = got.get(str((mk or {}).get("text", "")).lower())
+                    if not x:
+                        errs.append(f"moment {i} (screenshot): oznaka \"{(mk or {}).get('text')}\" nije snimljena — "
+                                    f"ponovi ccc shot sa --mark \"{(mk or {}).get('text')}\"")
+                    elif main and x.get("rect"):
+                        r = x["rect"]
+                        inside = (r["x"] >= main["x"] - 8 and r["y"] >= main["y"] - 8 and r["x"] + r["w"] <= main["x"] + main["w"] + 8
+                                  and r["y"] + r["h"] <= main["y"] + main["h"] + 8)
+                        if not inside:
+                            errs.append(f"moment {i} (screenshot): oznaka \"{mk.get('text')}\" je van istaknutog dela (mali/zatamnjen "
+                                        "element) — označi frazu iz naslova/istaknutog dela ili je izostavi")
+        if k == "spotlight":
+            from .assets import nfc, prepare
+            man = prepare(job)
+            m = man.get(nfc(str(d.get("file"))))
+            if m is None or m["kind"] not in ("image", "video"):
+                errs.append(f"moment {i} (spotlight): '{d.get('file')}' ne postoji ili nije slika/snimak")
+            lg = d.get("logo")
+            if lg is not None and not (isinstance(lg, dict) and (man.get(nfc(str(lg.get("file")))) or {}).get("kind") == "image"):
+                errs.append(f"moment {i} (spotlight): logo je {{\"file\": \"web-logo-….png\", \"at\": \"wID\"}}")
+            if len(str(d.get("title") if isinstance(d.get("title"), str) else (d.get("title") or {}).get("text", ""))) > 26:
+                errs.append(f"moment {i} (spotlight): naslov ≤ 26 znakova — kratak i upadljiv")
+        if k == "mediatext":
+            from .assets import nfc, prepare
+            m = prepare(job).get(nfc(str(d.get("file"))))
+            if m is None:
+                errs.append(f"moment {i}: fajl '{d.get('file')}' ne postoji u {assets_dir(job)}")
+            elif m["kind"] not in ("image", "video"):
+                errs.append(f"moment {i}: '{d.get('file')}' nije slika ni snimak ({m.get('error') or m['kind']})")
+            if not (1 <= len(d.get("lines") or []) <= 4):
+                errs.append(f"moment {i} (mediatext): 1–4 rečenice u lines")
+            if d.get("side") not in (None, "left", "right"):
+                errs.append(f"moment {i} (mediatext): side je left | right")
+        if k == "posts":
+            from .assets import nfc, prepare
+            man = prepare(job)
+            its = d.get("items") or []
+            if not (2 <= len(its) <= 3):
+                errs.append(f"moment {i} (posts): 2–3 objave")
+            for x in its:
+                if not isinstance(x, dict):
+                    errs.append(f"moment {i} (posts): svaka objava je objekat"); continue
+                if x.get("file"):
+                    if (man.get(nfc(x["file"])) or {}).get("kind") != "image":
+                        errs.append(f"moment {i} (posts): '{x['file']}' ne postoji ili nije slika")
+                elif x.get("platform") not in ("x", "reddit", "linkedin", "threads") or not x.get("text"):
+                    errs.append(f"moment {i} (posts): objava treba file, ili platform (x|reddit|linkedin|threads) + text")
         if k in ("image", "video") and d.get("file"):
             from .assets import nfc, prepare
             m = prepare(job).get(nfc(d["file"]))
@@ -309,10 +390,17 @@ def publish_assets(job, items: list[dict]) -> None:
             node.setdefault("url", ws.get("url"))
             if ws.get("crop"):  # isečen element (npr. objava) → lebdeća kartica, ne prozor
                 node["cropped"] = True
+            f = (m or {}).get("w", 0) / ws["w"] if ws.get("w") and m and m.get("w") else 1.0
             if ws.get("rect") and "focus" not in node and ws.get("kind") == "screenshot":
                 # koordinate su u originalnom screenshotu; pripremljena slika može biti smanjena (≤ 2000 px)
-                f = (m or {}).get("w", 0) / ws["w"] if ws.get("w") and m and m.get("w") else 1.0
-                node["focus"] = {k2: round(v * f) for k2, v in ws["rect"].items()}
+                node["focus"] = {k2: round(v * f) for k2, v in ws["rect"].items() if isinstance(v, (int, float))}
+            if isinstance(node.get("marks"), list):  # izgovorene fraze → tačni pravougaonici sa stranice
+                found = {str(x.get("text", "")).lower(): x for x in ws.get("marks") or [] if x.get("rect")}
+                for mk in node["marks"]:
+                    x = found.get(str(mk.get("text", "")).lower())
+                    if x:
+                        mk["rect"] = {k2: round(v * f) for k2, v in x["rect"].items()}
+                        mk["lines"] = [{k2: round(v * f) for k2, v in q.items()} for q in x.get("lines") or []] or [mk["rect"]]
         if not m or m["kind"] == "error":
             return None
         for key in ("ready", "last"):
@@ -322,6 +410,7 @@ def publish_assets(job, items: list[dict]) -> None:
                     shutil.copy2(src, out)
                 node["src" if key == "ready" else "last"] = job.public_rel(f"assets/{m[key]}")
         node["clipDur"] = m.get("duration")
+        node["mkind"] = m["kind"]  # image | video (medij + tekst bira prikaz)
         node["alpha"] = m["kind"] == "image" and m["ready"].endswith(".png")  # providna slika → bez okvira
         node["w"], node["h"] = m.get("w"), m.get("h")
         for key in ("edge", "edgeUniform", "edgeSides", "dark", "face"):  # način prikaza (pun/stapanje/prozor), tamni logo → beo
@@ -380,7 +469,7 @@ def render_spec(job, p: dict) -> dict | None:
     return {"style": style, "accent": accent, "items": items}
 
 
-def describe(p: dict) -> str:
+def describe(p: dict, job=None) -> str:
     items, problems = timeline(p)
     words = {w["id"]: w["text"] for w in p["words"]}
     lines = []
@@ -407,7 +496,11 @@ def describe(p: dict) -> str:
         walk(d)
         what += f"  [taktovi: {', '.join(beats)}s]" if beats else ""
         lines.append(f"{i:2d}. {it['start']:6.2f}–{it['end']:6.2f}s  {it['kind']:7s} od {it['from']} '{words.get(it['from'], '?')}'  · {what}")
-    return "\n".join(lines + [f"! {x}" for x in problems + warnings(items)])
+    story = []
+    if job is not None:
+        from .story import story_warnings
+        story = story_warnings(job, p, items)
+    return "\n".join(lines + [f"! {x}" for x in problems + warnings(items) + story])
 
 
 def save_plan(job, p: dict, path: Path) -> None:

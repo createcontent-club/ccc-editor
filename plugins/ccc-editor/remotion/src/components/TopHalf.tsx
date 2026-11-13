@@ -203,7 +203,15 @@ const Highlight: React.FC<{children: React.ReactNode; at: number; size: number; 
 // ------------------------------------------------------------------ šabloni
 const countUp = (v: string, k: number) => {
   // Raspon ("3–4 hrs") ili više brojeva: bez odbrojavanja (međuvrednosti tipa "1–4" zbunjuju) — animaciju nosi vizual.
-  if ((v.match(/[0-9][0-9,.]*/g) || []).length !== 1) return v;
+  const nums = v.match(/[0-9][0-9,.]*/g) || [];
+  if (nums.length > 1) {
+    if (!nums.every((x) => parseFloat(x.replace(/,/g, '')) >= 10)) return v;
+    return v.replace(/[0-9][0-9,.]*/g, (x) => {
+      const n = parseFloat(x.replace(/,/g, '')), dec = (x.split('.')[1] || '').length;
+      return dec ? (n * k).toFixed(dec) : Math.round(n * k).toLocaleString('en-US');
+    });
+  }
+  if (nums.length !== 1) return v;
   const m = v.match(/^([^0-9]*)([0-9][0-9,.]*)(.*)$/);
   if (!m) return v;
   const n = parseFloat(m[2].replace(/,/g, ''));
@@ -334,25 +342,52 @@ const Steps: React.FC<{d: any}> = ({d}) => {
 };
 
 /** Tok: čvor ulazi na reč, linija se iscrtava do njega; u hero verziji (otvaranje) čestice teku, rezultat "pukne". */
+/**
+ * Proces / uzrok → posledica. Raspored (`layout`) menja oblik da se isti flow ne ponavlja kroz video:
+ * row (u redu), column (odozgo nadole, natpis desno), quad (kvadrant: dole → desno → gore), zigzag (gore-dole).
+ */
 const Flow: React.FC<{d: any}> = ({d}) => {
   const c = useC();
   const nodes: any[] = d.nodes;
   const n = nodes.length;
   const hero = c.hero || d.hero;
-  const pitch = ZONE.w / n;
-  const tile = hero ? (n >= 3 ? 200 : 240) : n >= 4 ? 160 : 196;
+  const layout: string = d.layout === 'column' || d.layout === 'quad' ? d.layout : 'row';  // zigzag (ukoso) izbačen — recenzija v2
+  const H = 520, W = ZONE.w;
   const times = nodes.map((x, i) => beat(c, x, i, n));
-  const top = hero ? 150 : 120;
+  const titleH = d.title ? 70 : 0;
+  // centri pločica (x, y) i veličina pločice po rasporedu
+  let tile: number, pts: {x: number; y: number}[];
+  if (layout === 'column') {
+    tile = n >= 4 ? 104 : 124;
+    const gap = (H - titleH) / n;
+    pts = nodes.map((_, i) => ({x: W / 2 - 200, y: titleH + gap * (i + 0.5)}));
+  } else if (layout === 'quad') {
+    tile = hero ? 176 : 156;
+    const cols = [W * 0.27, W * 0.27, W * 0.73, W * 0.73], rows = [titleH + 140, titleH + 395, titleH + 395, titleH + 140];
+    pts = nodes.map((_, i) => ({x: cols[i], y: rows[i]}));
+  } else if (layout === 'zigzag') {
+    tile = n >= 4 ? 150 : 176;
+    const pitch = W / n;
+    pts = nodes.map((_, i) => ({x: pitch * (i + 0.5), y: titleH + (i % 2 ? 330 : 110)}));
+  } else {
+    tile = hero ? (n >= 3 ? 200 : 240) : n >= 4 ? 160 : 196;
+    const pitch = W / n;
+    pts = nodes.map((_, i) => ({x: pitch * (i + 0.5), y: (hero ? 150 : 120) + tile / 2}));
+  }
+  const labelSize = layout === 'column' ? 46 : hero ? 46 : n >= 4 || layout !== 'row' ? 36 : 40;
   return (
-    <div style={{width: ZONE.w, position: 'relative', height: 520}}>
+    <div style={{width: W, position: 'relative', height: H}}>
       {d.title ? <div style={{...pop(prog(c, 0)), position: 'absolute', top: 10, left: 0, right: 0, textAlign: 'center',
         ...font(700, 46), color: c.th.mut}}>{d.title}</div> : null}
       {nodes.slice(1).map((_, i) => {
-        const x0 = pitch * (i + 0.5) + tile / 2 + 12, x1 = pitch * (i + 1.5) - tile / 2 - 12;
+        const a = pts[i], b = pts[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
+        const pad = tile / 2 + 12, span = Math.max(0, len - pad * 2);
         const k = ease(c.t, times[i + 1] - 0.3, 0.55);
         const flowing = k >= 1;
         return (
-          <div key={i} style={{position: 'absolute', top: top + tile / 2 - 4, left: x0, width: (x1 - x0) * k, height: 8, borderRadius: 9,
+          <div key={i} style={{position: 'absolute', left: a.x + Math.cos(ang) * pad, top: a.y + Math.sin(ang) * pad - 4,
+            width: span * k, height: 8, borderRadius: 9, transformOrigin: '0 50%', transform: `rotate(${ang}rad)`,
             background: `linear-gradient(90deg, ${rgba(c.acc, 0.25)}, ${c.acc})`, boxShadow: `0 0 18px ${rgba(c.acc, 0.7)}`}}>
             {flowing ? (hero ? [0, 0.33, 0.66] : [0]).map((o, j) => {
               const ph = Easing.inOut(Easing.sin)(((c.t * 0.75) + o) % 1);
@@ -368,18 +403,25 @@ const Flow: React.FC<{d: any}> = ({d}) => {
         const burst = hero && last ? ease(c.t, times[i], 0.9) : 0;
         const dim = last ? 0 : ease(c.t, times[i + 1], 0.5) * 0.5;  // kontrola pažnje: oko ide na najnoviji čvor
         const base = pop(p);
+        const side = layout === 'column';
+        const above = layout === 'quad' && (i === 0 || i === 3);  // kvadrant: gornji red ima natpis IZNAD (linije idu dole)
+        const pt = pts[i];
         return (
-          <div key={i} style={{position: 'absolute', top, left: pitch * (i + 0.5) - 140, width: 280, display: 'flex',
-            flexDirection: 'column', alignItems: 'center', ...base, opacity: (base.opacity as number) * (1 - dim),
+          <div key={i} style={{position: 'absolute', top: above ? undefined : pt.y - tile / 2, bottom: above ? H - (pt.y + tile / 2) : undefined,
+            left: side ? pt.x - tile / 2 : pt.x - 140,
+            width: side ? W - (pt.x - tile / 2) : 280, display: 'flex', flexDirection: side ? 'row' : above ? 'column-reverse' : 'column',
+            alignItems: 'center', gap: side ? 30 : 0, ...base, opacity: (base.opacity as number) * (1 - dim),
             filter: [base.filter, dim > 0.01 ? `brightness(${1 - 0.5 * dim})` : ''].filter(Boolean).join(' ') || undefined}}>
-            <div style={{position: 'relative'}}>
+            <div style={{position: 'relative', flex: 'none'}}>
               {burst > 0 && burst < 1 ? (
                 <div style={{position: 'absolute', left: tile / 2, top: tile / 2, width: tile * (1 + burst * 1.2), height: tile * (1 + burst * 1.2),
                   transform: 'translate(-50%,-50%)', borderRadius: tile * 0.4, border: `4px solid ${c.acc}`, opacity: 1 - burst}} />
               ) : null}
               {x.src ? <LogoPlate f={x} size={tile} /> : <IconTile name={x.icon} size={tile} on={1} />}
             </div>
-            <div style={{...font(800, hero ? 46 : n >= 4 ? 34 : 40, 1.1), color: c.th.ink, marginTop: 24, textAlign: 'center', width: 270}}>{txt(x)}</div>
+            <div style={{...font(800, labelSize, 1.1), color: c.th.ink, marginTop: side || above ? 0 : 20, marginBottom: above ? 18 : 0,
+              textAlign: side ? 'left' : 'center',
+              width: side ? undefined : 270}}>{txt(x)}</div>
           </div>
         );
       })}
@@ -429,7 +471,8 @@ const Chart: React.FC<{d: any}> = ({d}) => {
   const mx = Math.max(...bars);
   const n = bars.length;
   const xs: string[] = d.x ?? [];
-  const bw = Math.min(104, Math.floor(560 / n));
+  const bw = Math.min(n <= 3 ? 130 : 104, Math.floor(560 / n));
+  const cw = n <= 2 ? 600 : n === 3 ? 680 : n <= 5 ? 800 : 900;  // kompaktno kad je malo stubića — bez praznog prostora
   const grown = at + 0.1 + n * 0.1 + 0.4;
   const noteAt = at0(d.note, grown);
   const kn = ease(c.t, noteAt, 0.6);
@@ -438,8 +481,8 @@ const Chart: React.FC<{d: any}> = ({d}) => {
   const col = toneColor(tone, c.acc);
   const noteCol = toneColor(d.note?.tone ?? tone, c.acc);
   return (
-    <Glass glow={0.35} style={{...pop(prog(c, at)), width: 900, padding: '34px 44px 30px'}}>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 60}}>
+    <Glass glow={0.35} style={{...pop(prog(c, at)), width: cw, padding: '34px 44px 30px'}}>
+      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: 60, flexWrap: 'wrap', gap: '12px 20px'}}>
         <div style={{...font(700, 42), color: c.th.ink, textAlign: 'left'}}>{d.label ?? ''}</div>
         {d.note ? (
           <div style={{opacity: kn, transform: `translateY(${(1 - kn) * 14}px)`, ...font(800, 36), background: noteCol,
@@ -779,6 +822,184 @@ const Media: React.FC<{it: TopItem; sf: number}> = ({it, sf}) => {
   return <Stack parts={parts} gap={20} />;
 };
 
+
+// ------------------------------------------------------------------ oblici iz klijentske recenzije (PLAN §13, faza B)
+/** Slika ili snimak u okviru: lagani zoom sve vreme (slika) / snimak od `start` (zamrzne se na kraju klipa). */
+const MediaBox: React.FC<{f: any; w: number; h: number; sf: number; r?: number}> = ({f, w, h, sf, r = 30}) => {
+  const c = useC();
+  const fill: React.CSSProperties = {width: '100%', height: '100%', objectFit: 'cover', display: 'block'};
+  const face = f.face && f.h ? `50% ${Math.round(Math.min(100, Math.max(0, (f.face.y + f.face.h * 0.4) / f.h * 100)))}%` : '50% 40%';
+  const zoom = 1 + 0.07 * interpolate(c.t, [0, Math.max(1, c.dur)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.sin)});
+  const isVideo = f.mkind === 'video';
+  const start = Math.max(0, Number(f.start ?? 0));
+  const clipLeft = f.clipDur ? Math.max(0.1, f.clipDur - start) : c.dur;
+  return (
+    <div style={{width: w, height: h, borderRadius: r, overflow: 'hidden', position: 'relative', flex: 'none',
+      background: '#000', boxShadow: `0 30px 60px rgba(0,0,0,${c.th.dark ? 0.5 : 0.22})`, border: `1.5px solid ${c.th.line}`}}>
+      {isVideo ? (c.t >= clipLeft && f.last ? <Img src={staticFile(f.last)} style={{...fill, objectPosition: face}} /> : (
+        <Sequence from={sf} durationInFrames={Math.max(1, Math.round(clipLeft * c.fps))} layout="none">
+          <OffthreadVideo src={staticFile(f.src ?? '')} muted trimBefore={Math.round(start * c.fps)} style={{...fill, objectPosition: face}} />
+        </Sequence>
+      )) : <Img src={staticFile(f.src ?? '')} style={{...fill, objectPosition: face, transform: `scale(${zoom})`, transformOrigin: face}} />}
+    </div>
+  );
+};
+
+/**
+ * Vertikalni snimak/slika: od ivice do ivice gornjeg dela (cela visina), a iza zamućena uvećana verzija istog
+ * (klijentska recenzija v2, s14). Opcioni natpis dole, naslov i logo iznad (hero).
+ */
+const VerticalFull: React.FC<{d: any; sf: number; height: number; children?: React.ReactNode}> = ({d, sf, height, children}) => {
+  const c = useC();
+  const isVideo = d.mkind === 'video';
+  const ar = d.w && d.h ? d.w / d.h : 9 / 16;
+  const H = height, W = Math.round(H * ar);
+  const start = Math.max(0, Number(d.start ?? 0));
+  const clipLeft = d.clipDur ? Math.max(0.1, d.clipDur - start) : c.dur;
+  const zoom = 1 + 0.05 * interpolate(c.t, [0, Math.max(1, c.dur)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+    easing: Easing.inOut(Easing.sin)});
+  const media = (style: React.CSSProperties) => isVideo ? (c.t >= clipLeft && d.last ? <Img src={staticFile(d.last)} style={style} /> : (
+    <Sequence from={sf} durationInFrames={Math.max(1, Math.round(clipLeft * c.fps))} layout="none">
+      <OffthreadVideo src={staticFile(d.src ?? '')} muted trimBefore={Math.round(start * c.fps)} style={style} />
+    </Sequence>
+  )) : <Img src={staticFile(d.src ?? '')} style={{...style, transform: `scale(${zoom})`}} />;
+  const cover: React.CSSProperties = {position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'};
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: '#000'}}>
+      <div style={{position: 'absolute', inset: -60, filter: 'blur(38px) brightness(0.62) saturate(1.15)'}}>{media(cover)}</div>
+      <div style={{position: 'absolute', top: 0, height: H, left: (1080 - W) / 2, width: W, overflow: 'hidden',
+        boxShadow: '0 0 80px rgba(0,0,0,0.55)'}}>{media(cover)}</div>
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: LIGHT_SHADE.h,
+        background: `linear-gradient(180deg, rgba(12,12,16,0) 0%, rgba(12,12,16,${LIGHT_SHADE.a * 0.4}) 62%, rgba(12,12,16,${LIGHT_SHADE.a}) 100%)`}} />
+      {d.caption ? (
+        <div style={{position: 'absolute', left: 0, right: 0, top: H - 250, display: 'flex', justifyContent: 'center', ...pop(prog(c, at0(d.caption, 0.3)), 16)}}>
+          <div style={{...font(800, 50), color: '#fff', background: 'rgba(12,13,16,0.62)', backdropFilter: 'blur(14px)', padding: '14px 30px',
+            borderRadius: 22}}>{txt(d.caption)}</div>
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+};
+
+/**
+ * Hook / spotlight: glavna tema velika na ekranu, iznad nje upadljiv naslov (sme da preklopi medij), a sa strane
+ * logo kompanije kad je pomenu — bez drugog teksta. Hook mora biti jasan i upadljiv, ne scena iz sredine videa.
+ */
+const Spotlight: React.FC<{d: any; sf: number; height: number}> = ({d, sf, height}) => {
+  const c = useC();
+  const tAt = at0(d.title, 0.1);
+  const k = prog(c, tAt, 0.6);
+  const lk = d.logo?.src ? ease(c.t, at0(d.logo, Math.min(1.5, c.dur * 0.4)), 0.7, Easing.bezier(0.34, 1.4, 0.64, 1)) : 0;
+  const portrait = d.w && d.h ? d.h / d.w > 1.15 : true;
+  const title = d.title ? txt(d.title) : '';
+  const tsize = title.length > 18 ? 76 : 92;
+  const inner = (
+    <>
+      {title ? <div style={{position: 'absolute', left: 0, right: 0, top: 150, display: 'flex', justifyContent: 'center',
+        opacity: interpolate(k, [0, 0.4], [0, 1], {extrapolateRight: 'clamp'}),
+        transform: `translateY(${(1 - k) * 30}px) scale(${0.86 + 0.14 * k})`}}>
+        <div style={{...font(800, tsize, 1.02), letterSpacing: '-0.04em', color: onAccent(c.acc), background: c.acc, padding: '18px 36px 22px',
+          borderRadius: 26, boxShadow: `0 20px 60px rgba(0,0,0,0.45), 0 0 50px ${rgba(c.acc, 0.45)}`, textAlign: 'center', maxWidth: 940}}>{title}</div>
+      </div> : null}
+      {d.logo?.src ? (
+        <div style={{position: 'absolute', right: portrait ? 70 : 60, top: height * 0.47, opacity: Math.min(1, lk * 1.4),
+          transform: `translateY(-50%) scale(${0.6 + 0.4 * lk}) rotate(${(1 - lk) * -8}deg)`}}>
+          <LogoPlate f={d.logo} size={200} at={at0(d.logo, 0)} />
+        </div>
+      ) : null}
+    </>
+  );
+  if (portrait) return <VerticalFull d={{...d, caption: undefined}} sf={sf} height={height}>{inner}</VerticalFull>;
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: '#000'}}>
+      <div style={{position: 'absolute', inset: 0}}><MediaBox f={d} w={1080} h={height} sf={sf} r={0} /></div>
+      {inner}
+    </div>
+  );
+};
+
+/** Medij + tekst: slika/snimak sa jedne strane, rečenice o njemu sa druge — pojavljuju se na reč, ranije se utišaju. */
+const MediaText: React.FC<{d: any; sf: number}> = ({d, sf}) => {
+  const c = useC();
+  const lines: any[] = d.lines ?? [];
+  const times = lines.map((x, i) => beat(c, x, i, lines.length));
+  const mediaRight = d.side === 'right';
+  const longest = Math.max(0, ...lines.map((x) => txt(x).length));
+  const size = longest > 34 ? 44 : longest > 22 ? 52 : 60;
+  const pm = prog(c, 0, 0.7);
+  return (
+    <div style={{width: ZONE.w, height: 560, display: 'flex', flexDirection: mediaRight ? 'row-reverse' : 'row', alignItems: 'center', gap: 44}}>
+      <div style={{...pop(pm, 30)}}><MediaBox f={d} w={430} h={560} sf={sf} /></div>
+      <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 22, textAlign: 'left'}}>
+        {d.title ? <div style={{...pop(prog(c, 0.1)), ...font(700, 32), color: c.th.mut, letterSpacing: '0.02em', textTransform: 'uppercase'}}>{d.title}</div> : null}
+        {lines.map((x, i) => {
+          const base = pop(prog(c, times[i]), 18);
+          const dim = i < lines.length - 1 ? ease(c.t, times[i + 1], 0.5) * 0.55 : 0;
+          return (
+            <div key={i} style={{...base, opacity: (base.opacity as number) * (1 - dim), ...font(800, size, 1.08),
+              color: x.tone ? toneColor(x.tone, c.acc) : c.th.ink, fontVariantNumeric: 'tabular-nums'}}>{countUp(txt(x), ease(c.t, times[i], 1.0))}</div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/** Objave jedna preko druge: svaka nova ulazi pomereno, prethodne se povuku i utišaju. */
+const PostStack: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const list: any[] = d.items ?? [];
+  const n = list.length;
+  const times = list.map((x, i) => beat(c, x, i, n));
+  const rot = [-3, 2.5, -1.5, 2];
+  return (
+    <div style={{width: ZONE.w, height: 580, position: 'relative'}}>
+      {list.map((x, i) => {
+        const p = prog(c, times[i], 0.7);
+        const after = list.slice(i + 1).filter((_, j) => c.t >= times[i + 1 + j]).length;
+        const back = after > 0 ? ease(c.t, times[i + 1], 0.55) : 0;
+        const base = pop(p, 40);
+        const fit = x.src ? Math.min(760 / (x.w || 1000), 540 / (x.h || 1000)) : 0.78;  // slika: u okvir 760×540; nativna objava: 78%
+        const iw2 = x.src ? (x.w || 1000) * fit : 880 * fit;
+        const scale = 1 - 0.05 * Math.min(2, after - 1 + back);
+        const off = i - (n - 1) / 2;
+        const cx = ZONE.w / 2 + off * 70, cy = 290 + off * 46;
+        return (
+          <div key={i} style={{position: 'absolute', left: cx, top: cy, transformOrigin: '50% 50%', ...base,
+            transform: `translate(-50%, -50%) ${base.transform} rotate(${rot[i % 4] * (1 - 0.4 * back)}deg) scale(${scale})`, width: iw2,
+            opacity: (base.opacity as number) * (1 - 0.45 * Math.min(1, after - 1 + back)),
+            filter: [base.filter, back > 0.01 ? `brightness(${1 - 0.25 * Math.min(1, after - 1 + back)})` : ''].filter(Boolean).join(' ') || undefined}}>
+            {x.src ? (
+              <Img src={staticFile(x.src)} style={{width: iw2, borderRadius: 24, display: 'block', boxShadow: c.th.shadow,
+                border: '6px solid #fff'}} />
+            ) : <div style={{transform: `scale(${fit})`, transformOrigin: '0 0', width: 880}}><Post d={{...x, atT: 0}} /></div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** Osoba kojoj je glava na slici odsečena: kartica (beo okvir) sa licem u kadru + natpis sa trouglićem ispod. */
+const PersonCard: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const pm = prog(c, 0, 0.7);
+  const tagAt = at0(d, 0.45);
+  const k = d.name ? ease(c.t, tagAt - 0.25, 0.75, CAM_GLIDE) : 1;  // pre natpisa: velika u sredini; natpis stiže → smanji se
+  const sc = 1.24 - 0.24 * k;
+  return (
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, transform: `translateY(${(1 - k) * 70}px)`}}>
+      <div style={{...pop(pm, 30), transform: `${pop(pm, 30).transform} scale(${sc})`, transformOrigin: '50% 60%', background: '#FFFFFF', padding: 14,
+        borderRadius: 40, boxShadow: `0 30px 70px rgba(0,0,0,${c.th.dark ? 0.5 : 0.2})`}}>
+        <MediaBox f={{...d, mkind: 'image'}} w={470} h={460} sf={0} r={28} />
+      </div>
+      <div style={{position: 'relative', height: 120, width: ZONE.w}}><NameTag d={d} top={22} /></div>
+    </div>
+  );
+};
+
 // ------------------------------------------------------------------ pravi asseti sa interneta (PLAN §12)
 /**
  * Pravi logo u ISTOJ backlit neon pločici kao ikonice (doslednost — odluka 12. nov 2026): tamna grafitna pločica,
@@ -815,20 +1036,26 @@ const Logo: React.FC<{d: any}> = ({d}) => {
     if (d.sub) parts.push({h: 60, at: at0(d.sub, 0.45), el: <div style={{...font(600, 46), color: c.th.mut}}>{txt(d.sub)}</div>});
     return <Stack parts={parts} gap={24} />;
   }
-  const times = list.map((x, i) => beat(c, x, i, list.length));
-  const size = list.length >= 4 ? 170 : 210;
+  // Velike pločice: sve su tu od početka, prigušene; svaka se upali (i dobije ime) kad se brend pomene.
+  const times = list.map((x, i) => (typeof x?.atT === 'number' ? x.atT : beat(c, x, i, list.length)));
+  const size = list.length >= 4 ? 190 : list.length === 3 ? 240 : 300;
   return (
-    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30}}>
-      {d.title ? <div style={{...pop(prog(c, 0)), ...font(700, 46), color: c.th.mut}}>{d.title}</div> : null}
-      <div style={{display: 'flex', gap: 30, justifyContent: 'center', flexWrap: 'wrap', width: ZONE.w}}>
+    <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 34}}>
+      {d.title ? <div style={{...font(700, 46), color: c.th.mut}}>{d.title}</div> : null}
+      <div style={{display: 'flex', gap: list.length >= 4 ? 30 : 56, justifyContent: 'center', flexWrap: 'wrap', width: ZONE.w}}>
         {list.map((x, i) => {
-          const dim = i < list.length - 1 && c.t >= times[i + 1] ? ease(c.t, times[i + 1], 0.5) * 0.5 : 0;
-          const base = pop(prog(c, times[i]));
+          const on = ease(c.t, times[i], 0.55);
+          const nm = ease(c.t, times[i] + 0.12, 0.5);
+          const inn = ease(c.t, i * 0.14, 0.75, Easing.bezier(0.2, 0.9, 0.25, 1));  // ulazak: odozdo, sa rotacijom, jedna za drugom
+          const bob = (1 - on) * Math.sin((c.t + i * 0.7) * 2.4) * 6;            // dok čeka: lagano lebdi
           return (
-            <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, ...base,
-              opacity: (base.opacity as number) * (1 - dim)}}>
-              <LogoPlate f={x} size={size} />
-              {x.name ? <div style={{...font(800, 36), color: c.th.ink}}>{x.name}</div> : null}
+            <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22,
+              opacity: Math.min(1, inn * 1.6), transform: `translateY(${(1 - inn) * 90 + bob}px) rotate(${(1 - inn) * (i % 2 ? 9 : -9)}deg)`}}>
+              <div style={{opacity: 0.38 + 0.62 * on, filter: on < 0.99 ? `grayscale(${1 - on}) brightness(${0.72 + 0.28 * on})` : undefined,
+                transform: `scale(${0.9 + 0.1 * on + 0.06 * Math.sin(Math.PI * on)})`, boxShadow: `0 0 ${46 * on}px ${rgba(c.acc, 0.35 * on)}`, borderRadius: size * 0.29}}>
+                <LogoPlate f={x} size={size} at={times[i]} />
+              </div>
+              <div style={{height: 50, opacity: nm, transform: `translateY(${(1 - nm) * 12}px)`, ...font(800, 44), color: c.th.ink}}>{x.name ?? ''}</div>
             </div>
           );
         })}
@@ -851,17 +1078,16 @@ const Logo: React.FC<{d: any}> = ({d}) => {
 const CAM_EASE = Easing.bezier(0.76, 0, 0.24, 1);
 
 /**
- * Tajming kamere prema trajanju scene: kraj scene je MIRAN (gledalac procesuira šta je na ekranu) —
- * pauza = 35% scene (0.9–1.6 s); pokret se uklapa u ostatak (0.7–1.2 s, brže nego ranije) i stiže na označeni deo
- * oko reči koja ga pominje, nikad ne pojede pauzu na kraju. Ista pravila proverava engine (visuals.warnings).
+ * Kamera + zatamnjenje kao JEDAN pokret (klijentska recenzija 12. nov 2026): kreće se od prvog kadra (nikad mirno pa
+ * naglo), meko ubrzava i usporava dolazeći na označeni deo malo posle reči koja ga pominje, pa mirna pauza za čitanje.
+ * Zatamnjenje ostatka ide istom krivom i traje jednako dugo kao zoom.
  */
-const camTiming = (dur: number, hlAt: number | null) => {
-  const hold = Math.min(1.6, Math.max(0.9, dur * 0.35));
-  const endBy = Math.max(0.9, dur - hold);
-  const move = Math.min(1.2, Math.max(0.7, endBy - 0.2));
-  const latest = Math.max(0.15, endBy - move);
-  const zAt = hlAt === null ? 0.15 : Math.min(latest, Math.max(0.15, hlAt - move * 0.7));
-  return {zAt, move};
+const CAM_GLIDE = Easing.bezier(0.42, 0.08, 0.22, 1);
+const camGlide = (t: number, dur: number, hlAt: number | null, arriveHint?: number) => {
+  if (hlAt === null) return ease(t, 0, Math.max(1, dur), Easing.inOut(Easing.sin));  // bez isticanja: lagano celom scenom
+  const hold = Math.min(1.4, Math.max(0.8, dur * 0.3));
+  const arrive = Math.min(Math.max(1.0, dur - hold), Math.max(1.0, typeof arriveHint === 'number' ? arriveHint : hlAt + 0.5));
+  return ease(t, 0, arrive, CAM_GLIDE);
 };
 type View = {x: number; y: number; w: number; h: number};
 type PicPlan = {mode: 'bleed' | 'blend' | 'frame'; v0: View; v1: View; bg: string; W: number; H: number};
@@ -906,6 +1132,25 @@ const picPlan = (d: any, H: number): PicPlan => {
   return {mode: 'frame', v0: cover, v1: cover, bg: '#FFFFFF', W, H};
 };
 
+/** Pogled koji stavlja označenu frazu (marker) u sredinu, malo bliže od trenutnog pogleda (s14/s15 recenzije). */
+const markView = (v1: View, m: any, iw: number, ih: number, free = false, W = 1080, main?: any): View => {
+  // fraza TAČNO u sredini gornjeg dela (FOCUS_C); "free" = slika može da izađe van ivice (iza je boja stranice),
+  // pa naglašeni deo nikad ne beži gore/dole zbog ivice slike (recenzija v3, s20)
+  const r = m.rect;
+  const k = Math.min(1 / 1.2, Math.max(r.w * 2.6 / v1.w, 0.76));  // blago bliže (do ~1.3×)
+  // ne bliže nego što dozvoljava ceo istaknuti deo (širok naslov → pogled se proširi da ceo stane u 900 px)
+  const w = Math.min(Math.max(v1.w * k, main && main.w ? (main.w * W) / 900 : 0), Math.max(iw, v1.w)), h = w * (v1.h / v1.w), sc = W / w;
+  let x = r.x + r.w / 2 - FOCUS_C.x / sc;
+  const y = r.y + r.h / 2 - FOCUS_C.y / sc;
+  // ceo istaknuti deo (npr. naslov) ostaje u sigurnoj zoni (x 90–990) kad god staje — ne seče se zbog markera
+  if (main && main.w && main.w * sc <= 900) {
+    const lo = main.x + main.w - 990 / sc, hi = main.x - 90 / sc;  // x mora biti u [lo, hi]
+    x = Math.min(Math.max(x, lo), hi);
+  }
+  if (free) return {x, y, w, h};
+  return {x: Math.min(Math.max(x, 0), Math.max(0, iw - w)), y: Math.min(Math.max(y, 0), Math.max(0, ih - h)), w, h};
+};
+
 /** Kamera kroz sliku: pravougaonik pogleda ide PRAVO od v0 do v1 (bez krive), meko ubrzanje/usporavanje. */
 const camera = (v0: View, v1: View, z: number, W: number) => {
   const v = {x: v0.x + (v1.x - v0.x) * z, y: v0.y + (v1.y - v0.y) * z, w: v0.w + (v1.w - v0.w) * z, h: v0.h + (v1.h - v0.h) * z};
@@ -915,7 +1160,11 @@ const camera = (v0: View, v1: View, z: number, W: number) => {
 
 /** Slika + flat cut-out isticanje; `bg` = boja "oblika" iza slike u koju ostatak izbledi. */
 const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number; bg: string}> = ({d, s, tx, ty, kh, bg}) => {
+  const c = useC();
   const iw = d.w || 1600, ih = d.h || 1000;
+  // oznake (ime, cifra): na reč se ta fraza izdvoji iz zatamnjenja i dobije marker u boji brenda, s leva na desno
+  const lightPage = lum((d.edge && d.edge.length === 7 ? d.edge : '#FFFFFF')) > 0.5;
+  const marks: any[] = (d.marks ?? []).filter((m: any) => m.rect && m.rect.w);
   const hl = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : null;
   const pad = 10;
   return (
@@ -929,6 +1178,31 @@ const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number;
           {d.src ? <Img src={staticFile(d.src)} style={{position: 'absolute', left: -(hl.x - pad), top: -(hl.y - pad), width: iw, height: ih}} /> : null}
         </div>
       ) : null}
+      {marks.flatMap((m, i) => {
+        const at = at0(m, 0.4), lines: any[] = m.lines?.length ? m.lines : [m.rect], p2 = 6;
+        const total = lines.reduce((a, q) => a + q.w, 0) || 1;
+        let acc = 0;
+        return lines.map((r, j) => {
+          // marker prelazi liniju po liniju, kao rukom
+          const k = m.blur ? 1 : ease(c.t, at + (acc / total) * 0.45, 0.45 * (r.w / total) + 0.05);
+          acc += r.w;
+          if (k <= 0) return null;
+          return (
+            <div key={`${i}-${j}`} style={{position: 'absolute', left: r.x - p2, top: r.y - p2, width: r.w + p2 * 2, height: r.h + p2 * 2}}>
+              <div style={{position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 6}}>
+                {d.src ? <Img src={staticFile(d.src)} style={{position: 'absolute', left: -(r.x - p2), top: -(r.y - p2), width: iw, height: ih}} /> : null}
+              </div>
+              {m.blur ? (
+                <div style={{position: 'absolute', inset: -4, borderRadius: 10, backdropFilter: `blur(${14 * k}px)`,
+                  background: `rgba(${lightPage ? '255,255,255' : '20,20,24'},${0.25 * k})`}} />
+              ) : (
+                <div style={{position: 'absolute', left: 0, top: 0, bottom: 0, width: `${k * 100}%`, borderRadius: 6,
+                  background: rgba(c.acc, lightPage ? 0.55 : 0.4), mixBlendMode: lightPage ? 'multiply' : 'screen'}} />
+              )}
+            </div>
+          );
+        });
+      })}
     </div>
   );
 };
@@ -937,14 +1211,15 @@ const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number;
 const PictureFull: React.FC<{d: any; plan: PicPlan}> = ({d, plan}) => {
   const c = useC();
   const hl = d.highlight;
-  const hlAt = hl ? at0(hl, Math.min(0.9, c.dur * 0.4)) : 99;
-  const tm = camTiming(c.dur, hl ? hlAt : null);
-  const zAt = typeof d.zoomAt === 'number' ? d.zoomAt : tm.zAt;
-  // bez isticanja: spor Ken Burns koji se i dalje smiri pre kraja (mirna scena za čitanje)
-  const z = ease(c.t, hl ? zAt : 0, hl ? tm.move : Math.max(1.2, c.dur - Math.min(1.6, Math.max(0.9, c.dur * 0.35))), CAM_EASE);
-  const {s, tx, ty} = camera(plan.v0, plan.v1, z, plan.W);
-  const kh = hl ? ease(c.t, hlAt, 0.6, CAM_EASE) : 0;
+  const hlAt = hl ? at0(hl, Math.min(0.9, c.dur * 0.4)) : null;
   const light = lum(plan.bg.length === 7 ? plan.bg : '#FFFFFF') > 0.5;
+  const mk = (d.marks ?? []).find((m: any) => m.rect && m.rect.w && !m.blur);  // zamućena oznaka: bez približavanja
+  // jedan pravolinijski pokret od početka do konačnog cilja — bez skretanja na pola puta (recenzija v3, s15)
+  const main = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : d.focus;
+  const target = mk ? markView(plan.v1, mk, d.w || 1600, d.h || 1000, plan.mode === 'blend' || Boolean(d.edgeUniform) || light, plan.W, main) : plan.v1;
+  const z = camGlide(c.t, c.dur, mk ? at0(mk, hlAt ?? 0.6) : hlAt, d.zoomAt);
+  const {s, tx, ty} = camera(plan.v0, target, z, plan.W);
+  const kh = hl ? z : 0;  // zatamnjenje = isti pokret kao zoom
   return (
     <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: plan.bg}}>
       <PicLayer d={d} s={s} tx={tx} ty={ty} kh={kh} bg={plan.bg} />
@@ -966,9 +1241,7 @@ const Screenshot: React.FC<{d: any}> = ({d}) => {
   const fw = Math.min(maxW, maxH * ar), fh = fw / ar;
   const hl = d.highlight ? {...(d.focus ?? {}), ...d.highlight} : null;
   const f = hl ?? d.focus;
-  const hlAt = hl ? at0(d.highlight, Math.min(0.9, c.dur * 0.4)) : 99;
-  const tm = camTiming(c.dur, hl ? hlAt : null);
-  const zAt = typeof d.zoomAt === 'number' ? d.zoomAt : tm.zAt;
+  const hlAt = hl ? at0(d.highlight, Math.min(0.9, c.dur * 0.4)) : null;
   const v0: View = {x: 0, y: 0, w: iw, h: ih};
   let v1 = v0;
   if (f && f.w) {
@@ -976,9 +1249,11 @@ const Screenshot: React.FC<{d: any}> = ({d}) => {
     const w = iw / s1, h = ih / s1;
     v1 = {x: Math.min(Math.max(f.x + f.w / 2 - w / 2, 0), iw - w), y: Math.min(Math.max(f.y + f.h / 2 - h / 2, 0), ih - h), w, h};
   }
-  const z = ease(c.t, zAt, tm.move, CAM_EASE);
-  const {s, tx, ty} = camera(v0, v1, z, fw);
-  const kh = hl ? ease(c.t, hlAt, 0.6, CAM_EASE) : 0;
+  const mk = (d.marks ?? []).find((m: any) => m.rect && m.rect.w && !m.blur);  // zamućena oznaka: bez približavanja
+  const target = mk ? markView(v1, mk, iw, ih, false, fw, f) : v1;  // prozor: slika ostaje u svojim ivicama
+  const z = camGlide(c.t, c.dur, mk ? at0(mk, hlAt ?? 0.6) : f && f.w ? (hlAt ?? Math.min(0.9, c.dur * 0.4)) : null, d.zoomAt);
+  const {s, tx, ty} = camera(v0, target, z, fw);
+  const kh = hl ? z : 0;  // zatamnjenje = isti pokret kao zoom
   const host = (d.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   return (
     <div style={{...pop(prog(c, 0))}}>
@@ -1002,18 +1277,30 @@ const Screenshot: React.FC<{d: any}> = ({d}) => {
  * Prava fotografija (osoba, proizvod, mesto): isti način prikaza kao slike (ceo gornji deo / stapanje / prozor);
  * kod osobe kamera polako ide ka licu (glava i ramena), lice se nikad ne iseče. Natpis imena i opisa ulazi na reč.
  */
-const NameTag: React.FC<{d: any}> = ({d}) => {
+/**
+ * Natpis sa imenom i malim trouglićem na vrhu (pokazuje na osobu iznad). Stil `d.tagStyle`:
+ *  glass (staklo, kao do sada) · accent (boja brenda) · light (beo, ime + uloga u boji brenda).
+ */
+const NameTag: React.FC<{d: any; top?: number}> = ({d, top = 690}) => {
   const c = useC();
   if (!d.name) return null;
   const k = prog(c, at0(d, 0.45), 0.6);
+  const st: string = d.tagStyle ?? 'glass';
+  const bg = st === 'accent' ? c.acc : st === 'light' ? '#FFFFFF' : 'rgba(14,15,18,0.72)';
+  const ink = st === 'accent' ? onAccent(c.acc) : st === 'light' ? '#0B0D12' : '#FFFFFF';
+  const sub = st === 'accent' ? rgba(onAccent(c.acc), 0.72) : st === 'light' ? c.acc : 'rgba(255,255,255,0.72)';
+  const tri = 24;
   return (
-    <div style={{position: 'absolute', left: 0, right: 0, top: 690, display: 'flex', justifyContent: 'center', ...pop(k, 18)}}>
-      <Glass strong r={26} style={{padding: '16px 30px', background: 'rgba(14,15,18,0.62)', border: '1.5px solid rgba(255,255,255,0.2)'}}>
-        <div style={{display: 'flex', alignItems: 'baseline', gap: 16}}>
-          <div style={{...font(800, 46), color: '#FFFFFF'}}>{d.name}</div>
-          {d.sub ? <div style={{...font(600, 32), color: 'rgba(255,255,255,0.7)'}}>{txt(d.sub)}</div> : null}
+    <div style={{position: 'absolute', left: 0, right: 0, top, display: 'flex', justifyContent: 'center', ...pop(k, 18)}}>
+      <div style={{position: 'relative', filter: 'drop-shadow(0 14px 30px rgba(0,0,0,0.35))'}}>
+        <div style={{position: 'absolute', left: '50%', top: -tri + 2, width: tri * 2, height: tri, marginLeft: -tri,
+          background: bg, clipPath: 'polygon(50% 0, 100% 100%, 0 100%)', backdropFilter: st === 'glass' ? 'blur(18px)' : undefined}} />
+        <div style={{background: bg, borderRadius: 24, padding: st === 'glass' ? '16px 30px' : '16px 32px',
+          backdropFilter: st === 'glass' ? 'blur(18px)' : undefined, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+          <div style={{...font(800, 46, 1.05), color: ink, fontVariantNumeric: 'tabular-nums'}}>{countUp(String(d.name), ease(c.t, at0(d, 0.45), 1.0))}</div>
+          {d.sub ? <div style={{...font(700, 30, 1.2), color: sub, marginTop: 4}}>{txt(d.sub)}</div> : null}
         </div>
-      </Glass>
+      </div>
     </div>
   );
 };
@@ -1036,14 +1323,15 @@ const photoPlan = (d: any, H: number): PicPlan => {
   const v0 = at(sB, cx, cy), v1 = at(sB * 1.08, cx, cy);
   // samo LICE mora stati u sigurnu zonu pri cover prikazu (glava/ramena služe za kadriranje), inače okvir
   const face = d.face;
-  const fitsFace = !face || (face.w * sB <= 760 && face.h * sB <= 520 && ((face.y - v0.y) * sB) >= 60);
+  // i CELA glava (teme ≈ 0.6 visine lica iznad okvira lica) mora biti u kadru — inače kartica osobe, ne odsečena glava
+  const fitsFace = !face || (face.w * sB <= 760 && face.h * sB <= 520 && ((face.y - face.h * 0.6 - v0.y) * sB) >= 20);
   if (fitsFace) return {mode: 'bleed', v0, v1, bg: d.edge ?? '#111', W, H};
   return {mode: 'frame', v0, v1, bg: '#111', W, H};
 };
 
 const PhotoFull: React.FC<{d: any; plan: PicPlan}> = ({d, plan}) => {
   const c = useC();
-  const z = ease(c.t, 0, Math.max(1.2, c.dur - Math.min(1.6, Math.max(0.9, c.dur * 0.35))), CAM_EASE);
+  const z = ease(c.t, 0, Math.max(1, c.dur), Easing.inOut(Easing.sin));  // stalni lagani zoom dok slika traje
   const {s, tx, ty} = camera(plan.v0, plan.v1, z, plan.W);
   return (
     <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: plan.bg}}>
@@ -1267,6 +1555,17 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
       );
     }
   }
+  const portrait = d.w && d.h && d.h / d.w > 1.15;
+  if (it.kind === 'spotlight' || ((it.kind === 'video' || (it.kind === 'image' && !d.alpha)) && portrait && d.src)) {
+    return (
+      <C.Provider value={ctx}>
+        <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: (1 - out) * Math.min(1, ease(t - it.start, 0, 0.35) * 1.2),
+          filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
+          {it.kind === 'spotlight' ? <Spotlight d={d} sf={sf} height={height} /> : <VerticalFull d={{...d, mkind: it.kind === 'video' ? 'video' : 'image'}} sf={sf} height={height} />}
+        </div>
+      </C.Provider>
+    );
+  }
   const pic = (it.kind === 'screenshot' || (it.kind === 'image' && !d.alpha) || (it.kind === 'post' && d.src)) && d.src && !d.cropped
     ? picPlan(d, height) : null;
   if (pic && pic.mode !== 'frame') {
@@ -1296,7 +1595,9 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
     : it.kind === 'screenshot' && d.cropped ? <Media it={{...it, kind: 'image'}} sf={sf} />
     : it.kind === 'screenshot' || (it.kind === 'image' && !d.alpha && d.src) ? <Screenshot d={d} />
     : it.kind === 'news' ? <News d={d} />
-    : it.kind === 'photo' ? <Media it={{...it, kind: 'image', data: {...d, caption: d.name ? {text: d.sub ? `${d.name} · ${txt(d.sub)}` : d.name, atT: at0(d, 0.45)} : undefined}}} sf={sf} />
+    : it.kind === 'photo' ? <PersonCard d={d} />
+    : it.kind === 'mediatext' ? <MediaText d={d} sf={sf} />
+    : it.kind === 'posts' ? <PostStack d={d} />
     : it.kind === 'post' && d.src ? <Screenshot d={d} />
     : it.kind === 'post' ? <Post d={d} />
     : <Media it={it} sf={sf} />;

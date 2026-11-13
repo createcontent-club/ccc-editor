@@ -53,26 +53,63 @@ if (nav.errorText) done({ok: false, error: `can't open the page (${nav.errorText
 await loaded;
 await sleep(o.svg ? 300 : 1800);
 
+// Čišćenje: SVI fiksirani/lepljivi slojevi (zaglavlja, cookie/consent prozori, "heads up" kutije, chat dugmad),
+// dijalozi, i reklamna mesta (prazni sivi pravougaonici i baneri) — na snimku ostaje samo sadržaj stranice.
+const CLEAN = `(() => {
+  if (!window.__cccClean) {
+    window.__cccClean = () => {
+      for (const dl of document.querySelectorAll('dialog')) { try { dl.close(); } catch (e) {} dl.remove(); }  // modalni <dialog> (siva ::backdrop)
+      const AD = /(^|[-_ ])(ad|ads|adv|advert|advertisement|adslot|ad-slot|adunit|ad-unit|ad-container|dfp|gpt|sponsor|sponsored|promo-banner|taboola|outbrain|leaderboard|billboard|skyscraper)([-_ ]|$)/i;
+      const OVER = /ab-in-app-message|ab-iam|braze|intercom|drift-|transcend|osano|truste|cookiebot|usercentrics|cookie|consent|gdpr|privacy-banner|modal|popup|pop-up|overlay|newsletter|subscribe-wall|paywall|toast|onetrust|didomi|sp_message|cmp|interstitial|heads-?up|notice-bar/i;
+      // cela stranica, ne samo <body>: consent menadžeri (Transcend, OneTrust…) se kače pored body-ja, često u zatvorenom shadow DOM-u
+      for (const e of [...document.querySelectorAll('*')]) {
+        if (!e.isConnected || e === document.documentElement || e === document.head || e === document.body || e.closest('head')) continue;
+        const st = getComputedStyle(e);
+        const cls = (typeof e.className === 'string' ? e.className : '') + ' ' + (e.id || '');
+        if (st.position === 'fixed' || st.position === 'sticky') { e.remove(); continue; }
+    if (e.tagName === 'IFRAME' && +st.zIndex >= 1000) { e.remove(); continue; }
+        if (e.getAttribute('role') === 'dialog' || e.getAttribute('aria-modal') === 'true') { e.remove(); continue; }
+        if (OVER.test(cls) && (st.position === 'absolute' || +st.zIndex > 10)) { e.remove(); continue; }
+        // prozor za newsletter/pretplatu koji lebdi preko sadržaja (visok z-index, apsolutno pozicioniran)
+        if ((st.position === 'absolute') && +st.zIndex >= 100 && /subscribe|sign up|newsletter|join now/i.test(e.textContent || '') &&
+            (e.textContent || '').length < 1500) { e.remove(); continue; }
+        if (AD.test(cls) || (e.tagName === 'IFRAME' && /doubleclick|googlesyndication|adservice|amazon-adsystem|taboola|outbrain/i.test(e.src || '')) ||
+            e.tagName === 'INS' && /adsbygoogle/.test(cls)) { e.style.setProperty('display', 'none', 'important'); }
+      }
+      // web komponente (shadow DOM) sa pristankom/kolačićima — npr. "Just a heads up" kutija
+      for (const e of [...document.querySelectorAll('*')]) {
+        if (!e.isConnected || !e.shadowRoot) continue;
+        const t = (e.shadowRoot.textContent || '').toLowerCase();
+        if (t.length < 3000 && /cookie|consent|privacy|third-party|heads up|accept all|do not sell/.test(t)) e.remove();
+      }
+      // reklamni baneri (leaderboard 728×90, billboard 970×250…) — široka niska slika/iframe
+      for (const m of [...document.querySelectorAll('img, iframe')]) {
+        const r = m.getBoundingClientRect();
+        if (r.width >= 600 && r.width <= 1010 && r.height >= 60 && r.height <= 260 && r.width / r.height >= 3.5) {
+          (m.closest('a, div, aside, section') || m).style.setProperty('display', 'none', 'important');
+        }
+      }
+      document.documentElement.style.overflow = 'auto'; document.body.style.overflow = 'auto';
+    };
+    // sve što stigne POSLE čišćenja (Braze/Intercom poruke, newsletter prozori, sive pozadine) — ukloni čim se pojavi
+    let pend = 0;
+    new MutationObserver(() => { if (!pend) pend = setTimeout(() => { pend = 0; window.__cccClean(); }, 60); })
+      .observe(document.documentElement, {childList: true, subtree: true});
+  }
+  window.__cccClean();
+})()`;
+
 if (!o.svg) {
   // Cookie/consent baneri: klik na "Accept/Agree/OK…", pa uklanjanje preostalih fiksnih slojeva i lepljivih zaglavlja.
   await js(`(() => {
     const re = /^\\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree( and close)?|got it|ok(ay)?|continue|yes,? i agree|prihvat|slažem|alle akzeptieren|akzeptieren|tout accepter|accepter|aceptar( todo)?|accetta)/i;
-    const els = [...document.querySelectorAll('button, a, [role=button], input[type=button], input[type=submit]')];
+    const all = (root) => { const out = [...root.querySelectorAll('*')]; for (const e of [...out]) if (e.shadowRoot) out.push(...all(e.shadowRoot)); return out; };
+    const els = all(document).filter((e) => e.matches('button, a, [role=button], input[type=button], input[type=submit]'));
     const b = els.find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && re.test((e.innerText || e.value || '').trim()); });
     if (b) b.click();
   })()`);
   await sleep(700);
-  await js(`(() => {
-    const vh = innerHeight;
-    for (const e of document.querySelectorAll('body *')) {
-      const s = getComputedStyle(e);
-      if ((s.position === 'fixed' || s.position === 'sticky')) {
-        const r = e.getBoundingClientRect();
-        if (r.height > vh * 0.12 || +s.zIndex > 999 || /cookie|consent|gdpr|banner|modal|popup|newsletter/i.test(e.className + ' ' + e.id)) e.remove();
-      }
-    }
-    document.documentElement.style.overflow = 'auto'; document.body.style.overflow = 'auto';
-  })()`);
+  await js(CLEAN);
 }
 
 let rect = null;
@@ -108,11 +145,47 @@ if (o.find || o.selector) {
           if (t.includes(needle)) { const r = p.getBoundingClientRect(); if (r.width && r.height && (!best || t.length < best.t)) best = {p, t: t.length}; } }
         el = best && best.p;
       }
+      window.__cccFound = el;
       const r = el.getBoundingClientRect();
-      return {x: Math.max(0, r.x), y: Math.max(0, r.y), w: Math.min(r.width, innerWidth), h: Math.min(r.height, innerHeight)};
+      const cut = r.x < -2 || r.y < -2 || r.right > innerWidth + 2 || r.bottom > innerHeight + 2;
+      return {x: Math.max(0, r.x), y: Math.max(0, r.y), w: Math.min(r.width, innerWidth), h: Math.min(r.height, innerHeight), cut};
     })()`);
   }
 }
+
+// Oznake (`marks`): tačan pravougaonik svake izgovorene fraze (ime, cifra) — za isticanje markerom na reč.
+let marks = [];
+if (o.marks && o.marks.length && !o.svg) {
+  marks = await js(`(() => {
+    const out = [];
+    const want = ${JSON.stringify(o.marks || [])};
+    const main = window.__cccFound || null;  // element nađen sa --find/--selector
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const all = []; while (walker.nextNode()) all.push(walker.currentNode);
+    const nodes = main ? [...all.filter((n) => main.contains(n)), ...all.filter((n) => !main.contains(n))] : all;
+    for (const m of want) {
+      const needle = m.toLowerCase();
+      let hit = null;
+      for (const n of nodes) {
+        const t = (n.nodeValue || '').toLowerCase(); const i = t.indexOf(needle);
+        if (i < 0) continue;
+        const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + m.length);
+        const b = r.getBoundingClientRect();
+        if (b.width && b.height && b.top >= 0 && b.bottom <= innerHeight) {
+          const lines = [...r.getClientRects()].filter((q) => q.width > 2).map((q) => ({x: q.x, y: q.y, w: q.width, h: q.height}));
+          hit = {x: b.x, y: b.y, w: b.width, h: b.height, lines}; break;
+        }
+      }
+      out.push({text: m, rect: hit});
+    }
+    return out;
+  })()`);
+}
+
+await js(CLEAN);  // iskačući prozori koji su stigli kasnije (newsletter posle par sekundi…)
+await sleep(1500);
+await js(CLEAN);
+await sleep(250);
 
 let clip;
 if (o.crop && rect && rect.w) {
@@ -148,4 +221,8 @@ const s = (v) => (rect ? Math.round(v * DSF) : null);
 const cropped = Boolean(clip && o.crop);
 done({ok: true, title, url: href, w: clip ? Math.round(clip.width * (o.svg ? 1 : DSF)) : W * DSF, h: clip ? Math.round(clip.height * (o.svg ? 1 : DSF)) : H * DSF,
   status: docStatus, wall: docStatus >= 400 ? (docStatus === 404 || docStatus === 410 ? 'page not found' : `HTTP ${docStatus}`) : wall,
-  rect: rect && !cropped ? {x: s(rect.x), y: s(rect.y), w: s(rect.w), h: s(rect.h)} : null, found: Boolean(rect) || !(o.find || o.selector)});
+  rect: rect && !cropped ? {x: s(rect.x), y: s(rect.y), w: s(rect.w), h: s(rect.h)} : null, found: Boolean(rect) || !(o.find || o.selector),
+  partial: Boolean(rect && rect.w && (rect.cut)),
+  marks: marks.map((m) => ({text: m.text, rect: m.rect && !cropped ? {x: Math.round(m.rect.x * DSF), y: Math.round(m.rect.y * DSF),
+    w: Math.round(m.rect.w * DSF), h: Math.round(m.rect.h * DSF)} : null,
+    lines: m.rect && !cropped ? (m.rect.lines || []).map((q) => ({x: Math.round(q.x * DSF), y: Math.round(q.y * DSF), w: Math.round(q.w * DSF), h: Math.round(q.h * DSF)})) : []}))});
