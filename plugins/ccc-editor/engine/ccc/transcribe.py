@@ -115,3 +115,16 @@ def retime_numbers(audio_path, words: list[dict], utterances: list[dict], model=
                     acc = end
                 changed += [w["text"] for w in uw[i1:i2]]
     return changed
+
+
+def listen(audio_path, start: float, end: float) -> list[tuple[float, float, str, float]]:
+    """Ponovo preslušaj deo snimka (izvorno vreme, s) — za nesigurne reči: ime koje Whisper nije čuo, pogrešna reč
+    u hook-u (test ai-actor-0: "The first…" je bilo "The most…", a ime "Fang Taozi" je bilo progutano u "And")."""
+    from faster_whisper import WhisperModel
+    audio = decode_mono(audio_path)
+    clip = audio[int(max(0.0, start) * 16000):int(end * 16000)]
+    model = WhisperModel(str(MODELS / "whisper" / "large-v3-turbo"), device="cpu", compute_type="int8",
+                         cpu_threads=os.cpu_count() or 4)
+    segs, _ = model.transcribe(clip, language="en", word_timestamps=True, condition_on_previous_text=False)
+    return [(round(start + w.start, 2), round(start + w.end, 2), w.word.strip(), round(w.probability, 2))
+            for sg in segs for w in sg.words]

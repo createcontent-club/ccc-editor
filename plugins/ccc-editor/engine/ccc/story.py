@@ -21,8 +21,8 @@ from pathlib import Path
 from .project import HOME
 
 # Šabloni (animacije bez pravog materijala). Pravi materijal: image, video, photo, screenshot, logo, news, post.
-TEMPLATES = {"stat", "week", "steps", "flow", "versus", "chart", "checklist", "chat", "filter", "headline",
-             "notify", "key", "comment"}
+TEMPLATES = {"stat", "week", "steps", "flow", "versus", "chart", "checklist", "chat", "filter", "headline", "resource",
+             "notify", "key", "comment", "search"}
 REAL = {"image", "video", "photo", "screenshot", "logo", "news", "post", "mediatext", "posts", "spotlight"}
 MAX_SAME = 2          # isti šablon najviše 2 puta po videu
 SIMILAR = 0.6         # sličnost sa ranijim videom od koje se upozorava
@@ -58,6 +58,7 @@ def _texts(node) -> list[str]:
 
 
 def _words(s: str) -> list[str]:
+    s = re.sub(r"(?<=\d),(?=\d{3})", "", s)  # "$38,000" i "$38000" su ista cifra
     return [w for w in re.findall(r"[a-z0-9$%]+", s.lower()) if len(w) > 2 or w[0].isdigit() or w[0] == "$"]
 
 
@@ -132,6 +133,9 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
             continue
         for i in hit:
             it = items[i]
+            # nativni Instagram UI (komentar/DM) ne nosi logo — ključna reč u komentaru je tekst platforme
+            if it["kind"] in ("comment", "chat") and (it.get("data") or {}).get("platform") == "instagram":
+                continue
             if it["kind"] in TEMPLATES and not (_files(it.get("data")) & assets):
                 what = "GLAVNA TEMA videa" if e.get("_subject") else f"'{e.get('name')}'"
                 out.append(f"moment {i + 1} ({it['kind']}, {it['start']:.1f}s) pominje {what}, a postoji pravi materijal "
@@ -142,11 +146,15 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
 
     # 2) raznovrsnost unutar videa
     kinds = [it["kind"] for it in items]
+    # framework (steps) se namerno vraća za svaki korak — njega vodi provera pokrivenosti (3b c), ne ograničenje ponavljanja
     for i in range(1, len(items)):
-        if kinds[i] == kinds[i - 1] and kinds[i] in TEMPLATES:
+        if kinds[i] == kinds[i - 1] and kinds[i] in TEMPLATES and kinds[i] != "steps":
             out.append(f"momenti {i} i {i + 1} su oba '{kinds[i]}' zaredom — drugi oblik za jedan od njih")
-    for k in sorted(set(kinds) & TEMPLATES):
+    for k in sorted(set(kinds) & TEMPLATES - {"steps"}):
         n = kinds.count(k)
+        lays_k = [(it.get("data") or {}).get("layout") or "row" for it in items if it["kind"] == k]
+        if k == "flow" and n <= 3 and len(set(lays_k)) == n:  # flow u 3 različita oblika (hub, kolona, petlja) nije monotono
+            continue
         if n > MAX_SAME:
             out.append(f"'{k}' je {n}× u videu (najviše {MAX_SAME}) — video postaje monoton; zameni deo drugim oblikom "
                        f"ili pravim materijalom")
@@ -181,6 +189,123 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
         if len(wa) >= 2 and len(wa & wb) / len(wa) >= 0.6:
             out.append(f"moment {i + 1} ({a['kind']}) samo najavljuje tekst koji moment {i + 2} ({b['kind']}) opet "
                        "prikazuje — spoji ih (npr. natpis od početka, vrednost na reč)")
+
+    # 3b) recenzija test-video-3 v1 → pravila za svaki video (skills/ccc-edit/principles.md)
+    said_in = []  # izgovorene reči po momentu
+    for it in items:
+        said_in.append([w for w in kept if it["start"] - 0.01 <= t_of[w["id"]] < it["end"]])
+    # (a) alat/platforma/brend pomenut u hooku → njegov logo jasno vidljiv u hook animaciji
+    brandish = ("brand", "product", "tool", "app", "platform", "company", "website")
+    told: set[frozenset] = set()
+    for e in ents:
+        logos = {a for a in (e.get("assets") or []) if isinstance(a, str) and "logo" in a}
+        if not logos or (e.get("type") not in brandish and not e.get("_subject")) or frozenset(logos) in told:
+            continue
+        told.add(frozenset(logos))
+        hook_hit = [w for w in _mentions(kept, e.get("match") or []) if in_item(w) == 0]
+        if hook_hit and not (_files(items[0].get("data")) & logos):
+            out.append(f"hook (moment 1) pominje '{e.get('name')}', a njegov logo nije u hook animaciji — alat/platforma "
+                       f"iz hooka mora biti jasno vidljiv ceo ({', '.join(sorted(logos))})")
+    # (b) screenshot samo kad je stranica TO o čemu se govori — ne kao ukras ni "dokaz da postoji"
+    try:
+        from .web import sources
+        shots = {n for n, s in sources(job).items() if s.get("kind") == "screenshot"}
+    except Exception:  # noqa: BLE001 — bez zapisa porekla nema ni screenshot-ova
+        shots = set()
+    # hook se nikad ne gradi na screenshot-u (previše statičan, recenzija v2 s01) — pokret: pravi snimak ili custom animacija
+    if items and (items[0]["kind"] in ("screenshot", "news") or (_files(items[0].get("data")) & shots)
+                  or (items[0]["kind"] == "post" and (items[0].get("data") or {}).get("file"))):
+        out.append(f"hook (moment 1, {items[0]['kind']}) je screenshot/statična stranica — hook mora imati pokret: pravi "
+                   "snimak teme ili custom animacija koja dramatizuje rečenicu (logo alata unutra)")
+    for i, it in enumerate(items):
+        d = it.get("data") or {}
+        used = _files(d) & shots
+        if not used:
+            continue
+        if it["kind"] != "screenshot":
+            out.append(f"moment {i + 1} ({it['kind']}) koristi screenshot stranice ({', '.join(sorted(used))}) kao sliku uz tekst — "
+                       "screenshot ne daje kontekst kad nije TO o čemu se govori; prikaži ideju (logo + animacija)")
+            continue
+        page = set(_words(" ".join(str(m.get("text", "")) for m in d.get("marks") or [])))
+        said = set(_words(" ".join(w["text"] for w in said_in[i])))
+        if page and len(page & said) / len(page) < 0.34:
+            out.append(f"moment {i + 1} (screenshot): istaknut tekst na stranici ('{' / '.join(m.get('text', '') for m in d.get('marks') or [])}') "
+                       "nije ono što se govori — screenshot samo kad govornik priča o toj stranici/vesti/objavi; "
+                       "inače rekreiraj ono što kaže (custom animacija)")
+    # (c) framework: ako video ima korake (steps), isti okvir pokriva SVAKI korak (i uvod/kraj ako postoje)
+    groups: dict[tuple, list[int]] = {}
+    for i, it in enumerate(items):
+        if it["kind"] == "steps":
+            d = it.get("data") or {}
+            key = tuple(_texts(d.get("items")))
+            groups.setdefault(key, []).append(int(d.get("active") or 0))
+    for key, acts in groups.items():
+        n = len(key)
+        miss = [str(a + 1) for a in range(n) if a not in acts]
+        if miss and len(acts) >= 1:
+            out.append(f"framework '{' / '.join(key)}' pokriva {n - len(miss)} od {n} koraka — isti okvir se koristi za "
+                       f"SVAKI korak kroz ceo video (nedostaju koraci {', '.join(miss)})")
+    # (d) CTA "comment <reč>" → nativni Instagram komentar sa ključnom reči, krupno (comment + typing)
+    for w in kept:
+        if re.sub(r"[^a-z]", "", w["text"].lower()) == "comment":
+            i = in_item(w["id"])
+            if i is not None and items[i]["kind"] != "comment":
+                out.append(f"moment {i + 1} ({items[i]['kind']}): CTA 'comment …' na {t_of[w['id']]:.1f}s — prikaži nativni "
+                           "Instagram komentar sa ključnom reči (kind comment, platform instagram, typing: true)")
+            break
+
+    # 3c) recenzija ai-actor-0 v1 → pravila za svaki video (skills/ccc-edit/principles.md 15–21)
+    # (e) video o konkretnoj osobi/proizvodu/događaju: gornja polovina je PRVENSTVENO pravi materijal
+    concrete = bool(subj.get("name")) or any(e.get("type") in ("person", "character", "product", "event") for e in ents)
+    if concrete and len(items) >= 6:
+        real = [i for i, it in enumerate(items) if it["kind"] in REAL and _files(it.get("data"))]
+        share = len(real) / len(items)
+        if share < 0.5:
+            out.append(f"video je o nečem konkretnom ('{subj.get('name') or ents[0].get('name')}'), a pravi materijal je u samo "
+                       f"{len(real)}/{len(items)} momenata ({share:.0%}) — cilj je bar polovina: nađi još fotografija/snimaka "
+                       "za trenutke koji se opisuju (šablon samo za apstraktno)")
+        if subj.get("type") in ("person", "character"):
+            subj_files = {a for a in (subj.get("assets") or []) if isinstance(a, str)}
+            seen = [i + 1 for i, it in enumerate(items) if _files(it.get("data")) & subj_files]
+            distinct = {f for it in items for f in _files(it.get("data")) & subj_files}
+            if len(distinct) < 4:
+                out.append(f"glavna tema je osoba/lik '{subj['name']}', a vidi se samo {len(distinct)} različitih slika "
+                           f"(momenti {', '.join(map(str, seen)) or '—'}) — nađi bar 4 različite slike/snimka koja odgovaraju "
+                           "onome što se tada opisuje (svakodnevica, uloga, reklama…)")
+    # (f) konkretna brojka/tvrdnja o temi → DOKAZ (izvor sa markerom na toj cifri), nikad custom grafika
+    if concrete:
+        for i, it in enumerate(items):
+            if it["kind"] not in ("stat", "notify", "chart", "week", "checklist", "versus", "headline"):
+                continue
+            nums = [t for t in _texts(it.get("data")) if re.search(r"\d", t)]
+            said_nums = [w["text"] for w in said_in[i] if re.search(r"\d", w["text"])]
+            if nums and said_nums:
+                out.append(f"moment {i + 1} ({it['kind']}): konkretna brojka ('{nums[0]}') o temi videa kao custom grafika — "
+                           "tvrdnje i brojke se dokazuju: screenshot izvora sa markerom (--mark) na toj cifri, ili prava objava/profil")
+    # (g) screenshot sa širokim/dugim istaknutim delom → izgovorena cifra/fraza mora imati marker u boji brenda
+    try:
+        from .web import sources as _src
+        wsrc = _src(job)
+    except Exception:  # noqa: BLE001
+        wsrc = {}
+    for i, it in enumerate(items):
+        if it["kind"] != "screenshot":
+            continue
+        d = it.get("data") or {}
+        s_ = wsrc.get(str(d.get("file"))) or {}
+        rect, W_ = s_.get("rect") or {}, s_.get("w") or 0
+        long_part = rect and W_ and (rect.get("w", 0) / W_ > 0.4 or rect.get("h", 0) > 110)
+        if long_part and not [m for m in d.get("marks") or [] if not m.get("blur")]:
+            out.append(f"moment {i + 1} (screenshot): istaknut je veći deo teksta bez markera — označi tačno ono što se tada "
+                       "izgovara (cifra, ime) markerom u boji brenda: ccc shot … --mark \"<tekst>\" + marks u planu")
+    # (h) CTA: vizual komentara ulazi kad se izgovori "comment", ne ranije (prethodna scena nosi ponudu)
+    for w in kept:
+        if re.sub(r"[^a-z]", "", w["text"].lower()) == "comment":
+            i = in_item(w["id"])
+            if i is not None and items[i]["kind"] == "comment" and t_of[w["id"]] - items[i]["start"] > 0.6:
+                out.append(f"moment {i + 1} (comment) počinje {t_of[w['id']] - items[i]['start']:.1f}s pre reči 'comment' — "
+                           "CTA ulazi tačno na reč; ponuda pre nje dobija svoj dinamičan vizual")
+            break
 
     # 4) svaki moment ima razlog
     no_why = [str(i + 1) for i, it in enumerate(items) if not str(it.get("why") or "").strip()]

@@ -98,8 +98,19 @@ def _subtract(spans: list[tuple[float, float]], holes: list[tuple[float, float]]
                 if he < pe:
                     nxt.append((he, pe))
             pieces = nxt
-        out += [(a, b) for a, b in pieces if b - a >= 0.04]
+        out += pieces  # kratka ostrva se filtriraju u compute (tamo se zna gde su reči)
     return out
+
+
+MIN_PIECE = 0.04   # s — ostrvo glasa kraće od ovoga (izolovan klik usana, mljackanje) se ne zadržava
+BREATH_DB = 8.0    # dah = bar BREATH_FRAMES frejmova iznad +8 dB u rupi bez glasa (isti kriterijum kao provera)
+BREATH_FRAMES = 5
+
+
+def _breathy(voice: Voice, a: float, b: float) -> bool:
+    """Rupa između dva dela glasa nije tišina nego dah (zvuk iznad +8 dB, ≥ 50 ms)."""
+    ks = range(max(0, int(round(a / HOP))), min(len(voice.rel), int(round(b / HOP))))
+    return sum(1 for k in ks if voice.rel[k] > BREATH_DB) >= BREATH_FRAMES
 
 
 QUIET_DB = 6.0     # ispod ovoga (dB iznad poda) je tišina
@@ -113,7 +124,10 @@ def _quiet_edge(voice: Voice, t: float, pad: float, limit: float) -> float:
     viđenog do tada i pređe QUIET_DB — tako duža rezerva nikad ne uvuče uzdah, a ne seče rep reči."""
     sign, full = (1 if pad > 0 else -1), abs(pad)
     d = min(SAFE_PAD, full)
-    low = float("inf")
+    # Najtiši deo počinje od frejmova SAFE_PAD-a (uvek zadržani) — inače prvi skenirani frejm udaha
+    # postane "najtiši" i porast se ne primeti (test-video-3: udah pre "It never" je prošao).
+    safe = [int((t + j * HOP) / HOP) if sign > 0 else int((t - (j + 1) * HOP) / HOP) for j in range(round(d / HOP))]
+    low = min((float(voice.rel[k]) for k in safe if 0 <= k < len(voice.rel)), default=float("inf"))
     while d + HOP <= full + 1e-9:
         k = int((t + d) / HOP) if sign > 0 else int((t - d - HOP) / HOP)  # frejm koji bi se dodao
         if not 0 <= k < len(voice.rel):
@@ -160,7 +174,12 @@ def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], 
     # zvuk pre/posle snimanja) ispada — i kad ga Silero prepozna kao "govor".
     tol = 0.15
     word_spans = [(w["start"] - tol, w["end"] + tol) for w in words if w["id"] not in removed]
-    pieces = [(s, e) for s, e in pieces if any(ws < e and we > s for ws, we in word_spans)]
+    inner = [(w["start"], w["end"]) for w in words if w["id"] not in removed]
+    # Kratko "ostrvo" glasa (< MIN_PIECE) je obično klik usana — ali UNUTAR zadržane reči je suglasnik ('Ch' u
+    # "China", 'x' u "exist"): ostaje i spaja se sa susedima (test ai-actor-0: 16 isečenih reči na "fast" tempu).
+    pieces = [(s, e) for s, e in pieces
+              if (e - s >= MIN_PIECE or any(ws < e and s < we for ws, we in inner))
+              and any(ws < e and we > s for ws, we in word_spans)]
     if not pieces:
         raise SystemExit("Ništa ne ostaje posle sečenja.")
 
@@ -198,6 +217,11 @@ def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], 
                 hi = hs
         pre = cfg["lead"] if i == 0 else cfg["pre"]
         post = cfg["tail"] if i == len(raw) - 1 else cfg["post"]
+        # Dah između reči: rezerve bi se preklopile i vratile ga (50 + 70 ms > rupa) → samo SAFE_PAD.
+        if i and _breathy(voice, raw[i - 1][1], s) and not inside_word(raw[i - 1][1], s):
+            pre = min(pre, SAFE_PAD)
+        if i + 1 < len(raw) and _breathy(voice, e, raw[i + 1][0]) and not inside_word(e, raw[i + 1][0]):
+            post = min(post, SAFE_PAD)
         padded.append((_quiet_edge(voice, s, -pre, lo), _quiet_edge(voice, e, post, hi)))
     segs: list[list[float]] = []
     for s, e in padded:

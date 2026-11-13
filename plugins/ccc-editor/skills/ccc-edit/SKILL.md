@@ -27,6 +27,8 @@ CCC_HOME="${CLAUDE_PLUGIN_DATA}" bash "${CLAUDE_PLUGIN_ROOT}/ccc"
 
 Each CCC format has its own dashboard in the menu and its own rules. `ccc formats` lists them: `ready` ones can be edited, `soon` ones show as "Coming soon" in the menu (if the client asks for one: it isn't available yet and arrives automatically with an update). A format takes some elements from Basic Edit (hook, captions, camera) with its own rules — e.g. hook locked above the head, or no hook — and may have elements of its own. The engine enforces these rules; when it refuses a change ("… always uses …"), tell the client that this format works that way.
 
+**Shared principles** for every format with visuals are in `${CLAUDE_PLUGIN_ROOT}/skills/ccc-edit/principles.md` — read it before planning any visuals; it is how CCC thinks, learned from real reviews.
+
 **Format-specific instructions** are in `${CLAUDE_PLUGIN_ROOT}/skills/ccc-edit/formats/<format>.md`. Read the chosen format's file once the choice is known (Step 2) and follow it in Steps 3–6 — it wins over this file where they differ.
 
 ## Step 0 — Editor installed and up to date?
@@ -82,6 +84,8 @@ Each line is one spoken chunk with word ids. Remove with `ccc remove <name> wA-w
 
 - **Off-script:** warm-up before the real start ("All right", "I, I, I…", "Hey hey"), talking to the camera operator ("go a little bit up", "okay"), sounds/words after the last real sentence ("Yeah. Okay. Click.").
 - **Retakes / false starts:** the same sentence started again → keep the **last complete** version, remove the earlier attempts, including the abandoned fragment.
+- **Leftovers around retakes:** after removing a retake, read the lines right before and after it again — a lone "bye", "okay", laugh or half word between two takes must go too (`ccc remove … off-script`). Every cut must be clean (`principles.md` 23).
+- **Check unclear words by listening, never by guessing.** Words marked `nesigurno` in the hook or the first sentence, a name the speaker says (people, products — the transcript often swallows them into a neighbour word, e.g. "Her name is… And" where "Fang Taozi, and" was said), and any line that reads oddly: `ccc listen <name> <start> <end>` (original-video seconds, a few seconds around it) prints what was actually said (`?` = still unsure). Fix captions with `ccc word <name> wID "Correct"` (one id may hold several words, e.g. `"Fang Taozi, and"`; `""` hides a ghost word); spell names as your research sources do.
 - **Keep** anything that is content, even if unusual. When in doubt, keep it.
 - Never rewrite or invent words.
 
@@ -102,7 +106,7 @@ Run it in the background (~3–5 min). Tell the client it's being edited and rou
 
 | ❌ line mentions | Fix |
 |---|---|
-| `hook … NEMA MESTA` (hook too long) | the only case where you ask the client: *"Your hook is a bit long for the screen — can you shorten it?"* → `ccc choices <name> hook_text="…"` |
+| `hook … NEMA MESTA` (hook too long) | Stacked hook with your own `\|`: save the same text **without** `\|` (`ccc choices <name> hook_text="…"`) — the engine picks a split where both lines fit (never after "a/the/to…"), then build. Only if it still doesn't fit, this is the one case where you ask the client: *"Your hook is a bit long for the screen — can you shorten it?"* |
 | `boja naglaska … pretamna` (color too dark) | ask the client for a lighter shade or suggest one from the palette → `ccc choices <name> color=…` |
 | `glas bez titla` / `poslednji titl` | run `ccc captions <name>` again, then build |
 | `isečen glas` / `bez detektovanog glasa` | a removal you made cut real speech → `ccc transcript <name>`, `ccc keep` the affected words |
@@ -135,6 +139,6 @@ If `ccc choices` answers that the format always uses something, tell the client 
 
 ## Limits — say so instead of guessing
 
-- English speech only; one speaker on camera; vertical (9:16) video. A horizontal video is not reframed yet — tell the client.
+- English speech only; one speaker on camera; vertical (9:16) video. A horizontal video works in **Split Screen** (the engine reframes it automatically: a virtual camera follows the speaker's face in the bottom half); other formats don't reframe it yet — tell the client and offer Split Screen.
 - No face found → captions and hook fall back to a default position; mention it.
 - No sound in the file → cannot edit; ask for the original recording.

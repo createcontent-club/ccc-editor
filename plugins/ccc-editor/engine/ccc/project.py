@@ -37,7 +37,7 @@ DEFAULT_CUT = {
     "post": 0.07,           # …i 70 ms posle glasa → između rečenica ~0.12 s
     "lead": 0.01,           # video kreće 10 ms pre prvog sloga (provera: glas ≤ 1 frejm od početka)
     "tail": 0.03,           # i završava 30 ms posle poslednjeg (≤ 1 frejm, bez pauze na kraju)
-    "fade": 0.005,          # mikro-fade zvuka na svakom rezu (s)
+    "fade": 0.012,          # mikro-fade zvuka na svakom rezu (s) — 5 ms je ostavljao čujne klikove (test ai-actor-0)
 }
 
 SPLIT_LINE = 960  # Split Screen: linija podele (px na 1920) — sadržaj gore, govornik dole

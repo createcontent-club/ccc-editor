@@ -36,12 +36,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 
 from .audio import loudness
-from .project import DEFAULT_CUT, PACING, SPLIT_LINE, Job
+from .project import DEFAULT_CUT, PACING, ROOT, SPLIT_LINE, Job
 
 
 def _recut(job: Job, p: dict) -> dict:
@@ -69,6 +70,42 @@ def _recut(job: Job, p: dict) -> dict:
     return p
 
 
+REFRAME_VERSION = 1  # povećaj kad se promeni ccc/reframe.py → stari reframe-ovi se prave ponovo
+
+
+def _speaker_video(job: Job, p: dict) -> None:
+    """Horizontalan izvor: Split Screen dobija reframe (kamera prati lice, govornik u donjoj polovini);
+    ostali formati dobijaju nazad originalni snimak. Original se čuva kao video-wide.mp4."""
+    src = p.get("source") or {}
+    if not src.get("width") or src["width"] <= src["height"]:
+        return
+    cur, wide = job.public / "video.mp4", job.public / "video-wide.mp4"
+    if not wide.exists():
+        cur.rename(wide)
+    if (p.get("layout") or {}).get("type") != "split":
+        if p.pop("reframe", None) is not None or not cur.exists():
+            shutil.copy(wide, cur)
+            print("▶ Horizontalan snimak: originalni kadar (reframe postoji samo za Split Screen)")
+        return
+    if (p.get("reframe") or {}).get("version") == REFRAME_VERSION and cur.exists():
+        return
+    import subprocess
+    print("▶ Reframe: kamera prati lice govornika (horizontalni snimak → donja polovina)…")
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "engine")}
+    tmp = job.public / "video-reframe.mp4"
+    r = subprocess.run([sys.executable, "-m", "ccc.reframe", str(wide), str(tmp), str(p["fps"])],
+                       capture_output=True, text=True, env=env)
+    if r.returncode != 0 or not tmp.exists():
+        raise SystemExit("Reframe nije uspeo:\n" + (r.stderr or r.stdout)[-1500:])
+    tmp.replace(cur)
+    info = json.loads(r.stdout.strip().splitlines()[-1])
+    p["reframe"] = {"version": REFRAME_VERSION, **info}
+    print(f"  ✓ prozor {info['window'][0]}×{info['window'][1]} iz {info['source'][0]}×{info['source'][1]} "
+          f"(×{info['scale']}), lice u {info['faces']}/{info['samples']} uzoraka, kamera se pomera do {info['pan_px']} px")
+    if not info["faces"]:
+        print("  ! lice nije nađeno — miran centralni kadar")
+
+
 def _build(job: Job, name: str) -> None:
     """Izbori klijenta → gotov video. Svaki korak je ista komanda koju bi pokrenuo i ručno."""
     from .check import run_checks
@@ -93,6 +130,7 @@ def _build(job: Job, name: str) -> None:
                                                               if k == "cropY"}}
     else:
         p.pop("layout", None)
+    _speaker_video(job, p)
     job.save(p)
     from .fonts import get as get_font
     print(f"▶ Format: {fmt['title']} · font: {get_font(p['font'])['name']} · pacing: {p['pacing']}")
@@ -132,6 +170,10 @@ def _build(job: Job, name: str) -> None:
         from .visuals import timeline
         remember(job, timeline(p)[0])
     print("\n" + client_report(p, p["exported"]))
+    from . import storyboard
+    if storyboard.available():  # razvoj: svaki test dobija storyboard za ocenu (klijentski paket ga nema)
+        sb = storyboard.make(job, p)
+        print(f"\nSTORYBOARD v{sb['version']}: {sb['html']} ({sb['scenes']} scena) — objavi ga kao Artifact (vidi CLAUDE.md)")
 
 
 def _range(spec: str) -> tuple[str, str]:
@@ -185,9 +227,21 @@ def main(argv: list[str]) -> None:
     sa2 = sub.add_parser("assets"); sa2.add_argument("name"); sa2.add_argument("--add", dest="add_file")
     sa2.add_argument("--note", default="")
     sw = sub.add_parser("word"); sw.add_argument("name"); sw.add_argument("id"); sw.add_argument("text")
+    sl = sub.add_parser("listen"); sl.add_argument("name"); sl.add_argument("start", type=float); sl.add_argument("end", type=float)
     sy = sub.add_parser("key"); sy.add_argument("name"); sy.add_argument("index", type=int); sy.add_argument("word")
     sa = sub.add_parser("approve"); sa.add_argument("name"); sa.add_argument("gate", choices=["cut", "captions", "hook", "camera", "audio", "final"])
+    sb = sub.add_parser("storyboard"); sb.add_argument("name"); sb.add_argument("--label")
+    sb.add_argument("--artifact", help="URL objavljenog storyboard-a (upisuje se u meta.json poslednje verzije)")
+    sfb = sub.add_parser("feedback"); sfb.add_argument("name"); sfb.add_argument("--save", dest="notes", required=True,
+                                                                                help="JSON iz ArtifactData list (kolekcija notes)")
+    sfb.add_argument("--version", type=int)
+    sle = sub.add_parser("lessons"); sle.add_argument("--kind"); sle.add_argument("--last", type=int, default=40)
     a = ap.parse_args(argv)
+
+    if a.cmd == "lessons":  # razvoj: sve što je naučeno iz storyboard ocena (engine/ccc/storyboard.py)
+        from .storyboard import lessons
+        print(lessons(a.kind, a.last))
+        return
 
     if a.cmd == "doctor":
         import subprocess
@@ -301,7 +355,8 @@ def main(argv: list[str]) -> None:
         if not info["has_audio"]:
             raise SystemExit("Snimak nema zvuk — nema šta da se transkribuje.")
         if info["width"] > info["height"]:
-            print("! Horizontalan snimak — reframe u 9:16 još ne postoji, render će biti horizontalan.")
+            print("! Horizontalan snimak — Split Screen ga automatski reframe-uje (kamera prati lice); "
+                  "za ostale formate reframe u 9:16 još ne postoji.")
         print(f"▶ Prijem: {info['width']}×{info['height']}, {info['fps']} fps, {info['duration']:.1f}s, {info['codec']}")
         job.dir.mkdir(parents=True, exist_ok=True)
         norm = normalize(src, info, job.public / "video.mp4", job.dir / "source-audio.wav")
@@ -344,6 +399,10 @@ def main(argv: list[str]) -> None:
         text = cut_review(p)
         (job.dir / "review.md").write_text(text)
         print(text)
+    elif a.cmd == "listen":
+        from .transcribe import listen
+        out = listen(job.dir / "source-audio.wav", a.start, a.end)
+        print(" ".join(f"{w}@{t0:.2f}" + ("?" if pr < 0.5 else "") for t0, _, w, pr in out) or "(tišina)")
     elif a.cmd == "retime":
         from .transcribe import retime_numbers
         changed = retime_numbers(job.dir / "source-audio.wav", p["words"], p["utterances"])
@@ -441,6 +500,24 @@ def main(argv: list[str]) -> None:
                 print(f"! Hook ima {len(h['lines'])} reda i ne staje ni ispod titla ni iznad glave — treba kraći tekst.")
     elif a.cmd == "build":
         _build(job, a.name)
+    elif a.cmd == "storyboard":
+        from . import storyboard
+        if a.artifact:
+            d = storyboard.set_artifact(job, a.artifact)
+            print(f"✓ {d.name}: artifact {a.artifact}")
+        else:
+            sb = storyboard.make(job, p, a.label)
+            print(f"STORYBOARD v{sb['version']}: {sb['html']} ({sb['scenes']} scena)")
+    elif a.cmd == "feedback":
+        from .storyboard import VERDICTS, save_feedback
+        r = save_feedback(job, Path(a.notes), a.version)
+        c = r["counts"]
+        print(f"✓ {r['dir'].name}: {sum(c.values())}/{r['scenes']} ocenjeno — "
+              + ", ".join(f"{c[k]} {VERDICTS[k]}" for k in VERDICTS) + f" · skup za učenje: {r['dataset']} redova")
+        for x in r["records"]:
+            if x.get("verdict") in ("fix", "redo") or x.get("comment"):
+                print(f"  {x['scene']} {x.get('kind', '')} {x.get('t', '')} {VERDICTS.get(x.get('verdict') or '', '—').upper()}"
+                      + (f": {x['comment']}" if x.get("comment") else ""))
     elif a.cmd == "report":
         from .review import client_report
         print(client_report(p, p.get("exported")))

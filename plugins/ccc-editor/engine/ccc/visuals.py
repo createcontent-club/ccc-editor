@@ -23,17 +23,19 @@ from pathlib import Path
 KINDS = {
     "stat": {"required": ["value"], "optional": ["label", "sub", "at", "ring", "of", "tone", "source"]},
     "week": {"required": ["value"], "optional": ["label", "per", "days", "sub", "at"]},
-    "steps": {"required": ["items"], "optional": ["active", "title"]},          # items: tekst ili {"text","at"}
-    "flow": {"required": ["nodes"], "optional": ["title", "hero", "layout"]},   # nodes: {"icon","label","at"}; layout: row|column|quad
+    "steps": {"required": ["items"], "optional": ["active", "title", "total", "icon"]},  # items: tekst ili {"text","at"}; active -1 = uvod (framework), n = svi otkriveni
+    "flow": {"required": ["nodes"], "optional": ["title", "hero", "layout", "loop", "center"]},  # nodes: {"icon"|"file","label","at"}; layout: row|column|quad|hub; loop/center samo uz quad
     "versus": {"required": ["left", "right"], "optional": ["title"]},           # {"label","sub","at"}
     "chart": {"required": ["bars"], "optional": ["label", "value", "at", "y", "x", "note", "tone", "source"]},  # bars: brojevi
     "checklist": {"required": ["items"], "optional": ["title"]},               # items: tekst ili {"text","at"}
     "chat": {"required": ["messages"], "optional": ["title", "platform"]},     # {"from": "them"|"you","text","at"}
-    "filter": {"required": ["label"], "optional": ["total", "keep", "at", "sub"]},
+    "filter": {"required": ["label"], "optional": ["total", "keep", "at", "sub", "icon"]},
     "headline": {"required": ["words"], "optional": ["accent", "sub", "tone"]},  # words: fraze ili {"text","at"}
     "notify": {"required": ["items"], "optional": []},                         # {"icon","title","body","at"}
     "key": {"required": ["line1"], "optional": ["icon", "line2"]},
-    "comment": {"required": ["text"], "optional": ["user", "reply", "at", "platform", "author"]},
+    "search": {"required": ["logo"], "optional": ["query", "meter", "placeholder"]},  # logo {"file"}, query {"text","at"}, meter {"value","label","used","at","tone"}
+    "resource": {"required": ["title"], "optional": ["sub", "badge", "badgeAt", "icon", "rows", "kicker", "at"]},  # CTA resurs (izveštaj/vodič) kao predmet
+    "comment": {"required": ["text"], "optional": ["user", "reply", "at", "platform", "author", "typing"]},  # typing: CTA — ključna reč se kuca u Instagram polje
     "logo": {"required": [], "optional": ["file", "name", "sub", "logos", "title", "at"]},      # pravi logo(i) sa interneta
     "screenshot": {"required": ["file"], "optional": ["focus", "highlight", "device", "zoomAt", "url", "marks"]},  # marks: [{"text","at"}] iz ccc shot --mark
     "news": {"required": ["headline", "outlet"], "optional": ["logo", "image", "date", "highlight", "at"]},
@@ -42,15 +44,15 @@ KINDS = {
                                                              "headline", "verified", "likes", "comments", "reposts",
                                                              "views", "highlight", "file", "at"]},
     "image": {"required": ["file"], "optional": ["note", "caption"]},   # caption: tekst ili {"text","at"}
-    "mediatext": {"required": ["file", "lines"], "optional": ["title", "side", "start"]},  # slika/snimak + rečenice {"text","at"}
+    "mediatext": {"required": ["file", "lines"], "optional": ["title", "side", "start", "more"]},  # slika/snimak + rečenice {"text","at"}; more: [{"file","at"}] — još slika u istom okviru
     "posts": {"required": ["items"], "optional": []},
-    "spotlight": {"required": ["file"], "optional": ["title", "logo", "start"]},  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
+    "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
 }
 ICONS = ["clock", "calendar", "chart", "trending", "money", "users", "user", "message", "mail", "target", "zap",
          "rocket", "check", "x", "eye", "search", "star", "heart", "bot", "phone", "camera", "video", "lock",
          "gift", "lightbulb", "megaphone", "filter", "link", "sparkles", "trophy", "instagram", "send", "file",
-         "bell", "handshake", "inbox", "play", "comment", "crown", "flame", "ban", "hourglass", "shield"]
+         "bell", "handshake", "inbox", "play", "comment", "crown", "flame", "ban", "hourglass", "shield", "folder", "question"]
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm"}
 MIN_LEN, MAX_LEN = 1.2, 4.0   # s — kraći se odbija; duži dobija upozorenje (gledalac mora stalno da dobija nešto novo)
@@ -220,6 +222,36 @@ def warnings(items: list[dict]) -> list[str]:
             if seen + 0.05 < need:
                 out.append(f"'{tx}' (od {it['start'] + bt:.2f}s) je na ekranu {seen:.1f}s, a treba bar {need:.1f}s da se "
                            f"pročita — neka uđe na početku fraze ili produži moment")
+    # Nikad prazan kadar (recenzija ai-actor-0 v1, s15): u šablonima čiji se SVI delovi pojavljuju na reč, prvi deo
+    # mora doći odmah — inače gornja polovina stoji prazna dok se ne izgovori.
+    TIMED = ("flow", "notify", "headline", "comment", "chat")  # filter: natpis i mreža ulaze odmah
+    for it in items:
+        if it["kind"] not in TIMED and not (it["kind"] == "checklist" and not it["data"].get("title")):
+            continue
+        ts = []
+
+        def walk_a(n):
+            if isinstance(n, dict):
+                if "atT" in n:
+                    ts.append(n["atT"])
+                for v in n.values():
+                    walk_a(v)
+            elif isinstance(n, list):
+                for v in n:
+                    walk_a(v)
+        walk_a(it["data"])
+        if it["kind"] == "comment":
+            ts = [0.0]  # komentar se kuca od početka; odgovor na reč
+        if ts and min(ts) > 0.7:
+            out.append(f"'{it['kind']}' od {it['start']:.2f}s: prvi deo se pojavljuje tek posle {min(ts):.1f}s — gornja polovina je "
+                       "prazna; prvi deo na prvu reč momenta ili kreni moment kasnije (nikad prazan kadar)")
+    # Duža scena sa jednom slikom (recenzija ai-actor-0 v1, s21): smeni 2–3 slike u istom okviru.
+    for it in items:
+        d = it["data"]
+        if it["kind"] == "mediatext" and not d.get("more") and it["end"] - it["start"] > 5.0 and \
+                not str(d.get("file", "")).lower().endswith(tuple(VIDEO_EXT)) and "logo" not in str(d.get("file", "")):
+            out.append(f"mediatext od {it['start']:.2f}s traje {it['end'] - it['start']:.1f}s sa jednom slikom — dodaj 1–2 slike "
+                       "(more: [{file, at}]) da se smenjuju na reč")
     if items and items[0]["kind"] in ("headline", "key", "stat"):
         out.append(f"prvi moment je '{items[0]['kind']}' — otvaranje (dok traje hook) mora biti hero vizual: "
                    f"flow, versus, chart, filter ili week")
@@ -259,10 +291,18 @@ def validate_plan(plan: dict, job) -> list[str]:
             errs.append(f"moment {i}: nepoznata ikonica '{d['icon']}' (postoje: {', '.join(ICONS)})")
         if k == "steps" and not (2 <= len(d.get("items") or []) <= 5):
             errs.append(f"moment {i}: steps ima 2–5 stavki")
+        if k == "steps" and not (-1 <= int(d.get("active") or 0) <= len(d.get("items") or [])):
+            errs.append(f"moment {i}: steps active je -1 (uvod) … {len(d.get('items') or [])} (svi otkriveni)")
+        if k == "steps" and d.get("icon") and d["icon"] not in ICONS:
+            errs.append(f"moment {i}: nepoznata ikonica '{d['icon']}'")
         if k == "flow" and not (2 <= len(d.get("nodes") or []) <= 4):
             errs.append(f"moment {i}: flow ima 2–4 čvora")
-        if k == "flow" and d.get("layout") not in (None, "row", "column", "quad"):
-            errs.append(f"moment {i}: flow layout je row | column | quad")
+        if k == "flow" and d.get("layout") not in (None, "row", "column", "quad", "hub"):
+            errs.append(f"moment {i}: flow layout je row | column | quad | hub")
+        if k == "flow" and d.get("layout") == "hub" and len(d.get("nodes") or []) < 3:
+            errs.append(f"moment {i}: hub traži 3–4 čvora (prvi gore, ostali ispod)")
+        if k == "flow" and (d.get("loop") or d.get("center")) and d.get("layout") != "quad":
+            errs.append(f"moment {i}: loop/center postoje samo uz layout quad (petlja kroz 3–4 čvora)")
         if k == "flow" and d.get("layout") == "quad" and len(d.get("nodes") or []) < 3:
             errs.append(f"moment {i}: quad raspored traži 3–4 čvora")
         if not str(it.get("why") or "").strip():
@@ -286,7 +326,7 @@ def validate_plan(plan: dict, job) -> list[str]:
                     yield from files_in(v)
         if k == "post" and d.get("platform") not in ("x", "reddit", "linkedin", "threads"):
             errs.append(f"moment {i} (post): platform mora biti x | reddit | linkedin | threads")
-        if k in ("logo", "screenshot", "news", "photo", "post"):
+        if k in ("logo", "screenshot", "news", "photo", "post", "search"):
             from .assets import nfc, prepare
             man = prepare(job)
             for f in files_in(d):
@@ -341,6 +381,23 @@ def validate_plan(plan: dict, job) -> list[str]:
                 errs.append(f"moment {i} (mediatext): 1–4 rečenice u lines")
             if d.get("side") not in (None, "left", "right"):
                 errs.append(f"moment {i} (mediatext): side je left | right")
+            # Slika se NIKAD ne seče (recenzija ai-actor-0 v1, s16): okvir medija je 430×560 (uspravan). Široka slika bez
+            # lica ili sa 2+ lica (kolaž, dva kadra) bi bila presečena → oblik se bira prema slici (pun prikaz, photo, image).
+            man = prepare(job)
+            for x in [d] + [y for y in (d.get("more") or []) if isinstance(y, dict)]:
+                mm = man.get(nfc(str(x.get("file"))))
+                if x is not d and mm is None:
+                    errs.append(f"moment {i} (mediatext): more → fajl '{x.get('file')}' ne postoji")
+                    continue
+                if not mm or mm["kind"] != "image" or not mm.get("w") or not mm.get("h") or "logo" in str(x.get("file")):
+                    continue
+                ar = mm["w"] / mm["h"]
+                off = max(ar / (430 / 560), (430 / 560) / ar)
+                fc = mm.get("face") or {}
+                if off > 1.6 and (not fc or fc.get("n", 1) >= 2):
+                    errs.append(f"moment {i} (mediatext): '{x.get('file')}' ({mm['w']}×{mm['h']}) bi bio isečen u uskom okviru"
+                                + (" — na slici su 2+ lica (kolaž)" if fc else " — nema lica za centriranje")
+                                + "; izaberi oblik prema slici (spotlight/photo/image ceo) ili drugu sliku")
         if k == "posts":
             from .assets import nfc, prepare
             man = prepare(job)

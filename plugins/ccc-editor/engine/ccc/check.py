@@ -57,11 +57,19 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     # 1. Glas zadržanih reči nije isečen, i nijedna zadržana reč nije ostala bez glasa.
     removed = {w for r in p["removed"] for w in r["words"]}
     clipped, silent = [], []
+    # Izolovano ostrvo glasa kraće od MIN_PIECE (klik usana) rez namerno ne zadržava — nije isečen slog.
+    from .cut import MIN_PIECE
+    blips = [(s, e) for s, e in src_v.runs if e - s < MIN_PIECE]
+
+    def blip(k: int) -> bool:
+        t = k * HOP + HOP / 2
+        return any(s <= t < e for s, e in blips)
+
     for w in p["words"]:
         if w["id"] in removed:
             continue
         ks = range(int(w["start"] / HOP), int(w["end"] / HOP) + 1)
-        voiced = [k for k in ks if src_v.speech(k)]
+        voiced = [k for k in ks if src_v.speech(k) and not blip(k)]
         if not voiced:
             silent.append(f"{w['id']} '{w['text']}'")
         elif any(not kept(k * HOP + HOP / 2) for k in voiced):
@@ -75,6 +83,13 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     # 2. Početak i kraj: video kreće na prvom slogu i završava se na poslednjem.
     vm = out_v.mask
     first = int(np.argmax(vm)) * HOP
+    # Silero na samom početku fajla nema kontekst i kasni (~40–70 ms na mekom "Th"): meri se na IZVORU — koliko
+    # posle početka prvog segmenta kreće prvi glas (test ai-actor-0: lažno "70 ms" dok je izvor kretao na 10 ms).
+    s0 = segs[0]["srcStart"]
+    k0 = int(s0 / HOP)
+    while k0 * HOP < segs[0]["srcEnd"] and not src_v.speech(k0):
+        k0 += 1
+    first = min(first, max(0.0, k0 * HOP - s0))
     last_end = (len(vm) - int(np.argmax(vm[::-1]))) * HOP
     total = sum(g["vFrames"] for g in segs) / fps
     tail = total - last_end
@@ -95,6 +110,16 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         return segs[-1]["srcEnd"]
 
     kept_words = [w for w in p["words"] if w["id"] not in removed]
+    # Rupa u kojoj IZVOR ima glas (kratak suglasnik zadržan u reči — 'd' u "doesn't") nije pauza: Silero ga na
+    # isečenom zvuku često ne prepozna jer je kraći od svog prozora (test ai-actor-0).
+    def src_voiced(t: float, d: float) -> bool:
+        k = t
+        while k < t + d:
+            if src_v.speech(int(out_to_src(k) / HOP)):
+                return True
+            k += HOP
+        return False
+    long_gaps = [(t, d) for t, d in long_gaps if not src_voiced(t, d)]
 
     def in_word(t: float, d: float) -> bool:  # zatvaranje suglasnika ("bu-t", "re-cursive") nije uzdah
         a, b = out_to_src(t), out_to_src(t + d - 1e-3)

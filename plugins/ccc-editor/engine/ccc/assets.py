@@ -89,10 +89,49 @@ def _open_image(f: Path) -> Image.Image:
     return im
 
 
+PREP_V = 2  # verzija pripreme (deo ključa keša): 2 = isecanje "slike u slici" (inner_panel)
+
+
+def inner_panel(im: Image.Image) -> tuple[int, int] | None:
+    """Slika u slici (recenzija ai-actor-0 v2, s01): uspravan kadar u sredini, a strane jednobojne ili zamućena kopija
+    (pillarbox, česte objave i screenshot-ovi snimaka). Vraća (x0, x1) kadra u px slike, ili None.
+    1) jednobojne strane: kolone bez ikakve promene od vrha do dna;
+    2) zamućene strane: dve uspravne ivice CELE visine, simetrične oko sredine — granica kadra je prava linija u
+       svakom redu, a ivice sadržaja nisu (zato medijana po redovima)."""
+    import numpy as np
+    W = min(800, im.width)
+    g = np.asarray(im.convert("L").resize((W, max(32, round(im.height * W / im.width)))), dtype=np.float32)
+    w = g.shape[1]
+    sc = im.width / w
+    flat = g.std(axis=0) < 3.0
+    if flat[:3].all() and flat[-3:].all():
+        x0 = int(np.argmin(flat))
+        x1 = w - 1 - int(np.argmin(flat[::-1]))
+        if 0.2 <= (x1 - x0) / w <= 0.85:
+            return round(x0 * sc), round((x1 + 1) * sc)
+    s = np.median(np.abs(np.diff(g, axis=1)), axis=0)
+    base = float(np.median(s)) + 1e-3
+    best, bx, tol = 0.0, None, max(2, w // 60)
+    for x in range(int(w * 0.05), int(w * 0.42)):
+        for x2 in range(w - 2 - x - tol, w - 2 - x + tol + 1):
+            if x < x2 < len(s):
+                v = float(min(s[x], s[x2]))
+                if v > best:
+                    best, bx = v, (x, x2)
+    if bx and best > 6 * base and best > 2.5:
+        return round((bx[0] + 1) * sc), round((bx[1] + 1) * sc)
+    return None
+
+
 def _image(f: Path, ready: Path, preview: Path, u: str) -> dict:
     im = ImageOps.exif_transpose(_open_image(f))  # fotografije sa telefona: prava rotacija
     alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
     im = im.convert("RGBA" if alpha else "RGB")
+    panel = None
+    if not alpha and not f.name.startswith("web-shot") and "logo" not in f.stem.lower():
+        panel = inner_panel(im)  # samo pravi kadar ide dalje — okvir se centrira prema njemu, ne prema zamućenim stranama
+        if panel:
+            im = im.crop((panel[0], 0, panel[1], im.height))
     im.thumbnail((MAX_IMG, MAX_IMG))
     if not alpha and "logo" in f.stem.lower():  # logo na beloj podlozi → bela podloga postaje providna (pločica, ne beo kvadrat)
         cut = _knock_out_white(im)
@@ -104,7 +143,7 @@ def _image(f: Path, ready: Path, preview: Path, u: str) -> dict:
     th.thumbnail((640, 640))
     th.save(preview / (u + ".jpg"), quality=85)
     return {"kind": "image", "ready": out.name, "w": im.width, "h": im.height, **_edge(im), **_logo_tone(im),
-            **_face(out)}
+            **_face(out), **({"panel": list(panel)} if panel else {})}
 
 
 def _knock_out_white(im: Image.Image):
@@ -224,7 +263,7 @@ def prepare(job, notes: dict | None = None) -> dict:
     ready.mkdir(parents=True, exist_ok=True)
     preview.mkdir(parents=True, exist_ok=True)
     for f in originals(job):
-        key = [f.stat().st_size, int(f.stat().st_mtime)]
+        key = [f.stat().st_size, int(f.stat().st_mtime), PREP_V]
         name, u = nfc(f.name), uid(f.name)
         if man.get(name, {}).get("key") == key:
             continue

@@ -52,7 +52,9 @@ def image_face(path: str) -> dict | None:
     x, y, fw, fh = [float(v) for v in max(faces, key=lambda f: f[2] * f[3])[:4]]
     if fw * fh < 0.004 * w * h:  # sitno lice u gomili — nije portret
         return None
-    return {"x": round(x), "y": round(y), "w": round(fw), "h": round(fh)}
+    # n = koliko krupnih lica ima (≥ 35% najvećeg): 2+ = kolaž/dva kadra — `cover` u uskom okviru bi ih presekao
+    n = sum(1 for f in faces if float(f[2]) * float(f[3]) >= 0.35 * fw * fh)
+    return {"x": round(x), "y": round(y), "w": round(fw), "h": round(fh), "n": n}
 
 
 if __name__ == "__main__":

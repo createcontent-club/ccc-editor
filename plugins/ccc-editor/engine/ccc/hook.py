@@ -146,9 +146,33 @@ def _fit_px(part: str, spec: dict, fid: str | None = None) -> tuple[int, float]:
     return spec["min_px"], w
 
 
+def _fit_split(text: str, fid: str | None) -> str:
+    """Bez klijentove crte '|': od prirodnih mesta za prelom bira prvo na kom OBA dela staju u jedan red
+    (test ai-actor-0: prelom posle "fortune" je bio predugačak, a "charges | a fortune…" staje)."""
+    if "|" in text:
+        return text
+    words = text.split()
+    n = len(words)
+    if n < 4:
+        return text
+    first = split_stack(text)
+    cands = [" ".join(first)] if len(first) == 2 else []
+    dangling = {"a", "an", "the", "to", "of", "for", "and", "or", "in", "on", "with", "my", "your", "her", "his", "their"}
+    order = sorted((i for i in range(2, n - 1) if words[i - 1].lower() not in dangling), key=lambda i: (not (words[i].lower() in SPLIT_BEFORE or words[i - 1].endswith((",", ":", "—"))),
+                                                   abs(i - n / 2)))
+    cands += [" ".join(words[:i]).rstrip(",:—") + " | " + " ".join(words[i:]) for i in order]
+    for c in cands:
+        c2 = c if "|" in c else c.replace(first[0], first[0] + " |", 1)
+        parts = [x.strip() for x in c2.split("|", 1)]
+        if all(_fit_px(pt if j else sentence_case(pt), [STACK["top"], STACK["sub"]][j], fid)[1] <= STACK["max_w"]
+               for j, pt in enumerate(parts)):
+            return c2
+    return text
+
+
 def _stack_layout(text: str, fid: str | None = None) -> dict:
     # Prvi deo uvek velikim slovom; drugi ostaje kako je napisan (nastavak rečenice: "in your industry").
-    parts = split_stack(text)
+    parts = split_stack(_fit_split(text, fid))
     parts = [sentence_case(parts[0])] + parts[1:]
     specs = [STACK["top"], STACK["sub"]][: len(parts)]
     sizes, widths, heights = [], [], []
