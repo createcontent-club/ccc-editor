@@ -59,7 +59,13 @@ KINDS = {
     # cursor [{to, at, click}], zoom [{to, at, scale}], cont (nastavak prethodnog app momenta, bez ulaza).
     "app": {"required": ["app"], "optional": ["theme", "title", "greeting", "placeholder", "model", "user", "workspace", "pages",
                                                "icon", "blocks", "cells", "input", "send", "reply", "menu", "cursor", "rec", "voice",
-                                               "notes", "card", "tabs", "zoom", "cont", "dim"]},
+                                               "notes", "card", "tabs", "zoom", "cont", "dim",
+                                               # faza 1 UI kita (14. nov 2026): instagram / iphone / gmail / n8n·zapier·make / web
+                                               "screen", "handle", "name", "bio", "avatar", "verified", "posts", "followers",
+                                               "following", "grid", "follow", "button", "own", "story", "category", "link",
+                                               "metric", "chart", "rows", "period", "dates", "threads", "requests",
+                                               "notifications", "date", "time", "wallpaper", "emails", "count", "compose",
+                                               "nodes", "run", "file", "url", "marks", "scroll"]},
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -358,7 +364,7 @@ def validate_plan(plan: dict, job) -> list[str]:
                 if b.get("do") == "cycle" and not any(x.get("do") == "clone" and x.get("target") == b.get("target") for x in d.get("beats") or []):
                     errs.append(f"moment {i}: 'cycle' vrti kopije — prvo 'clone' istog glumca")
         if k == "app":
-            errs += _app_errors(i, d)
+            errs += _app_errors(i, d, job)
         if k == "faceoff":
             sides = d.get("sides") or []
             if len(sides) != 2:
@@ -629,31 +635,61 @@ MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen
                 "nema reči", "prazn", "fokus screenshot-a")
 
 
-APPS = ("claude", "chatgpt", "notion", "sheets")
-APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx
+APPS = ("claude", "chatgpt", "notion", "sheets", "instagram", "iphone", "gmail", "n8n", "zapier", "make", "web")
+APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx (ostale aplikacije: meni samo sa svojim items)
     "claude": ["Add files or photos", "Take a screenshot", "Add to project", "Use a skill"],
     "chatgpt": ["Add photos & files", "Create image", "Deep research", "Agent mode"],
     "notion": ["Text", "Heading 1", "To-do list", "Table", "Ask AI"],
     "sheets": ["Add-ons", "Macros", "Apps Script"],
 }
-APP_ANCHORS = {
-    "claude": {"window", "rail", "main", "greeting", "input", "plus", "toggle", "model", "mic", "send", "chat"},
-    "chatgpt": {"window", "rail", "main", "greeting", "input", "plus", "mic", "send", "model", "chat"},
-    "notion": {"window", "sidebar", "page", "title", "blocks", "input"},
-    "sheets": {"window", "title", "menubar", "toolbar", "formula", "grid", "input"}
-              | {f"{c}{r}" for c in "ABCDE" for r in range(1, 9)},
-}
+IG_SCREENS = ("profile", "insights", "inbox")
+APP_ICONS = {"instagram", "gmail", "stripe", "shopify", "calendar", "messages", "whatsapp", "slack", "paypal", "sheets",
+             "notion", "openai", "chatgpt", "claude", "webhook", "typeform", "calendly", "hubspot", "zoom", "tiktok", "youtube",
+             "linkedin", "x", "discord", "airtable", "schedule", "cron", "code", "filter", "if", "ai", "agent", "email", "mail",
+             "database", "crm"}  # isto kao APP_ICON_NAMES u remotion/src/components/appIcons.tsx
 
 
-def _app_errors(i: int, d: dict) -> list[str]:
-    """Oblik `app` momenta: poznata aplikacija, stavka menija postoji, kamera/kursor ciljaju postojeće delove."""
+def _app_anchor_names(app: str, d: dict) -> set[str]:
+    """Imenovani delovi aplikacije na koje ciljaju kamera (zoom.to) i kursor/dodir (cursor.to) — isto kao anchors() u skinu."""
+    if app == "claude":
+        return {"window", "rail", "main", "greeting", "input", "plus", "toggle", "model", "mic", "send", "chat"}
+    if app == "chatgpt":
+        return {"window", "rail", "main", "greeting", "input", "plus", "mic", "send", "model", "chat"}
+    if app == "notion":
+        return {"window", "sidebar", "page", "title", "blocks", "input"}
+    if app == "sheets":
+        return {"window", "title", "menubar", "toolbar", "formula", "grid", "input"} | {f"{c}{r}" for c in "ABCDE" for r in range(1, 9)}
+    if app == "instagram":
+        sc = d.get("screen") or "profile"
+        if sc == "insights":
+            return {"header", "period", "metric", "value", "chart", "rows"} | {f"row{j}" for j in range(len(d.get("rows") or []))}
+        if sc == "inbox":
+            return {"header", "search", "requests", "list", "input"} | {f"row{j}" for j in range(8)}
+        return {"header", "avatar", "stats", "posts", "followers", "following", "bio", "button", "grid", "profile"} | {f"tile{j}" for j in range(9)}
+    if app == "iphone":
+        return {"clock", "list"} | {f"n{j}" for j in range(5)}
+    if app == "gmail":
+        return {"compose", "inbox", "search", "list", "sidebar", "draft", "input", "send", "toast", "main"} | {f"row{j}" for j in range(8)}
+    if app in ("n8n", "zapier", "make"):
+        return {"canvas", "title", "flow"} | {f"node{j}" for j in range(len(d.get("nodes") or []))}
+    if app == "web":
+        return {"page", "bar", "focus"} | {f"mark{j}" for j in range(len(d.get("marks") or []))} \
+            | {_t(m).lower() for m in d.get("marks") or []}
+    return set()
+
+
+def _app_errors(i: int, d: dict, job=None) -> list[str]:
+    """Oblik `app` momenta: poznata aplikacija, stavka menija postoji, kamera/kursor ciljaju postojeće delove,
+    podaci svake aplikacije potpuni (faza 1: instagram / iphone / gmail / n8n·zapier·make / web)."""
     errs = []
     app = d.get("app")
     if app not in APPS:
         return [f"moment {i} (app): app mora biti {' | '.join(APPS)} (dobijeno {app!r})"]
     menu = d.get("menu") if isinstance(d.get("menu"), dict) else None
-    items = [_t(x) for x in (menu.get("items") or APP_MENU[app])] if menu else []
-    names = set(APP_ANCHORS[app]) | {"menu", "top"}
+    if menu and app not in APP_MENU and not menu.get("items"):
+        errs.append(f"moment {i} (app): {app} nema podrazumevani meni — daj menu.items")
+    items = [_t(x) for x in (menu.get("items") or APP_MENU.get(app, []))] if menu else []
+    names = _app_anchor_names(app, d) | {"menu", "top", "window"}
     if menu and menu.get("highlight"):
         h = _t(menu["highlight"]).lower()
         if h not in [x.lower() for x in items]:
@@ -672,6 +708,8 @@ def _app_errors(i: int, d: dict) -> list[str]:
     tabs = d.get("tabs") or []
     if len(tabs) > 4:
         errs.append(f"moment {i} (app): najviše 4 taba")
+    if tabs and app in ("instagram", "iphone"):
+        errs.append(f"moment {i} (app): {app} je telefon — tabovi pregledača ne postoje")
     names |= {f"tab{j}" for j in range(len(tabs))}
     for z in d.get("zoom") or []:
         if isinstance(z, dict) and str(z.get("to")) not in names:
@@ -684,6 +722,67 @@ def _app_errors(i: int, d: dict) -> list[str]:
         errs.append(f"moment {i} (app): najviše 3 beleške (notes) po momentu")
     if d.get("send") and not d.get("input"):
         errs.append(f"moment {i} (app): send bez input-a — šta se šalje?")
+    # --- podaci po aplikaciji
+    if app == "instagram":
+        sc = d.get("screen") or "profile"
+        if sc not in IG_SCREENS:
+            errs.append(f"moment {i} (app): instagram screen mora biti {' | '.join(IG_SCREENS)}")
+        if sc == "insights" and not isinstance(d.get("metric"), dict):
+            errs.append(f"moment {i} (app): instagram insights traži metric {{label, value, from, at, delta}} — broj koji raste")
+        if sc == "inbox":
+            th = d.get("threads") or []
+            if not th:
+                errs.append(f"moment {i} (app): instagram inbox traži threads [{{name, text, at}}] — poruke koje stižu")
+            if len(th) > 8:
+                errs.append(f"moment {i} (app): inbox prikazuje najviše 8 razgovora")
+            for x in th:
+                if not (isinstance(x, dict) and _t(x.get("name")) and _t(x.get("text"))):
+                    errs.append(f"moment {i} (app): svaki thread traži name + text")
+                    break
+        if sc == "profile" and not _t(d.get("handle")):
+            errs.append(f"moment {i} (app): instagram profile traži handle (korisničko ime)")
+        if len(d.get("grid") or []) > 9:
+            errs.append(f"moment {i} (app): grid ima najviše 9 polja")
+    if app == "iphone":
+        ns = d.get("notifications") or []
+        if not 1 <= len(ns) <= 6:
+            errs.append(f"moment {i} (app): iphone traži 1–6 notifications [{{app, title, body, at}}]")
+        for x in ns:
+            if not (isinstance(x, dict) and _t(x.get("title"))):
+                errs.append(f"moment {i} (app): svaka notifikacija traži title (i body)")
+                break
+    if app == "gmail":
+        em = d.get("emails") or []
+        if len(em) > 8:
+            errs.append(f"moment {i} (app): gmail prikazuje najviše 8 mejlova")
+        for x in em:
+            if not (isinstance(x, dict) and _t(x.get("from")) and _t(x.get("subject"))):
+                errs.append(f"moment {i} (app): svaki mejl traži from + subject")
+                break
+        if d.get("input") and not d.get("compose"):
+            errs.append(f"moment {i} (app): gmail input se kuca u Compose — dodaj compose {{at, to, subject}}")
+    if app in ("n8n", "zapier", "make"):
+        ns = d.get("nodes") or []
+        if not 2 <= len(ns) <= 6:
+            errs.append(f"moment {i} (app): {app} traži 2–6 nodes [{{app, label, at}}] (okidač pa koraci)")
+        for x in ns:
+            if not (isinstance(x, dict) and _t(x.get("label"))):
+                errs.append(f"moment {i} (app): svaki čvor traži label")
+                break
+    if app == "web":
+        if not d.get("file"):
+            errs.append(f"moment {i} (app): web traži file — screenshot stranice iz `ccc shot` (sa --mark za fraze koje se klikću/ističu)")
+        elif job is not None:
+            from .web import sources as _src
+            from .assets import nfc
+            ws = _src(job).get(nfc(str(d["file"])))
+            if not ws or ws.get("kind") != "screenshot":
+                errs.append(f"moment {i} (app): web file '{d['file']}' nije screenshot iz `ccc shot`")
+            else:
+                found = {str(m.get("text", "")).lower() for m in ws.get("marks") or [] if m.get("rect")}
+                for m in d.get("marks") or []:
+                    if _t(m).lower() not in found:
+                        errs.append(f"moment {i} (app): web mark \"{_t(m)}\" nije snimljen na stranici — ccc shot … --mark \"{_t(m)}\"")
     return errs
 
 
@@ -805,6 +904,25 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
             cap(_t(st), 30, "korak")
         for tb in d.get("tabs") or []:
             cap(_t(tb), 18, "tab")
+        for x in d.get("threads") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("name")), 24, "ime u inbox-u")
+                cap(_t(x.get("text")), 44, "poruka u inbox-u")
+        for x in d.get("notifications") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("title")), 32, "naslov notifikacije")
+                cap(_t(x.get("body")), 80, "tekst notifikacije")
+        for x in d.get("emails") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("from")), 22, "pošiljalac")
+                cap(_t(x.get("subject")) + " " + _t(x.get("snippet")), 70, "naslov + početak mejla")
+        for x in d.get("nodes") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 22 if d.get("app") != "zapier" else 36, "čvor")
+        for x in d.get("rows") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 26, "red")
+        cap(_t(d.get("bio")), 120, "bio")
     elif kind == "scene":
         for b in d.get("beats") or []:
             if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):

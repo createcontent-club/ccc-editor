@@ -1,7 +1,11 @@
 import React from 'react';
 import {Easing, interpolate} from 'remotion';
 import * as Ph from '@phosphor-icons/react';
-import {SERIF_FONT, UI_FONT} from '../style';
+import {SERIF_FONT} from '../style';
+import {P, Rect, Pal, W, H, GLIDE, ease, T, txt, RED, rgba, ui, center, abs, St, Skin, Caret, typedAt} from './appCore';
+import {ClaudeMark, OpenAIMark, NotionMark, SheetsMark} from './appIcons';
+import {PHONE_SKINS, PhoneChrome, Touch} from './AppPhone';
+import {DESK_SKINS} from './AppDesk';
 
 /**
  * App UI kit (principles.md 45–47, recenzija test-video-petar v1): verne rekreacije alata o kojima klijenti pričaju
@@ -14,62 +18,7 @@ import {SERIF_FONT, UI_FONT} from '../style';
  * Tekst je krupan (≥ 22 px na skali 1) jer se gleda na telefonu.
  */
 
-type P = {d: any; t: number; dur: number; acc: string; dark: boolean; height: number};
-type Rect = {x: number; y: number; w: number; h: number};
-
-const W = 900, H = 600;
-const EO = Easing.bezier(0.16, 1, 0.3, 1);
-const GLIDE = Easing.bezier(0.42, 0.08, 0.22, 1);
-const ease = (t: number, from: number, len: number, curve: (n: number) => number = EO) =>
-  interpolate(t - from, [0, len], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: curve});
-const T = (x: any, fb: number) => (typeof x?.atT === 'number' ? x.atT : fb);
-const txt = (x: any) => (typeof x === 'string' ? x : String(x?.text ?? x?.label ?? ''));
-const RED = '#FF4D4D';
-const rgba = (hex: string, a: number) =>
-  `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
-const ui = (w: number, size: number, color: string, lh = 1.25): React.CSSProperties =>
-  ({fontFamily: `"${UI_FONT}", "Inter", sans-serif`, fontWeight: w, fontSize: size, color, lineHeight: lh, letterSpacing: '-0.01em'});
-const center = (r: Rect) => ({x: r.x + r.w / 2, y: r.y + r.h / 2});
-const abs = (r: Rect, extra: React.CSSProperties = {}): React.CSSProperties =>
-  ({position: 'absolute', left: r.x, top: r.y, width: r.w, height: r.h, boxSizing: 'border-box', ...extra});
-
-export const APPS = ['claude', 'chatgpt', 'notion', 'sheets'] as const;
-
-// ------------------------------------------------------------------ logotipi (crtani, bez preuzimanja)
-const ClaudeMark: React.FC<{size: number; spin?: number}> = ({size, spin = 0}) => {
-  const rays = [1, 0.78, 0.95, 0.72, 1, 0.82, 0.92, 0.7, 0.98, 0.8, 0.9, 0.74];
-  return (
-    <svg width={size} height={size} viewBox="-50 -50 100 100" style={{transform: `rotate(${spin}deg)`}}>
-      {rays.map((r, i) => (
-        <rect key={i} x={-4.2} y={-48 * r} width={8.4} height={44 * r} rx={4.2} fill="#D97757"
-          transform={`rotate(${(i * 360) / rays.length + (i % 2 ? 6 : 0)})`} />
-      ))}
-    </svg>
-  );
-};
-const OpenAIMark: React.FC<{size: number; color: string}> = ({size, color}) => (
-  <svg width={size} height={size} viewBox="-50 -50 100 100">
-    {[0, 60, 120, 180, 240, 300].map((a) => (
-      <rect key={a} x={-11} y={-40} width={22} height={52} rx={11} fill="none" stroke={color} strokeWidth={7}
-        transform={`rotate(${a}) translate(0 -2)`} />
-    ))}
-  </svg>
-);
-const NotionMark: React.FC<{size: number}> = ({size}) => (
-  <svg width={size} height={size} viewBox="0 0 100 100">
-    <rect x={8} y={8} width={84} height={84} rx={14} fill="#fff" stroke="#111" strokeWidth={7} />
-    <text x={50} y={72} textAnchor="middle" fontFamily="Georgia, serif" fontWeight={700} fontSize={58} fill="#111">N</text>
-  </svg>
-);
-const SheetsMark: React.FC<{size: number}> = ({size}) => (
-  <svg width={size * 0.78} height={size} viewBox="0 0 78 100">
-    <path d="M6 0 H52 L78 26 V94 a6 6 0 0 1 -6 6 H6 a6 6 0 0 1 -6 -6 V6 a6 6 0 0 1 6 -6 Z" fill="#0F9D58" />
-    <path d="M52 0 V20 a6 6 0 0 0 6 6 H78 Z" fill="#87CEAC" />
-    <rect x={16} y={44} width={46} height={36} rx={3} fill="#fff" />
-    <rect x={20} y={48} width={17} height={12} fill="#0F9D58" /><rect x={41} y={48} width={17} height={12} fill="#0F9D58" />
-    <rect x={20} y={64} width={17} height={12} fill="#0F9D58" /><rect x={41} y={64} width={17} height={12} fill="#0F9D58" />
-  </svg>
-);
+export const APPS = ['claude', 'chatgpt', 'notion', 'sheets', 'instagram', 'iphone', 'gmail', 'n8n', 'zapier', 'make', 'web'] as const;
 
 // ------------------------------------------------------------------ palete
 const PAL = {
@@ -90,7 +39,6 @@ const PAL = {
     dark: {bg: '#F9FBFD', rail: '#EDF2FA', card: '#FFFFFF', line: '#E1E3E1', ink: '#1F1F1F', mut: '#5F6368', bubble: '#F8F9FA', menu: '#FFFFFF'},
   },
 };
-type Pal = typeof PAL.claude.light;
 
 const MENU_DEFAULT: Record<string, string[]> = {
   claude: ['Add files or photos', 'Take a screenshot', 'Add to project', 'Use a skill'],
@@ -119,26 +67,7 @@ const itemIcon = (s: string) => {
   return Ph.DotOutline;
 };
 
-// ------------------------------------------------------------------ stanje u trenutku t
-type St = {
-  t: number; d: any; acc: string; dark: boolean; pal: Pal; app: string;
-  typed: string; typing: boolean; caret: boolean; sendP: number; sent: string; tabs: any[]; activeTab: number;
-};
-const typedAt = (inp: any, t: number) => {
-  if (!inp) return {s: '', on: false, full: false};
-  const s = txt(inp);
-  const T0 = T(inp, 0.4);
-  const len = Math.min(1.5, Math.max(0.5, s.length * 0.05));
-  const k = interpolate(t - T0, [0, len], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  return {s: s.slice(0, Math.round(k * s.length)), on: t >= T0 - 0.25, full: k >= 1};
-};
-
 // ------------------------------------------------------------------ skinovi: osnova + sidra (dizajn koordinate)
-type Skin = {anchors: (st: St) => Record<string, Rect>; menuFrom: string; Body: React.FC<{st: St; a: Record<string, Rect>}>};
-
-const Caret: React.FC<{st: St; size: number; color: string}> = ({st, size, color}) =>
-  st.caret ? <span style={{display: 'inline-block', width: 2.5, height: size * 1.05, background: color, marginLeft: 2, verticalAlign: 'text-bottom',
-    opacity: Math.floor(st.t * 2.2) % 2 === 0 ? 1 : 0}} /> : null;
 
 const TrafficLights: React.FC = () => (
   <div style={{position: 'absolute', left: 20, top: 16, display: 'flex', gap: 9}}>
@@ -456,7 +385,7 @@ const sheets: Skin = {
   },
 };
 
-const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets};
+const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS};
 
 // ------------------------------------------------------------------ zajednički slojevi
 const Cursor: React.FC<{x: number; y: number; click: number; s: number}> = ({x, y, click, s}) => (
@@ -528,7 +457,8 @@ const SkillCard: React.FC<{st: St; r: Rect}> = ({st, r}) => {
   const badIn = steps.some((s: any, i: number) => s?.tone === 'bad' && st.t >= T(s, T0 + 0.25 + i * 0.22));
   const lastGood = steps.reduce((m: number, s: any, i: number) => (s?.tone === 'bad' || preDone(s) ? m : i), -1);
   const allDone = !badIn && steps.length > 0 && (lastGood < 0 ? steps.every(preDone) : st.t >= tickT(lastGood) + 0.2);
-  const status = badIn ? (txt(c.status) || 'Stopped') : st.t >= run ? (allDone ? 'Done' : 'Running…') : allDone ? 'Done' : txt(c.status);
+  // crveni korak: status samo ako ga plan zada ("Stopped" = posao zaustavljen); "postaje deo posla" (test-video-petar) nema status
+  const status = badIn ? txt(c.status) : st.t >= run ? (allDone ? 'Done' : 'Running…') : allDone ? 'Done' : txt(c.status);
   return (
     <div style={abs(r, {background: st.dark ? '#2B2B29' : '#FFFFFF', borderRadius: 24, zIndex: 45, padding: '22px 24px',
       border: `1.5px solid ${st.dark ? '#45443F' : '#E6E3DA'}`, boxShadow: st.dark ? '0 30px 70px rgba(0,0,0,0.6)' : '0 30px 70px rgba(30,25,15,0.2)',
@@ -577,15 +507,18 @@ const Note: React.FC<{st: St; text: string; x: number; y: number; k: number; dim
 
 // ------------------------------------------------------------------ moment
 export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
-  const app = SKINS[d.app] ? d.app : 'claude';
+  // živa stranica: telefonski screenshot (uspravan) ide u telefon, desktop u pregledač
+  const app = d.app === 'web' && d.w && d.h && d.h > d.w * 1.3 ? 'webphone' : SKINS[d.app] ? d.app : 'claude';
   const skin = SKINS[app];
-  // Podrazumevano svetla tema aplikacije (najprepoznatljivija); `theme: "dark"` za tamni Claude/ChatGPT/Notion.
+  const FW = skin.size?.w ?? W, FH = skin.size?.h ?? H;
+  const phone = skin.frame === 'phone';
+  // Podrazumevano svetla tema aplikacije (najprepoznatljivija); `theme: "dark"` za tamnu varijantu.
   const useDark = d.theme === 'dark' && app !== 'sheets';
-  const pal = (PAL as any)[app][useDark ? 'dark' : 'light'] as Pal;
+  const pal = (skin.pal ?? (PAL as any)[app])[useDark ? 'dark' : 'light'] as Pal;
   const typ = typedAt(d.input, t);
   const sendT = d.send ? T(d.send, 1e9) : 1e9;
   const sendP = ease(t, sendT, 0.6);
-  const tabs: any[] = d.tabs ?? [];
+  const tabs: any[] = phone ? [] : d.tabs ?? [];
   let activeTab = Math.max(0, tabs.findIndex((x) => x?.active));
   tabs.forEach((x, i) => { if (typeof x?.atT === 'number' && t >= x.atT) activeTab = i; });
   const st: St = {t, d, acc, dark: useDark, pal, app,
@@ -594,19 +527,19 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
 
   // meni
   const menu = d.menu;
-  const items: string[] = menu ? (menu.items ?? MENU_DEFAULT[app]).map(txt) : [];
+  const items: string[] = menu ? (menu.items ?? MENU_DEFAULT[app] ?? []).map(txt) : [];
   const menuT = menu ? T(menu, 0.3) : 1e9;
   const hlText = menu?.highlight ? txt(menu.highlight).toLowerCase() : '';
   const hl = hlText ? items.findIndex((s) => s.toLowerCase() === hlText) : -1;
   const hlT = menu?.highlight ? T(menu.highlight, menuT + 0.5) : 1e9;
   const closeT = menu?.close ? T(menu.close, 1e9) : 1e9;
   const mk = menu ? ease(t, menuT, 0.32) * (1 - ease(t, closeT, 0.25)) : 0;
-  const from = a[skin.menuFrom] ?? a.input;
+  const from = a[skin.menuFrom] ?? a.input ?? {x: 40, y: 80, w: 60, h: 40};
   const mh = items.length * 56 + 16;
-  const mw = 420;
+  const mw = Math.min(420, FW - 20);
   let my = from.y + from.h + 10;
-  if (my + mh > H - 6) my = Math.max(50, from.y - mh - 10);
-  const menuR: Rect = {x: Math.min(W - mw - 10, Math.max(10, from.x - 8)), y: my, w: mw, h: mh};
+  if (my + mh > FH - 6) my = Math.max(50, from.y - mh - 10);
+  const menuR: Rect = {x: Math.min(FW - mw - 10, Math.max(10, from.x - 8)), y: my, w: mw, h: mh};
   const itemR = (i: number): Rect => ({x: menuR.x + 8, y: menuR.y + 8 + i * 56, w: mw - 16, h: 56});
   a.menu = menuR;
   if (hl >= 0) a.item = itemR(hl);
@@ -616,15 +549,17 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   if (card) {
     const n = (card.steps ?? []).length;
     const ch = 116 + n * 58;
-    const cw = 430;
-    a.card = card.center ? {x: (W - cw) / 2, y: Math.max(56, (H - ch) / 2 + 20), w: cw, h: ch} : {x: W - cw - 26, y: Math.max(56, (H - ch) / 2 + 20), w: cw, h: ch};
+    const cw = Math.min(430, FW - 24);
+    a.card = card.center || phone ? {x: (FW - cw) / 2, y: Math.max(56, (Math.min(FH, 700) - ch) / 2 + 20), w: cw, h: ch}
+      : {x: FW - cw - 26, y: Math.max(56, (FH - ch) / 2 + 20), w: cw, h: ch};
   }
   // tabovi (traka pregledača u vrhu prozora)
   const tabR = (i: number): Rect => ({x: 96 + i * 196, y: 6, w: 190, h: 38});
   tabs.forEach((_, i) => { a[`tab${i}`] = tabR(i); });
-  a.top = {x: 0, y: 0, w: W, h: H * 0.55};  // gornji deo prozora (tabovi + vrh stranice)
+  a.top = a.top ?? {x: 0, y: 0, w: FW, h: FH * 0.55};  // gornji deo (tabovi + vrh stranice)
+  a.window = a.window ?? {x: 0, y: 0, w: FW, h: FH};
 
-  // kursor: zadate tačke + automatske (meni, stavka, kucanje, slanje, nov tab)
+  // kursor (desktop) / dodir (telefon): zadate tačke + automatske (meni, stavka, kucanje, slanje, nov tab, tap skin-a)
   const keys: Key[] = [];
   const pt = (to: any): {x: number; y: number} | null => {
     if (to && typeof to === 'object' && typeof to.x === 'number') return {x: to.x, y: to.y};
@@ -633,10 +568,12 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   };
   if (menu) { const p0 = center(from); keys.push({...p0, T: menuT, click: true}); }
   if (hl >= 0) { const r0 = itemR(hl); keys.push({x: r0.x + r0.w - 70, y: r0.y + r0.h / 2 + 4, T: hlT, click: true}); }
-  if (d.input && app !== 'sheets') { const p0 = center(a.input); keys.push({x: a.input.x + 60, y: p0.y, T: T(d.input, 0.4) - 0.05, click: true}); }
+  if (d.input && a.input && app !== 'sheets') { const p0 = center(a.input); keys.push({x: a.input.x + Math.min(60, a.input.w / 3), y: p0.y, T: T(d.input, 0.4) - 0.05, click: true}); }
   if (d.input && app === 'sheets') { const p0 = center(a.input); keys.push({...p0, T: T(d.input, 0.4) - 0.05, click: true}); }
-  if (d.send) { const p0 = center(a.send ?? a.input); keys.push({...p0, T: sendT, click: true}); }
+  if (d.send && (a.send ?? a.input)) { const p0 = center(a.send ?? a.input); keys.push({...p0, T: sendT, click: true}); }
   tabs.forEach((x, i) => { if (typeof x?.atT === 'number') keys.push({...center(tabR(i)), T: x.atT, click: true}); });
+  for (const k of (a.__taps as any) ?? []) keys.push(k as Key);  // skin: automatski tap (npr. Follow, otvaranje DM-a)
+  delete (a as any).__taps;
   for (const c of (d.cursor ?? []) as any[]) {
     const p0 = pt(c.to);
     if (p0) keys.push({...p0, T: T(c, 0), click: c.click !== false});
@@ -645,19 +582,24 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   const cur = d.cursor === false ? null : cursorAt(keys, t);
 
   // kamera
-  // Osnovni kadar: ceo prozor na 0.9, malo niže (iznad njega ima mesta za REC oznaku); zoom = kadar na deo interfejsa.
+  // Osnovni kadar: desktop = ceo prozor na 0.9; telefon = gornji deo ekrana, krupno (skin.base). zoom = kadar na deo.
   // Kartica na sredini bez zadatog zoom-a → kamera sama priđe kartici (čitljivo na telefonu).
-  // zoom bez `at` = početni kadar (odmah) — za nastavak (`cont`) da kamera ne skoči nazad na ceo prozor (principles.md 44)
+  // zoom bez `at` = početni kadar (odmah) — za nastavak (`cont`) da kamera ne skoči nazad (principles.md 44)
   const zooms: any[] = ((d.zoom ?? []) as any[]).map((z) => ({...z, T: typeof z?.atT === 'number' ? z.atT : -10}));
+  if (!d.zoom && skin.autoZoom) zooms.push(...skin.autoZoom(st, a));
   if (card && !zooms.some((z) => z.to === 'card') && (card.center || !d.zoom)) zooms.push({to: 'card', T: T(card, 0) + 0.15});
-  let view = {x: W / 2, y: H / 2, s: 0.9, cy: Math.min(height / 2 + 50, 592)};
+  const b0 = skin.base ? skin.base(st, a) : {x: FW / 2, y: FH / 2, s: 0.9};
+  let view = {x: b0.x, y: b0.y, s: b0.s, cy: phone ? height / 2 : Math.min(height / 2 + 50, 592)};
+  const maxZ = skin.maxZoom ?? 2.3;
   for (const z of zooms.sort((x, y) => x.T - y.T)) {
     const r = a[String(z.to)] ?? null;
     if (!r) continue;
     const c0 = center(r);
-    const zs = typeof z.scale === 'number' ? z.scale : Math.max(1, Math.min(2.3, 860 / r.w, 580 / r.h));
+    // telefon: ceo ekran uvek po širini u kadru (nikad isečen sa strane, pregled kadrova 14. nov) — kamera ide samo gore/dole
+    const zs = Math.min(phone ? 2.2 : 9, typeof z.scale === 'number' ? z.scale : Math.max(phone ? 1.6 : 1, Math.min(maxZ, 860 / r.w, 580 / r.h)));
     const k = ease(t, z.T - 0.1, 0.95, GLIDE);
-    view = {x: view.x + (c0.x - view.x) * k, y: view.y + (c0.y - view.y) * k, s: view.s + (zs - view.s) * k, cy: view.cy + (540 - view.cy) * k};
+    const cx = phone ? FW / 2 : c0.x;
+    view = {x: view.x + (cx - view.x) * k, y: view.y + (c0.y - view.y) * k, s: view.s + (zs - view.s) * k, cy: phone ? view.cy : view.cy + (540 - view.cy) * k};
   }
   const drift = 1 + 0.018 * interpolate(t, [0, Math.max(0.6, dur)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
   const pin = d.cont ? 1 : ease(t, 0, 0.5);
@@ -665,7 +607,7 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   const CX = 540, CY = view.cy;
   const tx = CX - view.x * s, ty = CY - view.y * s;
   // REC okvir je u prostoru ekrana: oko vidljivog dela prozora (pri zoom-u = okvir kadra), nikad zalutala linija
-  const fr = {l: Math.max(14, tx - 8), t: Math.max(14, ty - 8), r: Math.min(1066, tx + W * s + 8), b: Math.min(height - 14, ty + H * s + 8)};
+  const fr = {l: Math.max(14, tx - 8), t: Math.max(14, ty - 8), r: Math.min(1066, tx + FW * s + 8), b: Math.min(height - 14, ty + FH * s + 8)};
 
   // REC, glas, beleške
   const recT = d.rec ? T(d.rec, 0) : 1e9;
@@ -673,46 +615,54 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   const voiceT = d.voice ? T(d.voice, 0) : 1e9;
   const vk = ease(t, voiceT, 0.45);
   const notes: any[] = (d.notes ?? []).map((n: any, i: number) => ({...n, T: T(n, 0.6 + i * 0.8)}));
-  const curAtT = (T0: number) => cursorAt(keys, T0) ?? {x: W / 2, y: H / 2};
+  const curAtT = (T0: number) => cursorAt(keys, T0) ?? {x: FW / 2, y: FH / 2};
   // "staro / ne radi" (principles.md 48): ceo prozor se ugasi u sivo na reč, preko njega može da uđe kartica (novo)
   const dimK = d.dim ? ease(t, T(d.dim, 1e9), 0.5) : 0;
   const tab = tabs[activeTab];
   const away = tabs.length > 0 && activeTab > 0 && typeof tab?.atT === 'number' ? ease(t, tab.atT, 0.35) : 0;
+  const dimFilter = dimK > 0.01 ? `grayscale(${0.85 * dimK}) brightness(${1 - 0.3 * dimK}) blur(${1.5 * dimK}px)` : undefined;
 
   return (
     <div style={{position: 'absolute', inset: 0, opacity: pin}}>
-      <div style={{position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0',
+      <div style={{position: 'absolute', left: 0, top: 0, width: FW, height: FH, transformOrigin: '0 0',
         transform: `translate(${tx}px, ${ty}px) scale(${s})`}}>
-        <div style={{position: 'absolute', inset: 0, borderRadius: 22, overflow: 'hidden', background: pal.bg,
-          filter: dimK > 0.01 ? `grayscale(${0.85 * dimK}) brightness(${1 - 0.3 * dimK}) blur(${1.5 * dimK}px)` : undefined,
-          boxShadow: dark ? '0 40px 90px rgba(0,0,0,0.6), 0 0 0 1.5px rgba(255,255,255,0.08)' : '0 40px 90px rgba(20,20,40,0.22), 0 0 0 1.5px rgba(0,0,0,0.06)'}}>
-          <div style={{position: 'absolute', left: 0, top: 0, width: W, height: 44, background: tabs.length ? (st.dark ? '#1B1B1A' : '#E9E8E4') : pal.bg,
-            borderBottom: `1px solid ${pal.line}`}} />
-          <TrafficLights />
-          {tabs.map((x, i) => {
-            const r = tabR(i);
-            const k = typeof x?.atT === 'number' ? ease(t, x.atT - 0.35, 0.35) : 1;
-            const on = i === activeTab;
-            const bad = x?.tone === 'bad';
-            return (
-              <div key={i} style={abs(r, {borderRadius: '10px 10px 0 0', background: on ? pal.bg : 'transparent', display: 'flex', alignItems: 'center', gap: 8,
-                paddingLeft: 14, opacity: k, transform: `translateY(${(1 - k) * 20}px)`, boxShadow: bad && on ? `inset 0 3px 0 ${RED}` : undefined})}>
-                <div style={{width: 18, height: 18, borderRadius: 4, background: bad ? RED : i === 0 ? '#D97757' : '#9AA0A6'}} />
-                <span style={{...ui(on ? 600 : 500, 17, bad ? RED : pal.ink), whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: 140}}>{txt(x)}</span>
+        {phone ? (
+          <PhoneChrome st={st} dark={dark} filter={dimFilter}><skin.Body st={st} a={a} /></PhoneChrome>
+        ) : (
+          <div style={{position: 'absolute', inset: 0, borderRadius: 22, overflow: 'hidden', background: pal.bg, filter: dimFilter,
+            boxShadow: dark ? '0 40px 90px rgba(0,0,0,0.6), 0 0 0 1.5px rgba(255,255,255,0.08)' : '0 40px 90px rgba(20,20,40,0.22), 0 0 0 1.5px rgba(0,0,0,0.06)'}}>
+            {skin.chrome === false ? null : (
+              <>
+                <div style={{position: 'absolute', left: 0, top: 0, width: FW, height: 44, background: tabs.length ? (st.dark ? '#1B1B1A' : '#E9E8E4') : pal.bg,
+                  borderBottom: `1px solid ${pal.line}`}} />
+                <TrafficLights />
+              </>
+            )}
+            {tabs.map((x, i) => {
+              const r = tabR(i);
+              const k = typeof x?.atT === 'number' ? ease(t, x.atT - 0.35, 0.35) : 1;
+              const on = i === activeTab;
+              const bad = x?.tone === 'bad';
+              return (
+                <div key={i} style={abs(r, {borderRadius: '10px 10px 0 0', background: on ? pal.bg : 'transparent', display: 'flex', alignItems: 'center', gap: 8,
+                  paddingLeft: 14, opacity: k, transform: `translateY(${(1 - k) * 20}px)`, boxShadow: bad && on ? `inset 0 3px 0 ${RED}` : undefined})}>
+                  <div style={{width: 18, height: 18, borderRadius: 4, background: bad ? RED : i === 0 ? '#D97757' : '#9AA0A6'}} />
+                  <span style={{...ui(on ? 600 : 500, 17, bad ? RED : pal.ink), whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: 140}}>{txt(x)}</span>
+                </div>
+              );
+            })}
+            <skin.Body st={st} a={a} />
+            {away > 0 ? (
+              <div style={{position: 'absolute', left: 0, top: 44, width: FW, height: FH - 44, background: st.dark ? '#181818' : '#FFFFFF', opacity: away, zIndex: 20}}>
+                <div style={{position: 'absolute', left: 60, top: 40, width: 500, height: 280, borderRadius: 16, background: st.dark ? '#2A2A2A' : '#ECECEC',
+                  display: 'grid', placeItems: 'center'}}><Ph.PlayCircle size={90} weight="fill" color={st.dark ? '#555' : '#C7C7C7'} /></div>
+                <div style={{position: 'absolute', left: 60, top: 344, width: 520, ...ui(700, 30, st.dark ? '#EEE' : '#111', 1.2)}}>{txt(tab?.page) || txt(tab)}</div>
+                {[0, 1, 2].map((i) => <div key={i} style={{position: 'absolute', left: 600, top: 40 + i * 104, width: 240, height: 88, borderRadius: 12,
+                  background: st.dark ? '#2A2A2A' : '#F0F0F0'}} />)}
               </div>
-            );
-          })}
-          <skin.Body st={st} a={a} />
-          {away > 0 ? (
-            <div style={{position: 'absolute', left: 0, top: 44, width: W, height: H - 44, background: st.dark ? '#181818' : '#FFFFFF', opacity: away, zIndex: 20}}>
-              <div style={{position: 'absolute', left: 60, top: 40, width: 500, height: 280, borderRadius: 16, background: st.dark ? '#2A2A2A' : '#ECECEC',
-                display: 'grid', placeItems: 'center'}}><Ph.PlayCircle size={90} weight="fill" color={st.dark ? '#555' : '#C7C7C7'} /></div>
-              <div style={{position: 'absolute', left: 60, top: 344, width: 520, ...ui(700, 30, st.dark ? '#EEE' : '#111', 1.2)}}>{txt(tab?.page) || txt(tab)}</div>
-              {[0, 1, 2].map((i) => <div key={i} style={{position: 'absolute', left: 600, top: 40 + i * 104, width: 240, height: 88, borderRadius: 12,
-                background: st.dark ? '#2A2A2A' : '#F0F0F0'}} />)}
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        )}
         {mk > 0 ? <Menu st={st} r={menuR} items={items} hl={hl} hlT={hlT} badge={menu.badge} k={mk} /> : null}
         {card && t >= T(card, 0) - 0.05 ? <SkillCard st={st} r={a.card} /> : null}
         {notes.map((n, i) => {
@@ -722,10 +672,11 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
           const dim = nxt && t >= nxt.T ? ease(t, nxt.T, 0.4) : 0;
           const old = notes[i + 2] && t >= notes[i + 2].T ? ease(t, notes[i + 2].T, 0.3) : 0;
           const c0 = curAtT(n.T);
-          const x = Math.min(W - 400, Math.max(20, c0.x + 34)), y = Math.min(H - 90, Math.max(56, c0.y - 96));
+          const x = Math.min(FW - 400, Math.max(20, c0.x + 34)), y = Math.min(FH - 90, Math.max(56, c0.y - 96));
           return <Note key={i} st={st} text={txt(n)} x={x} y={y} k={k * (1 - old)} dim={dim} />;
         })}
-        {cur ? <Cursor x={cur.x} y={cur.y} click={cur.click} s={Math.sqrt(Math.max(1, s))} /> : null}
+        {cur ? (phone ? <Touch x={cur.x} y={cur.y} click={cur.click} s={s} />
+          : <Cursor x={cur.x} y={cur.y} click={cur.click} s={Math.sqrt(Math.max(1, s))} />) : null}
       </div>
       {rk > 0 ? (
         <div style={{position: 'absolute', left: fr.l, top: fr.t, width: fr.r - fr.l, height: fr.b - fr.t, boxSizing: 'border-box',

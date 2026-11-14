@@ -93,7 +93,10 @@ def signature(items: list[dict]) -> list[str]:
 # `app` moment je verna rekreacija pravog alata (principles.md 45): za video o tom alatu to JE pravi materijal i nosi
 # njegov znak (Claude zvezdica, OpenAI cvet, Notion N, Sheets ikonica) — kao logo.
 APP_NAMES = {"claude": ("claude", "anthropic", "cowork"), "chatgpt": ("chatgpt", "openai", "gpt"),
-             "notion": ("notion",), "sheets": ("google sheets", "sheets", "spreadsheet")}
+             "notion": ("notion",), "sheets": ("google sheets", "sheets", "spreadsheet"),
+             "instagram": ("instagram", "insta", "reels", "dm"), "gmail": ("gmail", "email", "inbox"),
+             "n8n": ("n8n", "automation", "workflow"), "zapier": ("zapier", "zap", "automation"), "make": ("make.com", "make", "automation"),
+             "iphone": ("iphone", "notification", "stripe", "shopify")}
 
 
 def _app_of(e: dict, it: dict) -> bool:
@@ -313,7 +316,8 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
         if it["kind"] == "screenshot" and (_all_src.get(str(d.get("file"))) or {}).get("partial"):
             out.append(f"moment {i + 1} (screenshot): fokus screenshot-a je isečen (fraza veća od ekrana) — snimi ponovo sa "
                        "frazom koja staje (naslov, jedna rečenica), pa pogledaj kadar (principles.md 51)")
-        if it["kind"] != "screenshot":
+        live_page = it["kind"] == "app" and d.get("app") == "web"  # živa stranica JE ta stranica (kursor, marker, skrol)
+        if it["kind"] != "screenshot" and not live_page:
             out.append(f"moment {i + 1} ({it['kind']}) koristi screenshot stranice ({', '.join(sorted(used))}) kao sliku uz tekst — "
                        "screenshot ne daje kontekst kad nije TO o čemu se govori; prikaži ideju (logo + animacija)")
             continue
@@ -401,7 +405,8 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
     except Exception:  # noqa: BLE001
         wsrc = {}
     for i, it in enumerate(items):
-        if it["kind"] != "screenshot":
+        live_page = it["kind"] == "app" and d.get("app") == "web"  # živa stranica JE ta stranica (kursor, marker, skrol)
+        if it["kind"] != "screenshot" and not live_page:
             continue
         d = it.get("data") or {}
         s_ = wsrc.get(str(d.get("file"))) or {}

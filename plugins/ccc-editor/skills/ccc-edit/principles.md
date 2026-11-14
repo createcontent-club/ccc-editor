@@ -241,7 +241,7 @@ in for actions (a video-camera icon for "record your screen", a link icon for "a
     "you talk". "It's called Record a Skill" → the "+" menu opens and that exact menu item lights up on its word. A
     generic icon (camera, link, sparkles) is only for something truly abstract.
     **Why (owner):** the viewer must see what happens with the sound off; an icon is a label, not an action.
-    *Template:* `app` (Claude, ChatGPT, Notion, Google Sheets; answer 2: "a real copy of the Claude interface, and of a
+    *Template:* `app` (Claude, ChatGPT, Notion, Google Sheets; phase 1, 14 Nov: Instagram profile / insights / DM inbox and iPhone notifications on a phone, Gmail, n8n / Zapier / Make automations, and `web` = a real page with cursor, marker and scroll; answer 2: "a real copy of the Claude interface, and of a
     few other well-known tools, so it can always be used"). *Engine:* an `app` of the video's tool counts as real
     material and carries the tool's mark in the hook.
 46. **The same thing never stays through the whole video. Continuity comes from callbacks.** The interface may return,
