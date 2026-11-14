@@ -508,7 +508,7 @@ def real_visuals(job, p: dict) -> list[str]:
             f = v.get("file") if isinstance(v, dict) else v
             if isinstance(f, str) and nfc(f) in src:
                 s = src[nfc(f)]
-                add(f"  • {when(d.get('at') if isinstance(d.get('at'), str) else at)}{_label(kind, d, key, s)} — {_pretty_source(s.get('url') or '')}")
+                add(f"  • {when(d.get('at') if isinstance(d.get('at'), str) else at)}{_label(kind, d, key, s)}: {_pretty_source(s.get('url') or '')}")
         for v in d.values():
             if isinstance(v, (list, dict)):
                 walk(kind, v, at)
@@ -518,5 +518,5 @@ def real_visuals(job, p: dict) -> list[str]:
         walk(it.get("kind", ""), d, it.get("from"))
         if it.get("kind") in ("stat", "chart") and d.get("source"):
             what = d.get("value") or d.get("label") or it["kind"]
-            add(f"  • {when(it.get('from'))}number \"{what}\" — {d['source']}")
+            add(f"  • {when(it.get('from'))}number \"{what}\": {d['source']}")
     return out

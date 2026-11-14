@@ -92,13 +92,13 @@ def fmt(id: str, title: str, tagline: str, *, status: str = "soon", from_basic: 
 # ------------------------------------------------------------------ registar (redosled = redosled u meniju)
 FORMATS: list[dict] = [
     fmt("basic", "Basic Edit",
-        "Your talking-head video, edited the CCC way — tight cuts, a scroll-stopping hook, captions and clean audio.",
+        "Your talking-head video, edited the CCC way: tight cuts, a scroll-stopping hook, captions and clean audio.",
         status="ready",
         includes=["Tight cuts", "Text hook", "Captions", "Camera zoom", "Clean audio"]),
     # Split Screen: 50/50 — sadržaj gore, govornik dole; hook prvih ~3 s na liniji podele,
     # pa na istom mestu titlovi (bez hooka titlovi od starta); kamera uvek statična; ostalo kao Basic.
     fmt("split-screen", "Split Screen",
-        "You below, what you're talking about above — animated visuals, real logos and headlines, or your own screenshots.",
+        "You below, what you're talking about above: animated visuals, real logos and headlines, or your own screenshots.",
         status="ready",
         from_basic={"hook": {"positions": ["line"]}, "camera": {"modes": ["static"]}},
         own=["50/50 split: visuals on top, you below", "top half filled automatically (or with your files)"],
@@ -106,7 +106,7 @@ FORMATS: list[dict] = [
         layout="split"),
     # Sledeći formati: dok se grade stoje kao "soon" (kartica Coming soon); kad su gotovi → status="ready".
     fmt("tier-list", "Tier List",
-        "Rank anything from S to F on screen while you talk — the format people can't help commenting on."),
+        "Rank anything from S to F on screen while you talk. The format people can't help commenting on."),
 ]
 BY_ID = {f["id"]: f for f in FORMATS}
 

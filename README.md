@@ -2,7 +2,7 @@
 
 **Create Content Club's video editor.** Give it a raw talking-head video and get back a finished vertical reel:
 
-- tight cuts — pauses, breaths, filler words, repeated takes and off-camera talk removed
+- tight cuts: pauses, breaths, filler words, repeated takes and off-camera talk removed
 - a text hook in the first seconds
 - captions in your style (and your brand color)
 - camera zooms on jump cuts (optional)
@@ -10,8 +10,8 @@
 
 Two formats so far:
 
-- **Basic Edit** — your talking-head video, edited the CCC way.
-- **Split Screen** — you in the bottom half, and above you what you're talking about: animated visuals that explain your points, real logos, headlines, screenshots and posts — or your own screenshots and screen recordings.
+- **Basic Edit**: your talking-head video, edited the CCC way.
+- **Split Screen**: you in the bottom half, and above you what you're talking about. Animated visuals that explain your points, real logos, headlines, screenshots and posts, or your own screenshots and screen recordings.
 
 You pick a format and style on a simple page, and the rest happens automatically.
 
@@ -28,11 +28,11 @@ You pick a format and style on a simple page, and the rest happens automatically
 
 ---
 
-## Step 1 — Install Claude Code
+## Step 1: Install Claude Code
 
 Pick **one** of these:
 
-- **Claude desktop app** — download it from **claude.ai/download**, install it, sign in, and open the **Code** tab.
+- **Claude desktop app**: download it from **claude.ai/download**, install it, sign in, and open the **Code** tab.
 - **Terminal version**
   - **Mac:** open the **Terminal** app and paste:
     ```
@@ -44,7 +44,7 @@ Pick **one** of these:
     ```
   Then type `claude` and sign in.
 
-## Step 2 — Windows only: install Git
+## Step 2: Windows only: install Git
 
 1. Go to **git-scm.com/download/win** and download **Git for Windows**.
 2. Run the installer and keep **all the default options** (just click *Next* until *Install*).
@@ -52,7 +52,7 @@ Pick **one** of these:
 
 Mac users skip this step.
 
-## Step 3 — Add the CCC Editor (one time)
+## Step 3: Add the CCC Editor (one time)
 
 **In the terminal** (Mac: *Terminal* app · Windows: *PowerShell*), paste these two lines one by one:
 
@@ -68,32 +68,32 @@ claude plugin install ccc-editor@createcontent-club --scope user
 
 Then **close and reopen Claude Code** (desktop app or terminal) so it picks up the editor.
 
-## Step 4 — Edit your first video
+## Step 4: Edit your first video
 
 1. Open Claude Code and start a **new** chat/session.
 2. Type **`/ccc-edit`**, then **drag your video file into the chat** and press Enter:
 
    > /ccc-edit *(your video file)*
 
-   Dragging the file in pastes its location — that's all Claude needs. (Plain words like "edit my new video" work too, but `/ccc-edit` always starts the CCC Editor.)
+   Dragging the file in pastes its location. That's all Claude needs. (Plain words like "edit my new video" work too, but `/ccc-edit` always starts the CCC Editor.)
 
    Don't see `/ccc-edit` when you type `/`? Close Claude Code completely, open it again and start a new chat.
 3. **First time only:** Claude sets up the editor on your computer. This takes about **5–10 minutes** and you don't need to do anything. If your computer asks for permission to let a command run, allow it.
 4. The **CCC Editing Style Menu** opens in your browser:
-   - pick a **format** — **Basic Edit** or **Split Screen** (formats marked *Coming soon* arrive with updates)
+   - pick a **format**: **Basic Edit** or **Split Screen** (formats marked *Coming soon* arrive with updates)
    - on the format's page, choose your details. For Basic Edit:
-     - choose **Yes** or **No** for a text hook — with Yes, type your hook text
+     - choose **Yes** or **No** for a text hook. With Yes, type your hook text
      - choose a **hook style** and where it sits (**below the captions** or **above your head**)
      - choose a **caption style**
      - choose a **font** for your captions and hook (CCC Signature, Poppins, Plus Jakarta Sans or Bricolage Grotesque)
-     - pick your **brand color** (if your styles use one) — from the palette or type your hex code, e.g. `#FF5A1F`
+     - pick your **brand color** (if your styles use one): from the palette or type your hex code, e.g. `#FF5A1F`
      - choose the **pacing**: **Fast-paced** (tight, classic reel) or **Chill** (a touch more breathing room)
      - choose **Zoom** or **Static** camera
    - **Split Screen** has the same hook, caption, font, color and pacing options (the hook sits on the split line and the camera is always static), plus:
-     - **Top half style** — **Dark** or **Light**
-     - **Your files** *(optional)* — drag in screenshots, screen recordings or clips you want on screen, and write when they should show (e.g. "when I talk about the audit"). Everything else gets animated visuals.
-     - **Real visuals** — **Find real visuals online** (real logos, headlines, screenshots, posts and photos of what you mention) or **Animated visuals only**
-     - **Links you mention** *(optional)* — paste links to articles, products or posts you talk about, one per line; they're used first
+     - **Top half style**: **Dark** or **Light**
+     - **Your files** *(optional)*: drag in screenshots, screen recordings or clips you want on screen, and write when they should show (e.g. "when I talk about the audit"). Everything else gets animated visuals.
+     - **Real visuals**: **Find real visuals online** (real logos, headlines, screenshots, posts and photos of what you mention) or **Animated visuals only**
+     - **Links you mention** *(optional)*: paste links to articles, products or posts you talk about, one per line; they're used first
    - click **Start editing**
 5. A few minutes later your finished video is saved **next to your original**, named `<your file>-CCC-edit.mp4`. Claude tells you what was cut and how long the video is now.
 
@@ -133,18 +133,18 @@ After an update, the first edit may take a minute longer while the editor refres
 
 - Film **vertical (9:16)**, one person talking to the camera, in **English**.
 - A clip-on or shotgun mic makes a big difference.
-- Don't worry about mistakes — just repeat the sentence. The editor keeps your **last complete take**.
+- Don't worry about mistakes. Just repeat the sentence. The editor keeps your **last complete take**.
 - Leave a second of silence before you start and after you finish.
 
 ## Real visuals from the internet (Split Screen)
 
-When you talk about something real — a company, an app, a website, a news story, a post, a public person — the editor looks it up and uses the real logo, headline, screenshot, post, photo or a short clip instead of a generic animation. Sources are never shown on screen; your report at the end lists every real visual with its source, so you can check it before posting. Don't want any of this? Choose **Animated visuals only** on the Split Screen page (or just tell Claude "only animations").
+When you talk about something real (a company, an app, a website, a news story, a post, a public person), the editor looks it up and uses the real logo, headline, screenshot, post, photo or a short clip instead of a generic animation. Sources are never shown on screen; your report at the end lists every real visual with its source, so you can check it before posting. Don't want any of this? Choose **Animated visuals only** on the Split Screen page (or just tell Claude "only animations").
 
 You are responsible for what you publish: make sure you're comfortable using third-party logos, headlines, screenshots, photos and clips in your content.
 
 ## Privacy
 
-Your video files never leave your computer — all editing and rendering happens locally. To decide what to cut, Claude reads the **text transcript** of what you said, as part of your normal Claude Code conversation. Files you add on the Split Screen page stay on your computer too. With **Find real visuals online** on, Claude searches the web for the things you mention and downloads their logos, pages and clips.
+Your video files never leave your computer. All editing and rendering happens locally. To decide what to cut, Claude reads the **text transcript** of what you said, as part of your normal Claude Code conversation. Files you add on the Split Screen page stay on your computer too. With **Find real visuals online** on, Claude searches the web for the things you mention and downloads their logos, pages and clips.
 
 ## Removing the editor
 
@@ -156,5 +156,5 @@ This also deletes the downloaded tools (about 5 GB). Your original and edited vi
 
 ## Need help?
 
-**Message us in your 1-on-1 chat on Discord** — tell us what you were doing and what Claude said, and we'll help.
-To make it quick, ask Claude: *"show my editor support info"* — and paste the block it shows into the chat.
+**Message us in your 1-on-1 chat on Discord**. Tell us what you were doing and what Claude said, and we'll help.
+To make it quick, ask Claude: *"show my editor support info"* and paste the block it shows into the chat.

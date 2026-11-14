@@ -21,7 +21,20 @@ from . import formats
 from .captions import ACCENT_PALETTE, DEFAULT_ACCENT
 from .formats import validate  # noqa: F401  (ccc choices koristi picker.validate)
 from .fonts import SETS as FONT_SETS, spec as font_spec
-from .project import FONTS
+from .project import FONTS, HOME
+
+# Šta je klijent već video na stranicama (vodič) — port je svaki put drugi, pa pregledač ne može da zapamti;
+# pamti editor na računaru klijenta (PLAN §14, faza 3).
+UI_STATE = HOME / "ui-state.json"
+UI_KEYS = {"tour_menu", "tour_format"}
+
+
+def _ui_state() -> dict:
+    try:
+        d = json.loads(UI_STATE.read_text())
+        return {k: bool(v) for k, v in d.items() if k in UI_KEYS} if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 PAGE_DIR = Path(__file__).resolve().parent / "picker"
 FONT_DIR = FONTS
@@ -70,6 +83,8 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
         def do_GET(self):
             seen.set()
             path = self.path.split("?", 1)[0]
+            if path == "/api/ui":
+                return self._json(_ui_state())
             if path == "/api/ping":
                 return self._json({"ok": not done.is_set()})
             if path in ("/", "/index.html"):
@@ -117,6 +132,17 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
 
         def do_POST(self):
             path, _, query = self.path.partition("?")
+            if path == "/api/ui":  # {"key": "tour_format", "value": true}
+                try:
+                    data = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 4096)) or b"{}")
+                    if data.get("key") in UI_KEYS:
+                        st = _ui_state()
+                        st[data["key"]] = bool(data.get("value", True))
+                        UI_STATE.parent.mkdir(parents=True, exist_ok=True)
+                        UI_STATE.write_text(json.dumps(st))
+                except (OSError, ValueError):
+                    pass
+                return self._json({"ok": True})
             if path == "/upload":  # sirovo telo fajla; ime u ?name=
                 name = safe_name(urllib.parse.parse_qs(query).get("name", ["file"])[0])
                 size = int(self.headers.get("Content-Length", 0))

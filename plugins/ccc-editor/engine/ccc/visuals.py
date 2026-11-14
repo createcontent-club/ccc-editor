@@ -313,6 +313,8 @@ def validate_plan(plan: dict, job) -> list[str]:
             errs.append(f"moment {i}: loop/center postoje samo uz layout quad (petlja kroz 3–4 čvora)")
         if k == "flow" and d.get("layout") == "quad" and len(d.get("nodes") or []) < 3:
             errs.append(f"moment {i}: quad raspored traži 3–4 čvora")
+        if "—" in json.dumps(d, ensure_ascii=False):  # pravilo vlasnika: "—" nikad u tekstu na ekranu
+            errs.append(f"moment {i} ({k}): tekst na ekranu sadrži '—' — zameni tačkom, zarezom ili dvotačkom")
         if not str(it.get("why") or "").strip():
             errs.append(f"moment {i} ({k}): nedostaje \"why\" — jedna rečenica zašto baš taj vizual za tu rečenicu")
         for key in ("nodes", "items"):

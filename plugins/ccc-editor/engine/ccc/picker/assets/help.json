@@ -1,0 +1,338 @@
+{
+  "_note": "Interactive helpers on the format page (PLAN.md §14). One entry per section id. Client-facing English, short, never the em dash character. 'recommended' marks one option with a chip; 'options' explains when to pick each choice.",
+  "sections": {
+    "s-text": {
+      "title": "What is a text hook?",
+      "what": "The big text on screen in the first 3 seconds. It tells people why they should keep watching.",
+      "options": [
+        {
+          "name": "Yes",
+          "when": "Most videos. A clear promise in the first second stops the scroll."
+        },
+        {
+          "name": "No",
+          "when": "Your first sentence is already the hook, or you want a cleaner look with captions only."
+        }
+      ],
+      "tip": "Write it like a headline: one idea, under 10 words. Example: How I got 10k followers in 30 days.",
+      "recommended": {
+        "box": "hookYesNo",
+        "id": "yes",
+        "why": "Most reels that stop the scroll open with one."
+      }
+    },
+    "s-hook": {
+      "title": "Which hook style?",
+      "what": "How your hook text looks on screen. All four are easy to read on a phone.",
+      "options": [
+        {
+          "name": "TikTok Box",
+          "when": "Bold and familiar. Works on any video."
+        },
+        {
+          "name": "Editorial Serif",
+          "when": "Calm, premium topics like design, money or lifestyle."
+        },
+        {
+          "name": "Color Block",
+          "when": "You want your brand color front and center."
+        },
+        {
+          "name": "Stacked",
+          "when": "A main line plus a smaller second line. Split them with the | sign."
+        }
+      ],
+      "recommended": {
+        "box": "hookGrid",
+        "id": "box",
+        "why": "The easiest to read on any video."
+      }
+    },
+    "s-pos": {
+      "title": "Where should the hook sit?",
+      "what": "The spot on screen for your hook. Your face always stays clear.",
+      "options": [
+        {
+          "name": "Below captions",
+          "when": "Most videos. It sits right where people are already reading."
+        },
+        {
+          "name": "Above the head",
+          "when": "You have empty space above you in the shot."
+        }
+      ],
+      "tip": "If the spot you pick has no room in your video, we use the other one and tell you.",
+      "recommended": {
+        "box": "posOpts",
+        "id": "below",
+        "why": "Works for almost every shot."
+      }
+    },
+    "s-cap": {
+      "title": "Which caption style?",
+      "what": "How the subtitles appear while you talk. Most people watch without sound, so captions matter.",
+      "options": [
+        {
+          "name": "Clean",
+          "when": "Calm and easy to read. Fits any video."
+        },
+        {
+          "name": "Karaoke",
+          "when": "Energetic videos. The word you're saying lights up in your color."
+        },
+        {
+          "name": "Box Fill",
+          "when": "Busy or bright backgrounds. Words sit on a dark box."
+        },
+        {
+          "name": "Minimal",
+          "when": "Short punchy lines with one key word in bold."
+        }
+      ],
+      "recommended": {
+        "box": "capGrid",
+        "id": "clean",
+        "why": "Calm and readable on any video."
+      }
+    },
+    "s-font": {
+      "title": "Which font?",
+      "what": "The typeface for your captions and your hook. Pick the one that feels most like your brand.",
+      "options": [
+        {
+          "name": "CCC Signature",
+          "when": "Our own look. Clean and bold."
+        },
+        {
+          "name": "Poppins",
+          "when": "Round and friendly."
+        },
+        {
+          "name": "Plus Jakarta Sans",
+          "when": "Modern and premium."
+        },
+        {
+          "name": "Bricolage Grotesque",
+          "when": "Bold, with more character."
+        }
+      ],
+      "recommended": {
+        "box": "fontGrid",
+        "id": "ccc",
+        "why": "Our signature look."
+      }
+    },
+    "s-top": {
+      "title": "Dark or Light top half?",
+      "what": "The background behind the visuals above you. Your brand color is the accent in both.",
+      "options": [
+        {
+          "name": "Dark",
+          "when": "Most videos. Logos, photos and screenshots pop on it."
+        },
+        {
+          "name": "Light",
+          "when": "Your brand is light and airy, or you film in a bright room."
+        }
+      ],
+      "recommended": {
+        "box": "topOpts",
+        "id": "dark",
+        "why": "Logos, photos and screenshots pop on it."
+      }
+    },
+    "s-files": {
+      "title": "Do I need to add files?",
+      "what": "No, this is optional. Add screenshots, screen recordings or clips only if you want something specific on screen.",
+      "options": [
+        {
+          "name": "What to add",
+          "when": "Your app or website, a result you got, a client message, a clip of what you're talking about."
+        },
+        {
+          "name": "The note",
+          "when": "Write when it should show, in your own words. Example: when I talk about the free audit."
+        }
+      ],
+      "tip": "Your files stay on your computer. Anything without a file gets our animated visuals."
+    },
+    "s-web": {
+      "title": "What are real visuals?",
+      "what": "When you mention a brand, app, website, news story or public person, we find the real thing online and show it.",
+      "options": [
+        {
+          "name": "Find real visuals online",
+          "when": "Most videos. Real logos, headlines and screenshots make what you say believable."
+        },
+        {
+          "name": "Animated visuals only",
+          "when": "You don't want anything from the internet in your video."
+        },
+        {
+          "name": "Links you mention",
+          "when": "Paste the exact article or post you talk about. We use it first."
+        }
+      ],
+      "tip": "Every real visual and where it came from is listed in your report, so you can check it before you post.",
+      "recommended": {
+        "box": "webOpts",
+        "id": "on",
+        "why": "Real logos and headlines make your claims believable."
+      }
+    },
+    "s-color": {
+      "title": "Where is my brand color used?",
+      "what": "The line above the color picker shows exactly where. The preview on the right updates as you pick.",
+      "tip": "Pick a bright, saturated color. Very dark colors are hard to read on video."
+    },
+    "s-pace": {
+      "title": "Fast or Chill?",
+      "what": "How tight the cuts are. Both always remove mistakes, repeated takes and dead air at the start and end.",
+      "options": [
+        {
+          "name": "Fast-paced",
+          "when": "Most reels. Every pause shrinks to a blink."
+        },
+        {
+          "name": "Chill",
+          "when": "You talk calmly, or film handheld. A short breath stays between sentences."
+        }
+      ],
+      "recommended": {
+        "box": "paceOpts",
+        "id": "fast",
+        "why": "The classic reel feel."
+      }
+    },
+    "s-cam": {
+      "title": "Zoom or Static?",
+      "what": "What the camera does where we cut out a mistake or a pause.",
+      "options": [
+        {
+          "name": "Zoom",
+          "when": "Most videos. The shot switches between wide and close, so cuts feel like a new camera angle."
+        },
+        {
+          "name": "Static",
+          "when": "You want one steady frame the whole time."
+        }
+      ],
+      "recommended": {
+        "box": "camOpts",
+        "id": "zoom",
+        "why": "Every cut feels like a new camera angle."
+      }
+    }
+  },
+  "missing": {
+    "text hook yes or no": "s-text",
+    "hook text": "s-text",
+    "hook style": "s-hook",
+    "caption style": "s-cap",
+    "files still uploading": "s-files",
+    "fix the links": "s-web"
+  },
+  "examples": {
+    "hooks": [
+      "How I got my first 10 clients without ads",
+      "Stop posting every day. Do this instead",
+      "3 mistakes keeping your reels at 200 views",
+      "The 20 minute system behind all my content",
+      "Nobody tells you this about growing online",
+      "I posted for 30 days straight. Here's what happened"
+    ],
+    "links": [
+      {
+        "what": "An article or news story you mention",
+        "example": "https://www.theverge.com/2026/11/12/…"
+      },
+      {
+        "what": "A post on X, LinkedIn or Reddit",
+        "example": "https://x.com/name/status/1234567890"
+      },
+      {
+        "what": "A YouTube video or ad you talk about",
+        "example": "https://www.youtube.com/watch?v=…"
+      },
+      {
+        "what": "A product, app or company website",
+        "example": "https://notion.com"
+      }
+    ],
+    "files": [
+      {
+        "what": "Your app, website or product on screen",
+        "example": "a screenshot or a short screen recording"
+      },
+      {
+        "what": "A result you got",
+        "example": "stats, revenue, a sales dashboard"
+      },
+      {
+        "what": "Proof from a client",
+        "example": "a message, review or testimonial"
+      },
+      {
+        "what": "A clip of what you talk about",
+        "example": "an event, a behind the scenes moment"
+      },
+      {
+        "what": "The note under each file",
+        "example": "when I talk about the free audit"
+      }
+    ]
+  },
+  "faq": [
+    {
+      "q": "How long does it take?",
+      "a": "Usually 5 to 10 minutes for Basic Edit and 10 to 20 minutes for Split Screen, depending on how long your video is. Claude tells you in the chat when it's ready."
+    },
+    {
+      "q": "Does my video leave my computer?",
+      "a": "No. All editing and rendering happens on your computer. To decide what to cut, Claude reads only the text of what you say. Files you add here stay on your computer too."
+    },
+    {
+      "q": "Can I change things after I see the video?",
+      "a": "Yes. Just tell Claude in the same chat, in plain words. For example: bring back the part at 0:22, make the hook shorter, or switch the captions to Clean."
+    },
+    {
+      "q": "I filmed horizontally. Can I still use it?",
+      "a": "Yes, with Split Screen. It turns a horizontal video into a vertical one with visuals above you. Basic Edit needs a vertical (9:16) video."
+    },
+    {
+      "q": "Where do the real visuals come from?",
+      "a": "From official websites, news sites and public image libraries. Every real visual and its source is listed in your report, so you can check it before you post. Prefer none? Choose Animated visuals only."
+    },
+    {
+      "q": "Which languages work?",
+      "a": "Right now the editor works with English speech."
+    },
+    {
+      "q": "Can I close this page?",
+      "a": "Yes, as soon as you click Start editing. The editor keeps working and Claude tells you when your video is ready."
+    },
+    {
+      "q": "Something went wrong. What now?",
+      "a": "Message us in your 1-on-1 chat on Discord. To make it quick, ask Claude: show my editor support info, and paste what it shows into the chat."
+    }
+  ],
+  "chooser": {
+    "title": "Which format is right for me?",
+    "questions": [
+      {
+        "id": "show",
+        "q": "Do you talk about things you could show on screen?",
+        "hint": "An app, a brand, a website, a news story, a result or a number."
+      },
+      {
+        "id": "files",
+        "q": "Do you have screenshots or clips you want in the video?",
+        "hint": "Your app, a dashboard, a client message, a short clip."
+      }
+    ],
+    "results": {
+      "split-screen": "Split Screen. You stay in the bottom half and what you talk about is shown above you: animated visuals, real logos and headlines, or your own files.",
+      "basic": "Basic Edit. Just you, edited the CCC way: tight cuts, a hook, captions and zooms. Perfect when the video is all about what you say."
+    }
+  }
+}

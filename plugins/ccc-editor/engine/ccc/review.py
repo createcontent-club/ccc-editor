@@ -105,7 +105,7 @@ def client_report(p: dict, exported: str | None) -> str:
         if r["words"] and any(x in ("retake", "false-start", "off-script") for x in reasons):
             text = " ".join(words[w]["text"] for w in r["words"])
             label = " + ".join(CLIENT_REASON.get(x, x) for x in reasons)
-            notable.append(f'  • {fmt_t(r["srcStart"])} — "{text[:70]}{"…" if len(text) > 70 else ""}" ({label})')
+            notable.append(f'  • {fmt_t(r["srcStart"])}: "{text[:70]}{"…" if len(text) > 70 else ""}" ({label})')
     pauses = sum(counts.get(x, 0) for x in ("pause", "noise", "lead-in", "tail"))
     removed_bits = [f"{counts[k]} {CLIENT_REASON[k]}{'s' if counts[k] > 1 else ''}" for k in CLIENT_REASON if counts.get(k)]
     removed_bits.append(f"{pauses} pauses/breaths")
@@ -122,7 +122,7 @@ def client_report(p: dict, exported: str | None) -> str:
         pos = hook.get("position", "")
         lines.append(f"Text hook: {HOOK_NAMES.get(hook['style'], hook['style'])}, "
                      f"{'on the split line' if pos.startswith('na liniji') else 'above your head' if pos.startswith('iznad') else 'below the captions'}"
-                     + (f" — moved there because the chosen spot had no room" if "izabrano" in pos else ""))
+                     + (f" (moved there because the chosen spot had no room)" if "izabrano" in pos else ""))
     else:
         lines.append("Text hook: none")
     cs = p.get("caption_style", "clean")
@@ -139,8 +139,8 @@ def client_report(p: dict, exported: str | None) -> str:
         except Exception:  # izveštaj nikad ne sme da padne zbog izvora
             rv = []
         if rv:
-            lines.append("Real visuals used (with sources — check you're OK showing them):")
+            lines.append("Real visuals used (with sources, so you can check you're OK showing them):")
             lines += rv
-    lines.append("Want changes? Just tell me — e.g. \"bring back the part at 0:22\", \"make the hook shorter\", "
+    lines.append("Want changes? Just tell me, e.g. \"bring back the part at 0:22\", \"make the hook shorter\", "
                  "\"switch captions to Clean\".")
     return "\n".join(lines)

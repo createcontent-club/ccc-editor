@@ -38,6 +38,108 @@
 
   section { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 18px; padding: 22px; margin-top: 18px; }
   section.hidden { display: none; }
+  section { position: relative; scroll-margin-top: 24px; }
+  /* Pomoćnici (PLAN §14, faza 1): "?" pored naslova, prozorčić sa objašnjenjem, oznaka "Recommended", skok na sekciju */
+  .help-btn { margin-left: 4px; width: 26px; height: 26px; flex: none; border-radius: 99px; border: 1.5px solid var(--accent-line);
+    background: rgba(0,102,255,.10); color: var(--accent-hi); font: 800 14px/1 var(--head); cursor: pointer; display: inline-grid;
+    place-items: center; padding: 0; box-shadow: none; transition: background .15s, color .15s, border-color .15s; }
+  .help-btn:hover, .help-btn[aria-expanded="true"] { background: var(--accent); color: #fff; border-color: var(--accent); transform: none; box-shadow: 0 0 16px rgba(0,102,255,.5); }
+  .help-btn:focus-visible { outline: 3px solid var(--accent-hi); outline-offset: 2px; }
+  .help-pop { position: absolute; z-index: 30; top: 58px; left: 22px; right: 22px; max-width: 460px; background: #0B0F18;
+    border: 1px solid var(--accent-line); border-radius: 16px; padding: 18px 20px 16px; box-shadow: 0 18px 50px rgba(0,0,0,.6), 0 0 30px rgba(0,102,255,.18);
+    animation: popIn .16s ease-out; }
+  .help-pop[hidden] { display: none; }
+  .help-pop h3 { margin: 0 34px 6px 0; font: 800 16px/1.3 var(--head); color: #fff; }
+  .help-pop p { margin: 0 0 10px; color: #C9D2E4; font-size: 14.5px; line-height: 1.5; }
+  .help-pop ul { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .help-pop li { font-size: 14px; line-height: 1.45; color: #B7C1D6; padding-left: 14px; position: relative; }
+  .help-pop li::before { content: ""; position: absolute; left: 0; top: 8px; width: 6px; height: 6px; border-radius: 9px; background: var(--accent-hi); }
+  .help-pop li b { color: #fff; font-weight: 700; }
+  .help-pop .rec-line { margin: 4px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(0,102,255,.12); border: 1px solid rgba(0,102,255,.28);
+    color: #DCE6FA; font-size: 13.5px; }
+  .help-pop .tip { color: var(--muted); font-size: 13.5px; margin: 6px 0 0; }
+  .help-pop .close { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line);
+    background: transparent; color: var(--muted); font: 700 16px/1 "Inter"; padding: 0; box-shadow: none; cursor: pointer; }
+  .help-pop .close:hover, .help-pop .close:focus-visible { color: #fff; border-color: var(--accent-line); transform: none; box-shadow: none; outline: none; }
+  @keyframes popIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .rec { position: absolute; z-index: 2; top: 10px; right: 10px; padding: 3px 9px; border-radius: 99px; background: rgba(0,102,255,.92); color: #fff;
+    font: 800 10.5px/1.5 var(--head); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 14px rgba(0,102,255,.5); pointer-events: none; }
+  .opt { position: relative; }
+  .opt .rec { top: -10px; right: 12px; }  /* na gornjoj ivici opcije: nikad ne prekriva naziv (uski ekran) */
+  .options { padding-top: 6px; }
+  section.pulse { animation: pulse 1.6s ease-out; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,102,255,.0); border-color: var(--line); }
+    20% { box-shadow: 0 0 0 4px rgba(0,102,255,.55), 0 0 40px rgba(0,102,255,.35); border-color: var(--accent); }
+    100% { box-shadow: 0 0 0 0 rgba(0,102,255,0); border-color: var(--line); } }
+  .need { background: none; border: 0; padding: 0; margin: 0; box-shadow: none; color: #fff; font: 600 13.5px/1.4 "Inter"; text-decoration: underline;
+    text-decoration-color: var(--accent-hi); text-underline-offset: 3px; cursor: pointer; white-space: normal; }
+  .need:hover, .need:focus-visible { color: var(--accent-hi); transform: none; box-shadow: none; outline: none; }
+  /* Živi pregledi u opcijama (PLAN §14, faza 2): pokazuju razliku umesto da je opisuju */
+  .pv { height: 120px; margin-bottom: 10px; border-radius: 9px; background: #151A24; position: relative; overflow: hidden; }
+  /* Pacing: govor (blokovi) i pauze između rečenica; Fast = jedva pauza, Chill = kratak dah */
+  .pv-pace { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 0 14px; }
+  .pv-pace .track { position: relative; display: flex; align-items: center; gap: 0; width: 100%; height: 40px; flex: none; }
+  .pv-pace .w { height: 100%; border-radius: 6px; background: linear-gradient(180deg, #3D8BFF, #0066FF); opacity: .9; }
+  .pv-pace .w i { display: block; height: 100%; background: repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 2px, transparent 2px 6px); border-radius: 6px; }
+  .pv-pace .g { flex: none; height: 2px; background: rgba(255,255,255,.18); }
+  .pv-pace .play { position: absolute; top: -8px; bottom: -8px; width: 2px; background: #fff; box-shadow: 0 0 10px rgba(255,255,255,.8); left: 0; animation: play 3.2s linear infinite; }
+  .pv-pace .lbl { font: 600 11.5px/1.2 "Inter"; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @keyframes play { from { left: 0; } to { left: 100%; } }
+  /* Kamera: na svakom rezu kadar skoči široko ↔ krupno (Zoom) ili stoji (Static) */
+  .pv-cam .shot { position: absolute; inset: 0; transform-origin: 50% 40%; }
+  .pv-cam.zoom .shot { animation: camcut 2.8s steps(1, end) infinite; }
+  .pv-cam .cut { position: absolute; top: 8px; left: 10px; font: 800 10.5px/1 var(--head); letter-spacing: .08em; color: #fff; background: rgba(0,102,255,.85);
+    padding: 3px 7px; border-radius: 6px; opacity: 0; }
+  .pv-cam.zoom .cut { animation: cutflash 1.4s ease-out infinite; }
+  @keyframes camcut { 0% { transform: scale(1); } 50% { transform: scale(1.32) translateY(6px); } }
+  @keyframes cutflash { 0%, 6% { opacity: 1; } 30%, 100% { opacity: 0; } }
+  /* Gornja polovina: mini telefon, vizual gore (tamno/svetlo), govornik dole */
+  .pv-top { display: grid; place-items: center; background: #0C0F16; }
+  .pv-top .ph { width: 60px; height: 106px; border-radius: 10px; overflow: hidden; border: 2px solid #2A3245; display: grid; grid-template-rows: 1fr 1fr; }
+  .pv-top .t { position: relative; display: grid; place-items: center; }
+  .pv-top .t .crd { width: 34px; height: 22px; border-radius: 5px; display: grid; gap: 3px; padding: 4px; align-content: center; }
+  .pv-top .t .crd b { display: block; height: 3px; border-radius: 2px; }
+  .pv-top .b { background: #3A3F48 linear-gradient(160deg, #6E7480, #2C3038); position: relative; }
+  .pv-top .b::after { content: ""; position: absolute; left: 50%; top: 10px; width: 16px; height: 18px; margin-left: -8px; border-radius: 8px 8px 6px 6px; background: #1E232D; }
+  .pv-top.dark .t { background: radial-gradient(circle at 50% 55%, #1B2540, #0B0F18 75%); }
+  .pv-top.dark .crd { background: #161D2C; box-shadow: 0 0 8px rgba(0,102,255,.5); }
+  .pv-top.dark .crd b { background: #DCE6FA; } .pv-top.dark .crd b + b { background: #3D8BFF; width: 60%; }
+  .pv-top.light .t { background: #F2F3F6; }
+  .pv-top.light .crd { background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+  .pv-top.light .crd b { background: #0B0D12; } .pv-top.light .crd b + b { background: #0066FF; width: 60%; }
+  /* Pravi vizuali: pravi logo + naslov sa markerom, naspram animirane ikonice */
+  .pv-web { display: flex; align-items: center; justify-content: center; gap: 12px; background: radial-gradient(circle at 50% 60%, #18213A, #0B0F18 80%); }
+  .pv-web .logo { width: 44px; height: 44px; border-radius: 12px; background: #1C2230; border: 1px solid rgba(255,255,255,.12); display: grid; place-items: center; }
+  .pv-web .logo i { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(#FF5A4E, #FFB020, #3DDC84, #3D8BFF, #B06BFF, #FF5A4E); }
+  .pv-web .news { width: 92px; padding: 8px; border-radius: 8px; background: #fff; display: grid; gap: 4px; }
+  .pv-web .news b { display: block; height: 4px; border-radius: 2px; background: #1B1F27; position: relative; overflow: hidden; }
+  .pv-web .news b.mk::after { content: ""; position: absolute; inset: -2px 100% -2px 0; background: rgba(0,102,255,.55); animation: marker 2.6s ease-out infinite; }
+  .pv-web .news b:nth-child(2) { width: 80%; } .pv-web .news b:nth-child(3) { width: 55%; background: #B8BDC8; }
+  @keyframes marker { 0%, 20% { right: 100%; } 55%, 100% { right: 0; } }
+  .pv-web .tile { width: 44px; height: 44px; border-radius: 12px; background: #161D2C; border: 1px solid rgba(61,139,255,.45); box-shadow: 0 0 12px rgba(0,102,255,.35);
+    display: grid; place-items: center; color: #3D8BFF; font: 800 18px/1 var(--head); }
+  .pv-web .flowl { width: 34px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, rgba(61,139,255,.2), #3D8BFF); position: relative; overflow: hidden; }
+  .pv-web .flowl::after { content: ""; position: absolute; top: -2px; width: 7px; height: 7px; border-radius: 9px; background: #fff; animation: dot 1.6s ease-in-out infinite; }
+  @keyframes dot { from { left: -8px; } to { left: 100%; } }
+  /* Primeri i ideje (faza 2) */
+  .ideas { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .ideas[hidden] { display: none; }
+  .idea { background: #0B0F18; border: 1px solid var(--line); color: #DCE6FA; font: 600 13.5px/1.3 "Inter"; padding: 9px 12px; border-radius: 10px;
+    box-shadow: none; cursor: pointer; white-space: normal; text-align: left; }
+  .idea:hover, .idea:focus-visible { border-color: var(--accent); color: #fff; transform: none; box-shadow: 0 0 14px rgba(0,102,255,.3); outline: none; }
+  .linkbtn { background: none; border: 0; padding: 0; box-shadow: none; color: var(--accent-hi); font: 700 13.5px/1.4 "Inter"; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+  .linkbtn:hover, .linkbtn:focus-visible { color: #fff; transform: none; box-shadow: none; outline: none; }
+  .meter { font: 600 13px/1.4 "Inter"; color: var(--muted); }
+  .meter.ok { color: #3DDC84; } .meter.warn { color: #FFC24D; } .meter.long { color: var(--danger); }
+  .examples { margin-top: 10px; display: grid; gap: 6px; font-size: 13.5px; color: var(--muted); }
+  .examples[hidden] { display: none; }
+  .examples b { color: #DCE6FA; font-weight: 600; }
+  .examples code { font: 500 12.5px/1.4 ui-monospace, Menlo, monospace; color: #9CC2FF; background: rgba(0,102,255,.10); padding: 1px 6px; border-radius: 6px; word-break: break-all; }
+  @media (prefers-reduced-motion: reduce) {
+    .help-pop, section.pulse, .pv-pace .play, .pv-cam .shot, .pv-cam .cut, .pv-web .news b.mk::after, .pv-web .flowl::after { animation: none !important; }
+    .pv-pace .play { display: none; } .pv-cam.zoom .shot { transform: scale(1.2); } .pv-web .news b.mk::after { right: 0; }
+  }
   section.disabled { opacity: 0.35; pointer-events: none; }
   h2 { font: 800 18px/1.3 var(--head); letter-spacing: -0.01em; margin: 0 0 4px; display: flex; gap: 10px; align-items: center; }
   h2 .n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--accent); color: #fff; font-size: 12.5px; box-shadow: 0 0 14px rgba(0,102,255,.55); }
@@ -126,7 +228,25 @@
   .done { text-align: center; padding: 90px 16px; }
   .done img { width: 54px; filter: drop-shadow(0 0 18px rgba(0,102,255,.7)); }
   .done h1 { font: 800 34px/1.15 var(--head); letter-spacing: -0.02em; margin: 22px 0 8px; } .done p { color: var(--muted); }
+  /* "What happens next" posle Start editing (PLAN §14, faza 3) */
+  .whatnext { max-width: 620px; margin: 34px auto 0; text-align: left; display: grid; gap: 14px; }
+  .whatnext .card2 { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px; }
+  .whatnext h2 { font: 800 16px/1.3 var(--head); margin: 0 0 12px; color: #fff; }
+  .whatnext ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: s; }
+  .whatnext ol li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; color: #C9D2E4; font-size: 14.5px; }
+  .whatnext ol li::before { content: counter(s); width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: rgba(0,102,255,.14);
+    border: 1px solid var(--accent-line); color: var(--accent-hi); font: 800 13px/1 var(--head); }
+  .whatnext .time { color: #fff; font-weight: 600; }
+  .whatnext .say { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .whatnext .say span { background: rgba(0,102,255,.10); border: 1px solid rgba(0,102,255,.26); color: #DCE6FA; border-radius: 99px; padding: 6px 12px; font-size: 13.5px; }
+  .helprow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  @media (max-width: 520px) { .options { grid-template-columns: 1fr; } }
+  .howbtn { margin-top: 0; background: transparent; border: 1px solid var(--accent-line); color: #DCE6FA; border-radius: 999px; padding: 8px 14px;
+    font: 700 13px/1 var(--head); cursor: pointer; box-shadow: none; }
+  .howbtn:hover, .howbtn:focus-visible { border-color: var(--accent); color: #fff; box-shadow: 0 0 16px rgba(0,102,255,.4); outline: none; transform: none; }
 </style>
+<script src="/assets/tour.js"></script>
+<script src="/assets/faq.js"></script>
 </head>
 <body>
 <div class="wrap" id="app">
@@ -138,6 +258,8 @@
       <h1>Pick your style</h1>
       <p>Choose how your video should look. Your video is being prepared in the background while you choose.</p>
       <div class="fixed" id="fixed" hidden></div>
+      <div class="helprow"><button type="button" class="howbtn" id="howBtn">How does this work?</button>
+      <button type="button" class="howbtn" id="faqBtn">Questions?</button></div>
     </div>
   </header>
 
@@ -148,9 +270,12 @@
     <div id="hookTextBox" class="textbox">
       <textarea id="hookText" rows="2" placeholder="e.g. How to become a big dog in your industry"></textarea>
       <div class="row">
-        <span class="hint" id="textHint" style="margin:0">Keep it short and punchy.</span>
+        <span class="meter" id="hookMeter">Keep it short and punchy.</span>
+        <button type="button" class="linkbtn" id="ideasBtn" aria-expanded="false" aria-controls="hookIdeas">Need ideas?</button>
+        <button type="button" class="linkbtn" id="splitBtn" style="display:none">Add the | split sign</button>
         <span class="hint" id="stackHint" style="margin:0;display:none">Stacked style: use <b>|</b> to split into two parts, e.g. <i>how to go viral | start growing, stop guessing</i></span>
       </div>
+      <div class="ideas" id="hookIdeas" hidden></div>
     </div>
   </section>
 
@@ -186,11 +311,13 @@
 
   <section id="s-files" class="hidden" data-step>
     <h2><span class="n"></span> Your files <span style="color:var(--muted);font-weight:600;font-size:14px">· optional</span></h2>
-    <p class="hint">Screenshots, screen recordings or clips you want on screen. We place each one where you talk about it — anything without a file gets our animated visuals.</p>
+    <p class="hint">Screenshots, screen recordings or clips you want on screen. We place each one where you talk about it. Anything without a file gets our animated visuals.</p>
     <label class="drop" id="drop">
       <input type="file" id="fileIn" multiple accept="image/*,video/*,.heic,.heif" hidden>
-      <div class="drop-in"><b>Drag files here</b> or <u>choose files</u><span>PNG · JPG · WEBP · HEIC · MP4 · MOV — up to 2 GB each</span></div>
+      <div class="drop-in"><b>Drag files here</b> or <u>choose files</u><span>PNG · JPG · WEBP · HEIC · MP4 · MOV · up to 2 GB each</span></div>
     </label>
+    <div class="row" style="margin-top:8px"><button type="button" class="linkbtn" id="fileExBtn" aria-expanded="false" aria-controls="fileEx">What should I add?</button></div>
+    <div class="examples" id="fileEx" hidden></div>
     <div id="fileList"></div>
     <div class="warn" id="fileWarn"></div>
   </section>
@@ -201,8 +328,10 @@
     <div class="options" id="webOpts"></div>
     <div class="textbox" style="margin-top:16px">
       <b style="font:800 14.5px var(--head)">Links you mention <span style="color:var(--muted);font-weight:600">· optional</span></b>
-      <p class="hint" style="margin:4px 0 10px">Articles, products, posts or pages you talk about — one per line. We use these first.</p>
+      <p class="hint" style="margin:4px 0 10px">Articles, products, posts or pages you talk about, one per line. We use these first.</p>
       <textarea id="links" rows="3" placeholder="https://www.theverge.com/…&#10;https://x.com/…/status/…"></textarea>
+      <div class="row" style="margin-top:6px"><button type="button" class="linkbtn" id="linkExBtn" aria-expanded="false" aria-controls="linkEx">What can I paste?</button></div>
+      <div class="examples" id="linkEx" hidden></div>
       <div class="warn" id="linkWarn"></div>
     </div>
   </section>
@@ -277,7 +406,7 @@ function cards(gridId, items, kind) {
   const g = $(gridId);
   items.forEach((it, i) => {
     const c = document.createElement("div");
-    c.className = "card"; c.dataset.id = it.id; makeButton(c, `${it.name} — ${it.desc}`);
+    c.className = "card"; c.dataset.id = it.id; makeButton(c, `${it.name}: ${it.desc}`);
     c.innerHTML = `<span class="num">${i + 1}</span>
       <video src="/assets/${kind}-${it.id}.mp4" poster="/assets/${kind}-${it.id}.jpg" muted loop playsinline autoplay></video>
       <div class="label"><b>${it.name}</b><span>${it.desc}</span></div>`;
@@ -300,7 +429,7 @@ function fontCards(items) {
     const tr = it.spec?.tracking || { caption: 0, hook: 0 };
     const axes = it.spec?.hookAxes ? `font-variation-settings:'wght' 700,'wdth' ${it.spec.hookAxes.wdth},'opsz' ${it.spec.hookAxes.opsz};` : "";
     const c = document.createElement("div");
-    c.className = "fcard"; c.dataset.id = it.id; makeButton(c, `${it.name} — ${it.desc}`);
+    c.className = "fcard"; c.dataset.id = it.id; makeButton(c, `${it.name}: ${it.desc}`);
     c.innerHTML = `<span class="num">${i + 1}</span>
       <div class="fprev">
         <div class="c" style="font-family:'${fam("cap")}';letter-spacing:${tr.caption}em">your reels don't go viral</div>
@@ -316,7 +445,7 @@ function options(boxId, items, key) {
   const b = $(boxId);
   items.forEach(it => {
     const o = document.createElement("div");
-    o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name} — ${it.desc}`);
+    o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name}: ${it.desc}`);
     o.innerHTML = (it.diagram || "") + `<b>${it.name}</b><span>${it.desc}</span>`;
     o.onclick = () => { S[key] = it.id; render(); };
     b.appendChild(o);
@@ -343,6 +472,10 @@ function render() {
   $("hookTextBox").classList.toggle("locked", !hookOn());
   $("hookText").disabled = !hookOn();
   $("stackHint").style.display = (hookOn() && S.hookStyle === "stack") ? "inline" : "none";
+  $("splitBtn").style.display = (hookOn() && S.hookStyle === "stack" && S.hookText.trim() && !S.hookText.includes("|")) ? "inline" : "none";
+  $("ideasBtn").style.display = hookOn() && (HELP.examples?.hooks || []).length ? "inline" : "none";
+  if (!hookOn()) { $("hookIdeas").hidden = true; $("ideasBtn").setAttribute("aria-expanded", "false"); }
+  hookMeter();
 
   const showColor = needsColor();
   $("s-color").classList.toggle("hidden", !showColor);
@@ -360,7 +493,7 @@ function render() {
     (hookOn() && S.hookStyle === "color" ? `<div class="block" style="background:${col};color:${fg}">How to go viral</div>` : "") +
     (hookOn() && S.hookStyle === "stack" ? `<div class="pill" style="background:${col};color:${fg}">start growing, stop guessing</div>` : "");
   $("colorWarn").textContent = (S.captionStyle === "karaoke" && lum(col) < 0.2)
-    ? "This color is quite dark — the highlighted word may be hard to read. Pick a lighter shade." : "";
+    ? "This color is quite dark, so the highlighted word may be hard to read. Pick a lighter shade." : "";
 
   // Brojevi koraka prate samo vidljive sekcije.
   let n = 0;
@@ -374,11 +507,133 @@ function render() {
   if (S.uploading > 0) missing.push("files still uploading");
   if (isSplit()) {
     const bad = badLinks();
-    $("linkWarn").textContent = bad.length ? `Not a link: ${bad.slice(0, 2).map(x => x.length > 40 ? x.slice(0, 40) + "…" : x).join(", ")} — paste the full link (copy it from the address bar)` : "";
+    $("linkWarn").textContent = bad.length ? `Not a link: ${bad.slice(0, 2).map(x => x.length > 40 ? x.slice(0, 40) + "…" : x).join(", ")}. Paste the full link (copy it from the address bar).` : "";
     if (bad.length) missing.push("fix the links");
   }
   $("go").disabled = missing.length > 0;
-  $("summary").textContent = missing.length ? "Still needed: " + missing.join(", ") : "Ready — we'll edit your video automatically.";
+  const sum = $("summary");
+  if (!missing.length) { sum.textContent = "Ready. We'll edit your video automatically."; }
+  else {
+    sum.textContent = "Still needed: ";
+    missing.forEach((m, i) => {
+      const target = (HELP.missing || {})[m];
+      if (i) sum.appendChild(document.createTextNode(", "));
+      if (!target) { sum.appendChild(document.createTextNode(m)); return; }
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "need"; b.textContent = m;
+      b.setAttribute("aria-label", `Go to ${m}`);
+      b.onclick = () => goTo(target, m === "hook text" ? "hookText" : m === "fix the links" ? "links" : null);
+      sum.appendChild(b);
+    });
+  }
+}
+
+// ---- Pomoćnici (PLAN §14): sadržaj je u /assets/help.json, jedan unos po sekciji.
+let HELP = { sections: {}, missing: {} };
+let openPop = null;
+const reduced = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function closePop(restoreFocus) {
+  if (!openPop) return;
+  const { pop, btn } = openPop;
+  pop.hidden = true; btn.setAttribute("aria-expanded", "false");
+  openPop = null;
+  if (restoreFocus) btn.focus();
+}
+
+function setupHelp() {
+  Object.entries(HELP.sections || {}).forEach(([sid, h]) => {
+    const sec = $(sid);
+    if (!sec) return;
+    const h2 = sec.querySelector("h2");
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "help-btn"; btn.textContent = "?";
+    btn.setAttribute("aria-label", `Help: ${h.title}`); btn.setAttribute("aria-expanded", "false");
+    const pop = document.createElement("div");
+    pop.className = "help-pop"; pop.hidden = true; pop.id = `help-${sid}`;
+    pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", h.title);
+    btn.setAttribute("aria-controls", pop.id);
+    const rec = h.recommended;
+    const recName = rec ? (document.querySelector(`#${rec.box} [data-id="${rec.id}"] b`) || {}).textContent : "";
+    pop.innerHTML = `<button type="button" class="close" aria-label="Close help">✕</button>
+      <h3>${esc(h.title)}</h3><p>${esc(h.what || "")}</p>
+      ${(h.options || []).length ? `<ul>${h.options.map(o => `<li><b>${esc(o.name)}</b>: ${esc(o.when)}</li>`).join("")}</ul>` : ""}
+      ${rec && recName ? `<p class="rec-line">Not sure? Pick <b>${esc(recName)}</b>. ${esc(rec.why)}</p>` : ""}
+      ${h.tip ? `<p class="tip">${esc(h.tip)}</p>` : ""}`;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const wasOpen = openPop && openPop.pop === pop;
+      closePop(false);
+      if (!wasOpen) { pop.hidden = false; btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn }; pop.querySelector(".close").focus(); }
+    };
+    pop.querySelector(".close").onclick = () => closePop(true);
+    pop.addEventListener("click", (e) => e.stopPropagation());
+    h2.appendChild(btn);
+    h2.after(pop);
+    // oznaka "Recommended" na preporučenoj opciji (samo oznaka, izbor ostaje klijentu)
+    if (rec) {
+      const el = document.querySelector(`#${rec.box} [data-id="${rec.id}"]`);
+      if (el && !el.querySelector(".rec")) {
+        const chip = document.createElement("span");
+        chip.className = "rec"; chip.textContent = "Recommended"; chip.title = rec.why;
+        el.appendChild(chip);
+        el.setAttribute("aria-label", `${el.getAttribute("aria-label") || ""} (recommended: ${rec.why})`);
+      }
+    }
+  });
+  document.addEventListener("click", () => closePop(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(true); });
+}
+
+// ---- Faza 2: primeri i ideje
+function toggleBox(btn, box) {
+  const open = box.hidden;
+  box.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+}
+function setupExamples() {
+  const ex = HELP.examples || {};
+  // ideje za hook: klik upisuje tekst (može da se menja)
+  const ideas = $("hookIdeas");
+  (ex.hooks || []).forEach(t => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "idea"; b.textContent = t;
+    b.onclick = () => { const ta = $("hookText"); ta.value = t; S.hookText = t; render(); ta.focus(); };
+    ideas.appendChild(b);
+  });
+  if (!(ex.hooks || []).length) $("ideasBtn").style.display = "none";
+  $("ideasBtn").onclick = () => toggleBox($("ideasBtn"), ideas);
+  // Stacked: ubaci "|" gde je kursor
+  $("splitBtn").onclick = () => {
+    const ta = $("hookText"), p = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, p).replace(/\s+$/, "") + " | " + ta.value.slice(p).replace(/^\s+/, "");
+    S.hookText = ta.value; render(); ta.focus();
+  };
+  const list = (id, items) => {
+    const box = $(id);
+    box.innerHTML = (items || []).map(x => `<div><b>${esc(x.what)}</b>${x.example ? `: <code>${esc(x.example)}</code>` : ""}</div>`).join("");
+  };
+  list("linkEx", ex.links); list("fileEx", ex.files);
+  $("linkExBtn").onclick = () => toggleBox($("linkExBtn"), $("linkEx"));
+  $("fileExBtn").onclick = () => toggleBox($("fileExBtn"), $("fileEx"));
+}
+// dužina hooka: koliko se brzo čita na ekranu
+function hookMeter() {
+  const m = $("hookMeter"), t = S.hookText.replace(/\|/g, "").trim(), n = t.length;
+  if (!hookOn() || !n) { m.className = "meter"; m.textContent = "Keep it short and punchy."; return; }
+  if (n <= 45) { m.className = "meter ok"; m.textContent = `${n} characters. Good length.`; }
+  else if (n <= 70) { m.className = "meter warn"; m.textContent = `${n} characters. A bit long, shorter hooks read faster.`; }
+  else { m.className = "meter long"; m.textContent = `${n} characters. Too long for the first seconds, cut it to the main idea.`; }
+}
+
+// "Still needed" → skok na sekciju i kratko isticanje (i fokus na polje kad je to tekst)
+function goTo(sid, focusId) {
+  const sec = $(sid);
+  if (!sec) return;
+  sec.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "center" });
+  sec.classList.remove("pulse"); void sec.offsetWidth; sec.classList.add("pulse");
+  setTimeout(() => sec.classList.remove("pulse"), 1700);
+  const f = focusId && $(focusId);
+  if (f && !f.disabled) setTimeout(() => f.focus({ preventScroll: true }), reduced() ? 0 : 450);
 }
 
 // Pravilo formata za jedan izbor: lista dozvoljenih; jedna vrednost = zaključano (sekcija se sakriva).
@@ -404,21 +659,23 @@ async function init() {
 
   const dia = (hookTop) => `<div class="diagram"><div class="head"></div><div class="body"></div><div class="cap"></div><div class="hk" style="top:${hookTop}px"></div></div>`;
   const POS = [
-    { id: "below", name: "Below captions", desc: "Default — under the subtitles", diagram: dia(106) },
+    { id: "below", name: "Below captions", desc: "Under the subtitles", diagram: dia(106) },
     { id: "above", name: "Above the head", desc: "In the space above you", diagram: dia(10) },
   ];
+  const camPv = (k) => `<div class="pv pv-cam ${k}" aria-hidden="true"><div class="shot"><div class="diagram" style="height:120px;margin:0;border-radius:0">` +
+    `<div class="head"></div><div class="body"></div></div></div>${k === "zoom" ? '<div class="cut">CUT</div>' : ""}</div>`;
   const CAM = [
-    { id: "zoom", name: "Zoom", desc: "Wide / close shot changes on jump cuts" },
-    { id: "static", name: "Static", desc: "One steady frame, no zoom" },
+    { id: "zoom", diagram: camPv("zoom"), name: "Zoom", desc: "Wide / close shot changes on jump cuts" },
+    { id: "static", diagram: camPv("static"), name: "Static", desc: "One steady frame, no zoom" },
   ];
 
   if (EL.hook) {
     if (EL.hook.optional) {
       const yn = $("hookYesNo");
       [{ id: "yes", ic: "Aa", name: "Yes, add a text hook", desc: "Your text on screen at the start" },
-       { id: "no", ic: "—", name: "No text hook", desc: "Captions only" }].forEach(it => {
+       { id: "no", ic: "✕", name: "No text hook", desc: "Captions only" }].forEach(it => {
         const o = document.createElement("div");
-        o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name} — ${it.desc}`);
+        o.className = "opt"; o.dataset.id = it.id; makeButton(o, `${it.name}: ${it.desc}`);
         o.innerHTML = `<div class="yn"><div class="ic">${it.ic}</div><div><b>${it.name}</b><span>${it.desc}</span></div></div>`;
         o.onclick = () => { S.noHook = it.id === "no"; render(); if (!S.noHook) $("hookText").focus(); };
         yn.appendChild(o);
@@ -446,20 +703,27 @@ async function init() {
     $("s-files").classList.remove("hidden");
     initFiles();
     const sw = (bg, fg) => `<div class="diagram" style="background:${bg};display:grid;place-items:center"><div style="width:58%;height:34px;border-radius:9px;background:${fg}"></div></div>`;
+    const topPv = (k) => `<div class="pv pv-top ${k}" aria-hidden="true"><div class="ph"><div class="t"><div class="crd"><b></b><b></b></div></div><div class="b"></div></div></div>`;
     options("topOpts", [
-      { id: "dark", name: "Dark", desc: "Deep navy with a soft glow — the CCC look", diagram: sw("radial-gradient(circle at 50% 55%,#1B2540,#0B0F18 75%)", "#161D2C") },
-      { id: "light", name: "Light", desc: "Light grey with black text — high contrast", diagram: sw("#F2F3F6", "#FFFFFF") },
+      { id: "dark", name: "Dark", desc: "Deep navy with a soft glow. The CCC look.", diagram: topPv("dark") },
+      { id: "light", name: "Light", desc: "Light grey with black text. High contrast.", diagram: topPv("light") },
     ], "topStyle");
     $("s-web").classList.remove("hidden");
+    const webPv = (k) => k === "on"
+      ? `<div class="pv pv-web" aria-hidden="true"><div class="logo"><i></i></div><div class="news"><b class="mk"></b><b></b><b></b></div></div>`
+      : `<div class="pv pv-web" aria-hidden="true"><div class="tile">✦</div><div class="flowl"></div><div class="tile">↗</div></div>`;
     options("webOpts", [
-      { id: "on", name: "Find real visuals online", desc: "Real logos, headlines, screenshots, posts and photos. Sources are listed in your report." },
-      { id: "off", name: "Animated visuals only", desc: "No searching online — our animated graphics, your files and the links below." },
+      { id: "on", diagram: webPv("on"), name: "Find real visuals online", desc: "Real logos, headlines, screenshots, posts and photos. Sources are listed in your report." },
+      { id: "off", diagram: webPv("off"), name: "Animated visuals only", desc: "No searching online. Our animated graphics, your files and the links below." },
     ], "web");
     $("links").oninput = (e) => { S.links = e.target.value; render(); };
   }
+  const pacePv = (gap, lbl) => `<div class="pv pv-pace" aria-hidden="true"><div class="track">${
+    [26, 18, 30, 14].map((w, i) => `<div class="w" style="flex:${w}"><i></i></div>${i < 3 ? `<div class="g" style="width:${gap}px"></div>` : ""}`).join("")
+    }<div class="play"></div></div><div class="lbl">${lbl}</div></div>`;
   const PACE = [
-    { id: "fast", name: "Fast-paced", desc: "Tight cuts, no dead air — the classic reel feel" },
-    { id: "chill", name: "Chill", desc: "A touch more breathing room — great for phone-in-hand videos" },
+    { id: "fast", diagram: pacePv(5, "Pause: a blink"), name: "Fast-paced", desc: "Tight cuts, no dead air. The classic reel feel." },
+    { id: "chill", diagram: pacePv(16, "Pause: a breath"), name: "Chill", desc: "A touch more breathing room. Great for phone-in-hand videos." },
   ];
   if (EL.pacing) {
     S.pacing = EL.pacing.modes[0];
@@ -484,7 +748,23 @@ async function init() {
   $("hex").oninput = (e) => { if (hexOk(e.target.value)) { S.color = normHex(e.target.value); render(); } };
   $("hookText").oninput = (e) => { S.hookText = e.target.value; render(); };
   $("go").onclick = submit;
+  // pomoćnici: stranica radi i bez njih (fajl nedostaje / greška → samo bez "?" i oznaka)
+  try { const hr = await fetch("/assets/help.json"); if (hr.ok) HELP = await hr.json(); } catch (e) {}
+  setupHelp();
+  setupExamples();
   render();
+  // vodič (PLAN §14, faza 3): sam prvi put, posle na dugme
+  const firstHelp = () => [...document.querySelectorAll("section[data-step]")].find(x => !x.classList.contains("hidden"))?.querySelector(".help-btn");
+  const steps = [
+    { el: "header", title: "Your style, in about a minute", text: "Go from top to bottom and pick what you like. Everything you choose here is used for this video." },
+    { el: firstHelp, title: "Not sure? Tap the ?", text: "Every section explains itself. RECOMMENDED marks the pick that works for most videos." },
+    { el: "#summary", title: "What's left", text: "This line shows what you still need to pick. Tap an item to jump straight to it." },
+    { el: "#go", title: "Start editing", text: "When everything is set, click here. Then you can close the page, the editor does the rest." },
+  ];
+  const go = (force) => window.CCCTour && (force ? CCCTour.start("tour_format", steps, { returnFocus: $("howBtn") }) : CCCTour.auto("tour_format", steps));
+  $("howBtn").onclick = () => go(true);
+  $("faqBtn").onclick = (e) => window.CCCFaq && CCCFaq.show(e.currentTarget);
+  go(false);
 }
 
 // ---- Split Screen: klijentovi fajlovi (ostaju na računaru, u work/<ime>/assets/)
@@ -517,7 +797,7 @@ function upload(file) {
   x.upload.onprogress = (e) => { if (e.lengthComputable) { f.pct = 100 * e.loaded / e.total; drawFiles(); } };
   x.onload = x.onerror = () => {
     S.uploading--;
-    let r = {}; try { r = JSON.parse(x.responseText); } catch (e) { r = { ok: false, error: "Upload failed — try again." }; }
+    let r = {}; try { r = JSON.parse(x.responseText); } catch (e) { r = { ok: false, error: "Upload failed. Please try again." }; }
     if (r.ok) { f.done = true; f.file = r.file; f.size = r.size; } else { S.files.splice(S.files.indexOf(f), 1); $("fileWarn").textContent = r.error; }
     drawFiles(); render();
   };
@@ -537,6 +817,26 @@ function initFiles() {
 const linkList = () => S.links.split(/[\s,]+/).map(x => x.trim()).filter(Boolean)
   .map(x => /^https?:\/\//i.test(x) ? x : /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(x) ? "https://" + x : x);
 const badLinks = () => linkList().filter(x => !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(x));
+
+// "What happens next": iskreno šta sada radi editor, koliko otprilike traje, šta klijent (ne) treba da radi
+function nextScreen(b) {
+  const split = isSplit();
+  const steps = [
+    "We cut out mistakes, repeated takes, filler words and long pauses.",
+    b.hook_text ? "We add your hook and your captions." : "We add your captions.",
+    ...(split ? [b.web ? "We build the visuals for the top half and look up the real logos, headlines and photos you mention." : "We build the visuals for the top half."] : []),
+    "We render the final video and run our quality checks.",
+  ];
+  const time = split ? "Usually 10 to 20 minutes, depending on how long your video is." : "Usually 5 to 10 minutes, depending on how long your video is.";
+  return `<div class="done"><img src="/logo.png" alt=""><h1>Editing started ✂️</h1><p>You can close this page now. You don't need to do anything else.</p>
+    <div class="whatnext">
+      <div class="card2"><h2>What happens now</h2><ol>${steps.map(x => `<li><span>${esc(x)}</span></li>`).join("")}</ol>
+        <p style="margin:14px 0 0"><span class="time">${esc(time)}</span> Claude tells you in the chat when it's ready.</p></div>
+      <div class="card2"><h2>Where your video will be</h2><p style="margin:0">Saved right next to your original video, with <b>-CCC-edit</b> at the end of the name.</p></div>
+      <div class="card2"><h2>Want changes after?</h2><p style="margin:0 0 8px">Just tell Claude in the same chat, in plain words. For example:</p>
+        <div class="say"><span>bring back the part at 0:22</span><span>make the hook shorter</span><span>switch captions to Clean</span>${split ? "<span>make the top light</span>" : "<span>no zoom please</span>"}</div></div>
+    </div></div>`;
+}
 
 async function submit() {
   $("go").disabled = true;
@@ -559,7 +859,8 @@ async function submit() {
   } catch (e) { window.cccClosed && window.cccClosed(); return; }  // server je već ugašen (istekao rok)
   if (!res.ok) { $("summary").textContent = res.error; $("go").disabled = false; return; }
   window.cccDone = true;
-  $("app").innerHTML = `<div class="done"><img src="/logo.png" alt=""><h1>Editing started ✂️</h1><p>You can close this page. Your finished video will appear in Claude Code.</p></div>`;
+  window.CCCTour && CCCTour.finish();
+  $("app").innerHTML = nextScreen(body);
   document.querySelector(".bar").remove();
 }
 init();
@@ -575,7 +876,7 @@ init();
     d.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(10,10,11,.9);display:grid;place-items:center;" +
       "color:#fff;font:600 20px/1.45 system-ui,sans-serif;text-align:center;padding:24px";
     d.innerHTML = "<div><p style='font-size:30px;margin:0 0 12px'>This menu has closed</p>" +
-      "<p style='opacity:.8;margin:0;max-width:520px'>Go back to Claude Code and say \u201copen the style menu again\u201d \u2014 " +
+      "<p style='opacity:.8;margin:0;max-width:520px'>Go back to Claude Code and say \u201copen the style menu again\u201d, " +
       "or just answer the questions there.</p></div>";
     document.body.appendChild(d);
   };
