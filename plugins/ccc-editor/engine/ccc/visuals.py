@@ -49,6 +49,13 @@ KINDS = {
     # Dve strane koje se porede, OBE u kadru od početka (recenzija aazar-trial-1 v1, s01–s03):
     # sides: [{file, name, logo: {file}, values: [{text, at, tone, label}]}] × 2 — vrednosti ulaze na reč i smenjuju se.
     "faceoff": {"required": ["sides"], "optional": []},
+    # PRIČA I LJUDI faza 1 (14. nov 2026): sve činjenice iz izvora; slike lica centrirane automatski
+    "timeline": {"required": ["events"], "optional": ["title"]},  # events [{year|date, label, file, at, tone}] 2–5
+    "quote": {"required": ["text"], "optional": ["file", "name", "sub", "highlight", "source", "at"]},  # tačan citat, highlight [{text, at}]
+    "network": {"required": ["people"], "optional": ["links", "title"]},  # people [{file, name, role, at, tone}] 2–4; links [{between: [0, 1], label, at, tone}]
+    "dossier": {"required": ["name"], "optional": ["file", "facts", "kicker", "start"]},  # facts [{label, value, at, tone}] ≤ 4
+    "lowerthird": {"required": ["file", "name"], "optional": ["sub", "place", "tag", "at", "start"]},  # snimak/foto + TV natpis
+    "compare": {"required": ["before", "after"], "optional": ["title"]},  # before/after {file, label, at}: brisanje na after.at
     # Stubići sa licem/logom na vrhu svakog (recenzija aazar-trial-1 v3, s02/s27): bars: [{file, name, logo}] × 2–3,
     # sets: [{label, at, values: [n…], display: ["$4.2M"…], tones: [...], note: {text, at, tone}}] — skup se smenjuje na reč.
     "pillars": {"required": ["bars", "sets"], "optional": []},
@@ -400,7 +407,10 @@ def validate_plan(plan: dict, job) -> list[str]:
                     yield from files_in(v)
         if k == "post" and d.get("platform") not in ("x", "reddit", "linkedin", "threads"):
             errs.append(f"moment {i} (post): platform mora biti x | reddit | linkedin | threads")
-        if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow"):
+        if k in ("timeline", "quote", "network", "dossier", "lowerthird", "compare"):
+            errs += _story_errors(i, k, d, job)
+        if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow",
+                 "timeline", "quote", "network", "dossier", "compare"):
             from .assets import nfc, prepare
             man = prepare(job)
             for f in files_in(d):
@@ -932,6 +942,66 @@ def _app_errors(i: int, d: dict, job=None) -> list[str]:
     return errs
 
 
+def _story_errors(i: int, k: str, d: dict, job=None) -> list[str]:
+    """Priča i ljudi (faza 1): oblik podataka — broj delova, veze ka postojećim licima, citat koji se ističe postoji u citatu."""
+    errs: list[str] = []
+    if k == "timeline":
+        ev = d.get("events") or []
+        if not 2 <= len(ev) <= 5:
+            errs.append(f"moment {i} (timeline): 2–5 events [{{year | date, label, file, at}}]")
+        for x in ev:
+            if not (isinstance(x, dict) and _t(x.get("label") or x.get("text")) and (x.get("year") or x.get("date"))):
+                errs.append(f"moment {i} (timeline): svaki event traži year (ili date) + label")
+                break
+    if k == "quote":
+        q = str(d.get("text") or "")
+        if len(q) > 160:
+            errs.append(f"moment {i} (quote): citat ima {len(q)} znakova (najviše 160) — pokaži glavnu rečenicu citata (sa … ako je skraćen)")
+        for h in d.get("highlight") or []:
+            if _t(h) and _t(h).lower() not in q.lower():
+                errs.append(f"moment {i} (quote): highlight \"{_t(h)}\" nije deo citata — isticanje samo tačnih reči iz citata")
+        if not d.get("name"):
+            errs.append(f"moment {i} (quote): citat traži name (ko je to rekao) — i file (njegov portret) kad postoji")
+    if k == "network":
+        ppl = d.get("people") or []
+        if not 2 <= len(ppl) <= 4:
+            errs.append(f"moment {i} (network): 2–4 people [{{file, name, role, at}}]")
+        for x in ppl:
+            if not (isinstance(x, dict) and _t(x.get("name"))):
+                errs.append(f"moment {i} (network): svaka osoba traži name")
+                break
+        for l in d.get("links") or []:
+            try:
+                ab = l.get("between") if isinstance(l, dict) else None
+                ok = isinstance(ab, list) and len(ab) == 2 and all(0 <= int(x) < len(ppl) for x in ab) and int(ab[0]) != int(ab[1])
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                errs.append(f"moment {i} (network): link traži between: [osoba, osoba] — brojevi osoba (0–{len(ppl) - 1}), različiti")
+                break
+    if k == "dossier":
+        if len(d.get("facts") or []) > 4:
+            errs.append(f"moment {i} (dossier): najviše 4 činjenice")
+        if not d.get("file"):
+            errs.append(f"moment {i} (dossier): dosije traži file (pravi portret osobe)")
+    if k == "compare":
+        for side in ("before", "after"):
+            v = d.get(side)
+            if not (isinstance(v, dict) and v.get("file")):
+                errs.append(f"moment {i} (compare): {side} traži {{file, label}} (pravi snimak tada / sada)")
+    if k == "lowerthird":
+        if not d.get("file"):
+            errs.append(f"moment {i} (lowerthird): traži file — pravi snimak ili foto osobe")
+        elif job is not None:
+            from .assets import nfc, prepare
+            m = prepare(job).get(nfc(str(d["file"])))
+            if m is None:
+                errs.append(f"moment {i}: fajl '{d['file']}' ne postoji u {assets_dir(job)}")
+            elif m["kind"] == "video" and d.get("start") and float(d["start"]) >= m.get("duration", 0):
+                errs.append(f"moment {i}: start {d['start']}s je posle kraja klipa ({m.get('duration')}s)")
+    return errs
+
+
 STORY_MUST = ("fokus screenshot-a",)  # priča/smisao je inače [aim]; ovo se ne isporučuje (principles.md 51)
 
 
@@ -1095,6 +1165,27 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
             if isinstance(x, dict):
                 cap(_t(x.get("text")), 70, "komentar")
         cap(_t(d.get("caption")), 90, "opis videa")
+    elif kind == "timeline":
+        for x in d.get("events") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label") or x.get("text")), 46, "opis događaja")
+                cap(str(x.get("year") or x.get("date") or ""), 12, "godina/datum")
+    elif kind == "network":
+        for x in d.get("people") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("name")), 20, "ime")
+                cap(_t(x.get("role")), 24, "uloga")
+        for x in d.get("links") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 18, "oznaka veze")
+    elif kind == "dossier":
+        for x in d.get("facts") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 26, "oznaka činjenice")
+                cap(str(x.get("value") or ""), 20, "vrednost")
+    elif kind == "lowerthird":
+        cap(_t(d.get("name")), 26, "ime")
+        cap(" · ".join(filter(None, [_t(d.get("sub")), _t(d.get("place"))])), 44, "uloga · mesto")
     elif kind == "scene":
         for b in d.get("beats") or []:
             if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):

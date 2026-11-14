@@ -2281,6 +2281,293 @@ const News: React.FC<{d: any}> = ({d}) => {
 };
 
 /** Pozadina je scena, ne zvezda: tih grid koji se gubi ka ivicama + dva blaga svetla u boji brenda. */
+// ------------------------------------------------------------------ PRIČA I LJUDI — faza 1 (14. nov 2026)
+// Scene o ljudima, likovima i događajima: vremenska linija, citat, ko je ko (veze), dosije, natpis preko klipa, tada/sada.
+// Svaka činjenica na ekranu mora iz izvora (citat doslovno, broj iz članka) — plan to nosi, šablon samo prikazuje.
+
+/** Mala portret-pločica (lice u sredini kruga), opcioni prsten u boji brenda. */
+const Face: React.FC<{f: any; size: number; ring?: number; tone?: string}> = ({f, size, ring = 0, tone}) => {
+  const c = useC();
+  const col = toneColor(tone, c.acc);
+  return (
+    <div style={{width: size, height: size, borderRadius: size / 2, padding: 6, boxSizing: 'border-box', flex: 'none',
+      background: ring > 0 ? `conic-gradient(${col} ${ring * 360}deg, ${c.th.track} 0deg)` : c.th.track,
+      boxShadow: `0 20px 44px rgba(0,0,0,${c.th.dark ? 0.45 : 0.18})` + (ring > 0.99 ? `, 0 0 40px ${rgba(col, 0.45)}` : '')}}>
+      <div style={{width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden', background: c.th.dark ? '#222' : '#ddd',
+        border: `4px solid ${c.th.dark ? '#141518' : '#FFFFFF'}`, boxSizing: 'border-box'}}>
+        {f?.src && isLogo(f) ? <Img src={staticFile(f.src)} style={{width: '100%', height: '100%', objectFit: 'contain', padding: size * 0.2, boxSizing: 'border-box',
+          background: c.th.dark ? '#1C1D21' : '#FFFFFF'}} />  /* logo se nikad ne seče (principle 8) */
+          : f?.src ? <Img src={staticFile(f.src)} style={{width: '100%', height: '100%', objectFit: 'cover', objectPosition: facePos(f, size, size)}} />
+          : <div style={{width: '100%', height: '100%', display: 'grid', placeItems: 'center', ...font(800, size * 0.36), color: c.th.mut}}>
+            {String(f?.name ?? '?').slice(0, 1).toUpperCase()}</div>}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Vremenska linija: godine/datumi na liniji, pokazivač klizi do tačke na njenu reč, iznad aktivne tačke kartica
+ * sa slikom (lice centrirano) i opisom; ranije tačke ostaju (utišane) — gledalac vidi gde je u priči.
+ */
+const Timeline: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
+  const c = useC();
+  const evs: any[] = (d.events ?? []).slice(0, 5);
+  const n = Math.max(1, evs.length);
+  const ats = evs.map((e, i) => beat(c, e, i, n));
+  let cur = 0;
+  ats.forEach((a, i) => { if (c.t >= a - 0.05) cur = i; });
+  const X0 = 170, X1 = 910, LY = Math.min(height - 170, 770);
+  const xs = evs.map((_, i) => (n === 1 ? (X0 + X1) / 2 : X0 + ((X1 - X0) * i) / (n - 1)));
+  // pokazivač: klizi od prethodne do aktivne tačke
+  const px = evs.reduce((x, _, i) => (i === 0 ? xs[0] : x + (xs[i] - xs[i - 1]) * ease(c.t, ats[i] - 0.15, 0.6, CAM_GLIDE)), xs[0]);
+  const lineK = ease(c.t, 0, 0.7);
+  return (
+    <div style={{position: 'absolute', inset: 0}}>
+      {d.title ? <div style={{position: 'absolute', left: 0, right: 0, top: 250, textAlign: 'center', ...font(800, 40), color: c.th.mut, ...pop(prog(c, 0), 14)}}>{txt(d.title)}</div> : null}
+      <div style={{position: 'absolute', left: X0 - 40, top: LY - 3, width: (X1 - X0 + 80) * lineK, height: 6, borderRadius: 3, background: c.th.track}} />
+      <div style={{position: 'absolute', left: X0 - 40, top: LY - 3, width: Math.max(0, px - X0 + 40), height: 6, borderRadius: 3, background: c.acc,
+        boxShadow: `0 0 20px ${rgba(c.acc, 0.5)}`}} />
+      {evs.map((e, i) => {
+        const k = ease(c.t, ats[i] - 0.1, 0.5, Easing.bezier(0.34, 1.5, 0.64, 1));
+        const on = i === cur, done = i < cur;
+        const col = toneColor(e?.tone, c.acc);
+        return (
+          <React.Fragment key={i}>
+            <div style={{position: 'absolute', left: xs[i] - 16, top: LY - 16, width: 32, height: 32, borderRadius: 16, transform: `scale(${0.4 + 0.6 * Math.max(k, lineK * 0.5)})`,
+              background: on || done ? col : c.th.dark ? '#2A2B30' : '#FFFFFF', border: `4px solid ${on || done ? col : c.th.track}`, boxSizing: 'border-box',
+              boxShadow: on ? `0 0 0 10px ${rgba(col, 0.2)}, 0 0 30px ${rgba(col, 0.55)}` : undefined}} />
+            <div style={{position: 'absolute', left: xs[i] - 110, width: 220, top: LY + 30, textAlign: 'center', ...font(800, on ? 44 : 34), color: on ? c.th.ink : c.th.mut,
+              opacity: Math.max(0.35, k), fontVariantNumeric: 'tabular-nums'}}>{txt(e?.year ?? e?.date)}</div>
+          </React.Fragment>
+        );
+      })}
+      {evs.map((e, i) => {
+        const inK = ease(c.t, ats[i] - 0.05, 0.55);
+        const outK = i < evs.length - 1 ? ease(c.t, ats[i + 1] - 0.1, 0.4) : 0;
+        if (inK <= 0 || outK >= 1) return null;
+        const hasPic = Boolean(e?.src);
+        const cw = hasPic ? 620 : 680, ch = hasPic ? 360 : 0;
+        const cx = Math.min(1080 - 70 - cw / 2, Math.max(70 + cw / 2, xs[i]));
+        const label = txt(e?.label ?? e?.text);
+        const lh = lines(label, 800, 44, cw - 40) * 52;
+        const top = LY - 60 - ch - lh - (hasPic ? 26 : 0);
+        return (
+          <div key={`card${i}`} style={{position: 'absolute', left: cx - cw / 2, top, width: cw, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 22,
+            opacity: inK * (1 - outK), transform: `translateX(${(1 - inK) * 60 - outK * 60}px)`, filter: outK > 0.01 ? `blur(${outK * 6}px)` : undefined}}>
+            {hasPic ? <MediaBox f={{...e, mkind: e.mkind ?? 'image'}} w={cw} h={ch} sf={0} r={26} /> : null}
+            <div style={{...font(800, 44, 1.15), color: c.th.ink, textAlign: 'center', width: cw}}>{label}</div>
+          </div>
+        );
+      })}
+      <div style={{position: 'absolute', left: px - 2, top: LY - 50, width: 4, height: 34, borderRadius: 2, background: c.acc}} />
+    </div>
+  );
+};
+
+/**
+ * Citat: tačne reči osobe, krupno, delovi se ističu dok ih govornik čita (highlight), a ispod lice + ime + uloga.
+ * Samo PRAVI citat iz izvora (`source` ide u izveštaj); izmišljen ili prepričan citat ne ide na ekran.
+ */
+const Quote: React.FC<{d: any; height: number}> = ({d, height}) => {
+  const c = useC();
+  const text = String(d.text ?? '');
+  const size = text.length > 110 ? 46 : text.length > 70 ? 54 : 62;
+  const k = prog(c, 0, 0.7);
+  const pk = prog(c, Math.min(0.5, at0(d, 0.3)), 0.6);
+  return (
+    <div style={{position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: `${Math.max(250, height * 0.26)}px 110px ${Math.max(120, height * 0.13)}px`, boxSizing: 'border-box', gap: 36}}>
+      <div style={{position: 'relative', ...pop(k, 24)}}>
+        <div style={{position: 'absolute', left: -70, top: -70, ...font(900, 190, 1), color: c.acc, opacity: 0.9}}>“</div>
+        <div style={{...font(800, size, 1.22), color: c.th.ink, textAlign: 'center', maxWidth: 860}}>
+          <ReadAlong text={text} hls={d.highlight ?? []} color={c.acc} size={size} />
+        </div>
+      </div>
+      <div style={{display: 'flex', alignItems: 'center', gap: 22, ...pop(pk, 16)}}>
+        <Face f={d} size={120} ring={pk} />
+        <div>
+          <div style={{...font(800, 40), color: c.th.ink}}>{txt(d.name)}</div>
+          {d.sub ? <div style={{...font(700, 28, 1.2), color: c.th.mut, marginTop: 4}}>{txt(d.sub)}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Ko je ko: 2–4 lica sa imenom i ulogom (`links: [{between: [0, 1], label, at, tone}]`), linije između njih nose odnos ("co-founder", "fired him", "invested $2M") —
+ * linija se crta i oznaka iskoči na reč; crveno = sukob/gubitak. Lica ulaze kad ih pomenu.
+ */
+const NET_POS: Record<number, [number, number][]> = {
+  2: [[300, 0.5], [780, 0.5]],
+  3: [[540, 0.16], [270, 0.8], [810, 0.8]],
+  4: [[270, 0.3], [810, 0.3], [270, 0.75], [810, 0.75]],
+};
+const Network: React.FC<{d: any; height: number}> = ({d, height}) => {
+  const c = useC();
+  const ppl: any[] = (d.people ?? []).slice(0, 4);
+  const n = Math.max(2, ppl.length);
+  const top = 250, bot = Math.min(height - 120, 860);
+  const pos = (NET_POS[n] ?? NET_POS[4]).map(([x, fy]) => ({x, y: top + (bot - top) * fy - 30}));
+  const ats = ppl.map((p, i) => beat(c, p, i, ppl.length));
+  const S = n >= 4 ? 170 : n === 3 ? 190 : 210;
+  // gde na liniji stoji oznaka veze: u slobodnom pojasu između IMENA gornje osobe i LICA donje (nikad preko njih)
+  const lt = (A: {x: number; y: number}, B: {x: number; y: number}) => {
+    if (Math.abs(A.y - B.y) < 1) return 0.5;
+    const up = A.y < B.y ? A : B, dn = A.y < B.y ? B : A;
+    const y0 = up.y + S / 2 + 96, y1 = dn.y - S / 2 - 26;
+    const y = y1 > y0 ? (y0 + y1) / 2 : (up.y + dn.y) / 2 + S * 0.2;
+    return (y - A.y) / (B.y - A.y);
+  };
+  return (
+    <div style={{position: 'absolute', inset: 0}}>
+      <svg width={1080} height={height} style={{position: 'absolute', left: 0, top: 0}}>
+        {(d.links ?? []).map((l: any, i: number) => {
+          const [ia, ib] = Array.isArray(l?.between) ? l.between : [l?.a, l?.b];
+          const A = pos[Number(ia)], B = pos[Number(ib)];
+          if (!A || !B) return null;
+          const k = ease(c.t, at0(l, 0.6) - 0.1, 0.6);
+          const col = toneColor(l.tone, c.acc);
+          return <line key={i} x1={A.x} y1={A.y} x2={A.x + (B.x - A.x) * k} y2={A.y + (B.y - A.y) * k} stroke={col} strokeWidth={6} strokeLinecap="round"
+            strokeDasharray={l.tone === 'bad' ? '14 12' : undefined} opacity={0.9} />;
+        })}
+      </svg>
+      {(d.links ?? []).map((l: any, i: number) => {
+        const [ia, ib] = Array.isArray(l?.between) ? l.between : [l?.a, l?.b];
+          const A = pos[Number(ia)], B = pos[Number(ib)];
+        if (!A || !B || !l.label) return null;
+        const k = ease(c.t, at0(l, 0.6) + 0.25, 0.45, Easing.bezier(0.34, 1.5, 0.64, 1));
+        const col = toneColor(l.tone, c.acc);
+        return (
+          <div key={`l${i}`} style={{position: 'absolute', left: A.x + (B.x - A.x) * lt(A, B), top: A.y + (B.y - A.y) * lt(A, B),
+            transform: `translate(-50%, -50%) scale(${k})`, zIndex: 3,
+            padding: '10px 22px', borderRadius: 999, background: col, ...font(800, 30, 1.1), color: l.tone === 'bad' ? '#fff' : onAccent(col), whiteSpace: 'nowrap',
+            boxShadow: `0 10px 28px ${rgba(col, 0.4)}`}}>{txt(l.label)}</div>
+        );
+      })}
+      {ppl.map((p, i) => {
+        const k = ease(c.t, ats[i] - 0.05, 0.55, Easing.bezier(0.34, 1.4, 0.64, 1));
+        return (
+          <div key={i} style={{position: 'absolute', left: pos[i].x - 160, top: pos[i].y - S / 2, width: 320, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 12, zIndex: 2, opacity: Math.min(1, k * 1.4), transform: `scale(${0.7 + 0.3 * k})`}}>
+            <Face f={p} size={S} ring={k} tone={p?.tone} />
+            <div style={{...font(800, 36), color: c.th.ink, textAlign: 'center'}}>{txt(p?.name)}</div>
+            {p?.role ? <div style={{...font(700, 26, 1.15), color: c.th.mut, textAlign: 'center', marginTop: -6}}>{txt(p.role)}</div> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Dosije: portret (lice centrirano) + 2–4 činjenice iz izvora koje ulaze na reč (vrednosti odbrojavaju) — "24 godine,
+ * osnivač X, vredi $3B". Oznaka gore (kicker) npr. "PROFILE".
+ */
+const Dossier: React.FC<{d: any; sf: number}> = ({d, sf}) => {
+  const c = useC();
+  const facts: any[] = (d.facts ?? []).slice(0, 4);
+  const pk = prog(c, 0, 0.7);
+  return (
+    <div style={{position: 'absolute', left: ZONE.x, top: ZONE.y, width: ZONE.w, height: ZONE.h, display: 'flex', alignItems: 'center', gap: 44}}>
+      <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, ...pop(pk, 24)}}>
+        <div style={{background: '#FFFFFF', padding: 12, borderRadius: 34, boxShadow: `0 30px 70px rgba(0,0,0,${c.th.dark ? 0.5 : 0.2})`}}>
+          <MediaBox f={{...d, mkind: d.mkind ?? 'image'}} w={360} h={440} sf={sf} r={24} />
+        </div>
+        <div style={{...font(800, 40), color: c.th.ink, textAlign: 'center', maxWidth: 400}}>{txt(d.name)}</div>
+      </div>
+      <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: 26}}>
+        <div style={{...font(800, 22, 1), color: c.acc, letterSpacing: '0.16em', ...pop(pk, 10)}}>{(txt(d.kicker) || 'PROFILE').toUpperCase()}</div>
+        {facts.map((f, i) => {
+          const a = beat(c, f, i, facts.length);
+          const k = prog(c, a, 0.55);
+          const v = String(f?.value ?? '');
+          const col = toneColor(f?.tone, c.th.ink === '#FFFFFF' ? '#FFFFFF' : '#0A0A0B');
+          return (
+            <div key={i} style={{...pop(k, 16), borderLeft: `5px solid ${f?.tone === 'bad' ? TONES.bad : c.acc}`, paddingLeft: 20}}>
+              <div style={{...font(700, 26, 1.15), color: c.th.mut}}>{txt(f?.label)}</div>
+              <div style={{...font(800, fit(v, 800, 52, 420, 30), 1.12), color: f?.tone === 'bad' ? TONES.bad : col, fontVariantNumeric: 'tabular-nums'}}>
+                {countUp(v, ease(c.t, a, 1.0))}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Natpis preko klipa (TV lower third): pravi snimak/foto preko cele gornje polovine (lice centrirano), dole levo traka
+ * u boji brenda sa imenom, ulogom i mestom/datumom — kao u intervjuu na vestima. Ulazi na `at` (kad ga pomenu).
+ */
+const LowerThird: React.FC<{d: any; sf: number; height: number}> = ({d, sf, height}) => {
+  const c = useC();
+  const k = prog(c, at0(d, 0.4), 0.6);
+  const tagK = prog(c, at0(d, 0.4) + 0.25, 0.5);
+  const bottom = Math.max(120, height * 0.13);
+  const f0 = {...d, mkind: d.mkind ?? (String(d.src ?? '').endsWith('.mp4') ? 'video' : 'image')};
+  const ar = d.w && d.h ? d.w / d.h : 16 / 9;
+  const wide = ar > 1.2;  // 16:9 intervju: ceo kadar po širini (cover bi isekao osobu sa strane — pregled kadrova 14. nov)
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: '#000'}}>
+      {wide ? (
+        <>
+          <div style={{position: 'absolute', inset: -60, filter: 'blur(36px) brightness(0.55)'}}><MediaBox f={f0} w={1200} h={height + 120} sf={sf} r={0} /></div>
+          <div style={{position: 'absolute', left: 0, top: Math.max(200, (height - 1080 / ar) / 2 - 60), width: 1080, height: 1080 / ar}}>
+            <MediaBox f={f0} w={1080} h={1080 / ar} sf={sf} r={0} /></div>
+        </>
+      ) : <MediaBox f={f0} w={1080} h={height} sf={sf} r={0} />}
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 420, background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.6) 100%)'}} />
+      {d.tag ? (
+        <div style={{position: 'absolute', left: 70, bottom: bottom + 150, padding: '8px 18px', borderRadius: 8, background: TONES.bad, ...font(800, 26, 1), color: '#fff',
+          letterSpacing: '0.08em', ...pop(tagK, 10)}}>{txt(d.tag).toUpperCase()}</div>
+      ) : null}
+      <div style={{position: 'absolute', left: 70, bottom, display: 'flex', alignItems: 'stretch', transform: `translateX(${(1 - k) * -80}px)`, opacity: Math.min(1, k * 1.5)}}>
+        <div style={{width: 14, background: c.acc, borderRadius: '8px 0 0 8px'}} />
+        <div style={{background: 'rgba(12,13,16,0.82)', backdropFilter: 'blur(16px)', padding: '18px 30px', borderRadius: '0 14px 14px 0'}}>
+          <div style={{...font(800, 46, 1.05), color: '#fff'}}>{txt(d.name)}</div>
+          {d.sub || d.place ? <div style={{...font(700, 28, 1.25), color: 'rgba(255,255,255,0.78)', marginTop: 6}}>
+            {[txt(d.sub), txt(d.place)].filter(Boolean).join(' · ')}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Tada i sada: ista osoba/mesto/proizvod pre i posle — "posle" se otkriva brisanjem s leva na desno na svoju reč,
+ * linija sa ručicom ostaje na granici; oznake (godine) u uglovima.
+ */
+const Compare: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
+  const c = useC();
+  const A = d.before ?? {}, B = d.after ?? {};
+  const W = 820, H = Math.min(height - 360, 600);
+  const k = ease(c.t, at0(B, 0.9) - 0.1, 1.0, Easing.inOut(Easing.cubic));
+  const pk = prog(c, 0, 0.6);
+  const x = W * k;
+  const pic = (f: any) => f?.src ? <Img src={staticFile(f.src)} style={{position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+    objectPosition: facePos(f, W, H)}} /> : <div style={{position: 'absolute', inset: 0, background: c.th.track}} />;
+  const tag = (s: string, right: boolean, on: number) => s ? (
+    <div style={{position: 'absolute', top: 22, [right ? 'right' : 'left']: 22, padding: '10px 20px', borderRadius: 12, opacity: on,
+      background: right ? c.acc : 'rgba(12,13,16,0.75)', ...font(800, 32, 1), color: right ? onAccent(c.acc) : '#fff'}}>{s}</div>
+  ) : null;
+  return (
+    <div style={{position: 'absolute', left: (1080 - W) / 2, top: Math.max(250, (height - H) / 2 + 20), width: W, height: H, borderRadius: 30, overflow: 'hidden',
+      boxShadow: `0 30px 70px rgba(0,0,0,${c.th.dark ? 0.5 : 0.22})`, border: `1.5px solid ${c.th.line}`, ...pop(pk, 24)}}>
+      {pic(A)}
+      <div style={{position: 'absolute', inset: 0, clipPath: `inset(0 ${W - x}px 0 0)`}}>{pic(B)}</div>
+      {k > 0 && k < 1 ? (
+        <div style={{position: 'absolute', left: x - 3, top: 0, width: 6, height: H, background: '#fff', boxShadow: '0 0 20px rgba(0,0,0,0.4)'}}>
+          <div style={{position: 'absolute', left: -25, top: H / 2 - 28, width: 56, height: 56, borderRadius: 28, background: '#fff', display: 'grid', placeItems: 'center'}}>
+            <Ph.ArrowsLeftRight size={28} weight="bold" color="#111" /></div>
+        </div>
+      ) : null}
+      {tag(txt(A.label), false, 1 - Math.max(0, k * 1.4 - 0.4))}
+      {tag(txt(B.label), true, k)}
+    </div>
+  );
+};
+
 const Background: React.FC<{th: Theme; acc: string; t: number}> = ({th, acc, t}) => {
   const o1 = {x: 330 + Math.sin(t / 3.4) * 80, y: 420 + Math.cos(t / 4.0) * 50};
   const o2 = {x: 760 + Math.cos(t / 3.0) * 70, y: 600 + Math.sin(t / 3.6) * 60};
@@ -2339,6 +2626,20 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
           filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
           <AppMoment d={d} t={t - it.start} dur={it.end - it.start} acc={acc} dark={th.dark} height={height} />
         </div>
+      </C.Provider>
+    );
+  }
+  if (['timeline', 'quote', 'network', 'dossier', 'lowerthird', 'compare'].includes(it.kind)) {  // priča i ljudi (faza 1)
+    const el = it.kind === 'timeline' ? <Timeline d={d} sf={sf} height={height} />
+      : it.kind === 'quote' ? <Quote d={d} height={height} />
+      : it.kind === 'network' ? <Network d={d} height={height} />
+      : it.kind === 'dossier' ? <Dossier d={d} sf={sf} />
+      : it.kind === 'lowerthird' ? <LowerThird d={d} sf={sf} height={height} />
+      : <Compare d={d} sf={sf} height={height} />;
+    return (
+      <C.Provider value={ctx}>
+        <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: (1 - out) * Math.min(1, ease(t - it.start, 0, 0.3) * 1.2),
+          filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>{el}</div>
       </C.Provider>
     );
   }

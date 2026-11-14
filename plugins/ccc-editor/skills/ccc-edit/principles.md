@@ -278,3 +278,14 @@ in for actions (a video-camera icon for "record your screen", a link icon for "a
     **Why (owner, answer 3).** It is the one allowed exception to "no approvals in between".
 53. **A CTA that asks for a comment gets the native comment UI** (extends 11): "tell me what you taught it" → the
     Instagram "Add a comment…" field opening with a blinking cursor, big and readable at once; never a small headline.
+
+## People and events — the story kit (14 Nov 2026, phase 1)
+
+54. **A story about people and events gets a story visual, not a card of words.** Time → `timeline` (the pointer moves
+    to each date on its word, the real photo above it); "she said …" → `quote` with the person's face and the exact
+    quote, highlighted as it is read; relationships → `network` (faces + the relation drawn as a line on its word);
+    "who is this" → `dossier` (portrait + sourced facts); an interview/appearance → `lowerthird` on the real clip;
+    a transformation → `compare` (before/after wipe). **Why (owner):** "make as many visual options as possible for
+    scenes about characters and events" — the people stay on screen (principle 42) and every fact is visibly sourced
+    (16). *Engine:* timeline 2–5 dated events, quote ≤ 160 chars with name and highlights inside the quote, network
+    links between existing people, dossier with a real portrait, compare with both pictures.
