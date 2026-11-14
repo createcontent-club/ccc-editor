@@ -4,6 +4,7 @@ import {Camera, Check, Heart, User, Video} from 'lucide-react';
 import * as Ph from '@phosphor-icons/react';
 import {CAPTION_FONT, useFontSpec} from '../style';
 import {AppMoment} from './AppUI';
+import {LAND, BORDERS, MAP_W, MAP_K} from './worldMap';
 
 /**
  * Split Screen — gornja polovina (PLAN.md §11; pravila: skills/ccc-edit/formats/split-screen.md).
@@ -2441,7 +2442,7 @@ const Network: React.FC<{d: any; height: number}> = ({d, height}) => {
         return (
           <div key={`l${i}`} style={{position: 'absolute', left: A.x + (B.x - A.x) * lt(A, B), top: A.y + (B.y - A.y) * lt(A, B),
             transform: `translate(-50%, -50%) scale(${k})`, zIndex: 3,
-            padding: '10px 22px', borderRadius: 999, background: col, ...font(800, 30, 1.1), color: l.tone === 'bad' ? '#fff' : onAccent(col), whiteSpace: 'nowrap',
+            padding: '10px 22px', borderRadius: 999, background: col, ...font(800, 30, 1.1), color: l.tone === 'bad' ? '#fff' : onAccent(col), whiteSpace: 'nowrap', textWrap: 'nowrap',
             boxShadow: `0 10px 28px ${rgba(col, 0.4)}`}}>{txt(l.label)}</div>
         );
       })}
@@ -2568,6 +2569,275 @@ const Compare: React.FC<{d: any; sf: number; height: number}> = ({d, height}) =>
   );
 };
 
+// ------------------------------------------------------------------ PRIČA I LJUDI — faza 2 (14. nov 2026)
+// mapa (pinovi, linije, kamera do mesta), breaking news preko pravog snimka, grafik sa događajima, rang lista sa licima.
+
+const mapXY = (lat: number, lon: number) => ({x: (lon + 180) * MAP_K, y: (90 - lat) * MAP_K});
+type MapView = {cx: number; cy: number; span: number};  // span = širina pogleda u jedinicama mape
+const fitView = (pts: {x: number; y: number}[], minSpan: number, ar: number): MapView => {
+  if (!pts.length) return {cx: MAP_W / 2, cy: 820, span: MAP_W};
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const span = Math.min(MAP_W, Math.max(minSpan, (x1 - x0) * 1.7, (y1 - y0) * 1.7 * ar));
+  return {cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 + span / ar * 0.06, span};
+};
+
+/**
+ * Mapa: tačkasto kopno (Natural Earth), pin pada na mesto na svoju reč (talas + oznaka sa imenom, opciono lice), linije
+ * između pinova se iscrtavaju lukom ("proširilo se u 40 zemalja"); kamera se glatko uvlači do svega što je pomenuto.
+ */
+const WorldMap: React.FC<{d: any; height: number}> = ({d, height}) => {
+  const c = useC();
+  const pins: any[] = (d.pins ?? []).slice(0, 8).filter((p: any) => typeof p?.lat === 'number' && typeof p?.lon === 'number');
+  const ats = pins.map((p, i) => beat(c, p, i, pins.length));
+  const ar = 1080 / height;
+  const minSpan = Number(d.zoom ?? 0) > 0 ? Number(d.zoom) * MAP_K : 260;
+  const P = pins.map((p) => mapXY(p.lat, p.lon));
+  // kamera: kreće šire, pa se na svaki nov pin glatko prilagodi tako da su svi pomenuti u kadru
+  let v: MapView = fitView(P.slice(0, 1), minSpan, ar);
+  if (d.focus) { const q = mapXY(Number(d.focus.lat), Number(d.focus.lon)); v = {cx: q.x, cy: q.y, span: minSpan}; }
+  const start: MapView = {cx: v.cx, cy: v.cy, span: Math.min(MAP_W, v.span * 2.4)};
+  const k0 = ease(c.t, 0, 1.3, CAM_GLIDE);
+  let cam: MapView = {cx: start.cx + (v.cx - start.cx) * k0, cy: start.cy + (v.cy - start.cy) * k0, span: start.span + (v.span - start.span) * k0};
+  if (!d.focus) {
+    for (let i = 1; i < pins.length; i++) {
+      const tgt = fitView(P.slice(0, i + 1), minSpan, ar);
+      const k = ease(c.t, ats[i] - 0.2, 0.9, CAM_GLIDE);
+      cam = {cx: cam.cx + (tgt.cx - cam.cx) * k, cy: cam.cy + (tgt.cy - cam.cy) * k, span: cam.span + (tgt.span - cam.span) * k};
+    }
+  }
+  const s = 1080 / cam.span;
+  const vx = cam.cx - cam.span / 2, vy = cam.cy - (height / s) / 2;
+  const scr = (p: {x: number; y: number}) => ({x: (p.x - vx) * s, y: (p.y - vy) * s});
+  const dot = 13 / s;  // razmak tačaka konstantan na ekranu (~13 px) bez obzira na zoom
+  const landCol = c.th.dark ? 'rgba(255,255,255,0.32)' : 'rgba(10,10,12,0.28)';
+  // oznake bez preklapanja: iznad pina (osim pri vrhu); ako bi pala preko ranije oznake → ispod pina
+  const boxes: {x0: number; x1: number; y0: number; y1: number}[] = [];
+  const sides = pins.map((p, i) => {
+    const q = scr(P[i]);
+    const w = textW(txt(p?.label), 800, 34) + textW(txt(p?.sub), 700, 26) + (p?.src ? 90 : 60);
+    const cx = Math.min(1080 - 60, Math.max(60, q.x));
+    const box = (up: boolean) => ({x0: cx - w / 2, x1: cx + w / 2, y0: up ? q.y - 76 - 62 : q.y + 18, y1: up ? q.y - 76 : q.y + 18 + 62});
+    const hit = (b: any) => boxes.some((o) => b.x0 < o.x1 + 10 && b.x1 > o.x0 - 10 && b.y0 < o.y1 + 6 && b.y1 > o.y0 - 6);
+    let up = q.y > height * 0.36;
+    if (hit(box(up))) up = !up;
+    boxes.push(box(up));
+    return up;
+  });
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden'}}>
+      <svg width={1080} height={height} viewBox={`${vx} ${vy} ${cam.span} ${height / s}`} style={{position: 'absolute', left: 0, top: 0}}>
+        <defs>
+          <pattern id="mapdots" width={dot} height={dot} patternUnits="userSpaceOnUse">
+            <circle cx={dot / 2} cy={dot / 2} r={dot * 0.28} fill={landCol} />
+          </pattern>
+        </defs>
+        <path d={LAND} fill="url(#mapdots)" />
+        <path d={BORDERS} fill="none" stroke={c.th.dark ? 'rgba(255,255,255,0.10)' : 'rgba(10,10,12,0.08)'} strokeWidth={1.4 / s} />
+        {(d.lines ?? []).map((l: any, i: number) => {
+          const ab = Array.isArray(l?.between) ? l.between : [];
+          const A = P[Number(ab[0])], B = P[Number(ab[1])];
+          if (!A || !B) return null;
+          const k = ease(c.t, at0(l, Math.max(ats[Number(ab[1])] ?? 0, 0.6)) - 0.1, 0.9, Easing.inOut(Easing.cubic));
+          const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2 - Math.hypot(B.x - A.x, B.y - A.y) * 0.25;
+          const len = Math.hypot(B.x - A.x, B.y - A.y) * 1.15;
+          const col = toneColor(l?.tone, c.acc);
+          return <path key={i} d={`M${A.x},${A.y} Q${mx},${my} ${B.x},${B.y}`} fill="none" stroke={col} strokeWidth={5 / s} strokeLinecap="round"
+            strokeDasharray={`${len}`} strokeDashoffset={len * (1 - k)} opacity={0.95} />;
+        })}
+      </svg>
+      {pins.map((p, i) => {
+        const q = scr(P[i]);
+        const k = ease(c.t, ats[i] - 0.05, 0.55, Easing.bezier(0.34, 1.6, 0.64, 1));
+        if (k <= 0) return null;
+        const side = sides[i];
+        const col = toneColor(p?.tone, c.acc);
+        const pulse = ((c.t - ats[i]) % 1.6) / 1.6;
+        const lab = txt(p?.label);
+        const up = side;
+        return (
+          <React.Fragment key={i}>
+            <div style={{position: 'absolute', left: q.x - 40, top: q.y - 40, width: 80, height: 80, borderRadius: 40, border: `4px solid ${col}`,
+              transform: `scale(${0.3 + pulse * 1.2})`, opacity: (1 - pulse) * 0.7}} />
+            <div style={{position: 'absolute', left: q.x - 22, top: q.y - 56 - (1 - k) * 60, width: 44, height: 56, opacity: Math.min(1, k * 2)}}>
+              <svg width={44} height={56} viewBox="0 0 44 56"><path d="M22 54 C22 54 4 32 4 20 A18 18 0 1 1 40 20 C40 32 22 54 22 54 Z" fill={col}
+                stroke="#fff" strokeWidth={3} /><circle cx={22} cy={20} r={7} fill="#fff" /></svg>
+            </div>
+            {lab ? (
+              <div style={{position: 'absolute', left: Math.min(1080 - 60, Math.max(60, q.x)), top: up ? q.y - 76 : q.y + 18, zIndex: 3,
+                transform: `translate(-50%, ${up ? '-100%' : '0'}) scale(${Math.min(1, k)})`, transformOrigin: up ? '50% 100%' : '50% 0%',
+                display: 'flex', alignItems: 'center', gap: 12, padding: p?.src ? '8px 22px 8px 8px' : '12px 24px', borderRadius: 999,
+                background: c.th.dark ? 'rgba(14,15,18,0.86)' : '#FFFFFF', boxShadow: `0 14px 34px rgba(0,0,0,${c.th.dark ? 0.5 : 0.18})`, whiteSpace: 'nowrap', textWrap: 'nowrap'}}>
+                {p?.src ? <Face f={p} size={64} /> : null}
+                <span style={{...font(800, 34, 1.1), color: c.th.ink}}>{lab}</span>
+                {p?.sub ? <span style={{...font(700, 26, 1.1), color: c.th.mut}}>{txt(p.sub)}</span> : null}
+              </div>
+            ) : null}
+          </React.Fragment>
+        );
+      })}
+      {d.title ? <div style={{position: 'absolute', left: 0, right: 0, top: 250, textAlign: 'center', ...pop(prog(c, 0), 12)}}>
+        <span style={{padding: '12px 26px', borderRadius: 999, background: c.acc, ...font(800, 36, 1), color: onAccent(c.acc)}}>{txt(d.title)}</span></div> : null}
+    </div>
+  );
+};
+
+/**
+ * Breaking news: pravi snimak/foto preko cele gornje polovine (širok → ceo po širini), crveni blok "BREAKING NEWS"
+ * ulazi, ispod beli naslov (tačan naslov vesti), na dnu traka koja klizi; gore levo LIVE. Kao vesti na TV-u.
+ */
+const Breaking: React.FC<{d: any; sf: number; height: number}> = ({d, sf, height}) => {
+  const c = useC();
+  const a = at0(d, 0.3);
+  const k1 = prog(c, a, 0.45), k2 = prog(c, a + 0.25, 0.55);
+  const f0 = {...d, mkind: d.mkind ?? (String(d.src ?? '').endsWith('.mp4') ? 'video' : 'image')};
+  const ar = d.w && d.h ? d.w / d.h : 16 / 9;
+  const wide = ar > 1.2;
+  const head = txt(d.headline);
+  const hs = head.length > 70 ? 36 : head.length > 44 ? 42 : 48;
+  const bottom = Math.max(120, height * 0.13);
+  const tick = txt(d.ticker);
+  const tx = -((c.t * 120) % Math.max(1, textW(tick + '   •   ', 700, 28) || 1));
+  return (
+    <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: '#000'}}>
+      {d.src ? (wide ? (
+        <>
+          <div style={{position: 'absolute', inset: -60, filter: 'blur(36px) brightness(0.5)'}}><MediaBox f={f0} w={1200} h={height + 120} sf={sf} r={0} /></div>
+          <div style={{position: 'absolute', left: 0, top: Math.max(170, (height - 1080 / ar) / 2 - 90), width: 1080, height: 1080 / ar}}><MediaBox f={f0} w={1080} h={1080 / ar} sf={sf} r={0} /></div>
+        </>
+      ) : <MediaBox f={f0} w={1080} h={height} sf={sf} r={0} />) : <div style={{position: 'absolute', inset: 0, background: 'linear-gradient(160deg,#1B2340,#0B0E1A)'}} />}
+      <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: 460, background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)'}} />
+      {d.live !== false ? (
+        <div style={{position: 'absolute', left: 60, top: 260, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 8, background: 'rgba(0,0,0,0.55)',
+          ...font(800, 26, 1), color: '#fff', ...pop(prog(c, 0), 8)}}>
+          <div style={{width: 14, height: 14, borderRadius: 7, background: TONES.bad, opacity: Math.floor(c.t * 2) % 2 ? 0.4 : 1}} />LIVE</div>
+      ) : null}
+      <div style={{position: 'absolute', left: 50, right: 50, bottom: bottom + 46}}>
+        <div style={{display: 'inline-block', padding: '10px 22px', background: TONES.bad, ...font(900, 34, 1), color: '#fff', letterSpacing: '0.04em',
+          transform: `translateX(${(1 - k1) * -60}px)`, opacity: Math.min(1, k1 * 1.5)}}>{(txt(d.label) || 'BREAKING NEWS').toUpperCase()}</div>
+        <div style={{background: '#FFFFFF', padding: '16px 24px', clipPath: `inset(0 ${(1 - k2) * 100}% 0 0)`, ...font(800, hs, 1.15), color: '#0A0A0B',
+          boxShadow: '0 16px 40px rgba(0,0,0,0.4)'}}>{head}</div>
+      </div>
+      {tick ? (
+        <div style={{position: 'absolute', left: 0, right: 0, bottom: bottom, height: 46, background: '#0A0A0B', overflow: 'hidden', display: 'flex', alignItems: 'center',
+          opacity: k2}}>
+          <div style={{flex: 'none', height: '100%', padding: '0 18px', background: c.acc, display: 'grid', placeItems: 'center', ...font(900, 22, 1), color: onAccent(c.acc), zIndex: 2}}>
+            {txt(d.channel) || 'NEWS'}</div>
+          <div style={{transform: `translateX(${tx}px)`, ...font(700, 28, 1), color: '#fff', paddingLeft: 20, whiteSpace: 'nowrap', textWrap: 'nowrap'}}>
+            {Array.from({length: 4}).map(() => tick).join('   •   ')}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * Grafik sa događajima: prava kriva (vrednosti iz izvora), oznake događaja padaju na tačku na svoju reč ("posle
+ * skandala", "lansiranje") — kriva se otkriva do tog događaja dok se priča; crveno = pad/loše. Poslednja vrednost broji.
+ */
+const Trend: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const pts: any[] = (d.points ?? []).slice(0, 24);
+  const vals = pts.map((p) => (typeof p === 'number' ? p : Number(String(p?.value ?? '').replace(/[^0-9.\-]/g, '')) || 0));
+  const n = Math.max(2, vals.length);
+  const evs: any[] = (d.events ?? []).slice(0, 3);
+  const W = 860, H = 500, PL = 30, PR = 30, PT = 120, PB = 70;
+  const mx = Math.max(...vals), mn = Math.min(0, ...vals);
+  const xy = (i: number) => ({x: PL + (i / (n - 1)) * (W - PL - PR), y: PT + (1 - (vals[i] - mn) / (mx - mn || 1)) * (H - PT - PB)});
+  // otkrivanje krive: do prvog događaja na početku, do svakog sledećeg na njegovu reč, ostatak pred kraj
+  const idxOf = (e: any) => Math.max(0, Math.min(n - 1, Number(e?.index ?? n - 1)));
+  let reveal = ease(c.t, 0, 1.1) * (evs.length ? idxOf(evs[0]) / (n - 1) : 1);
+  evs.forEach((e, i) => {
+    const nxt = i + 1 < evs.length ? idxOf(evs[i + 1]) / (n - 1) : 1;
+    const a = at0(e, 0.6 + i * 0.8);
+    reveal = Math.max(reveal, idxOf(e) / (n - 1) + (nxt - idxOf(e) / (n - 1)) * ease(c.t, a + 0.5, 1.1));
+  });
+  if (!evs.length) reveal = ease(c.t, 0, 1.4);
+  const upto = reveal * (n - 1);
+  const pp: {x: number; y: number}[] = [];
+  for (let i = 0; i <= Math.floor(upto); i++) pp.push(xy(i));
+  if (Math.floor(upto) < n - 1) { const a = xy(Math.floor(upto)), b = xy(Math.floor(upto) + 1), f = upto - Math.floor(upto); pp.push({x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f}); }
+  const line = pp.map((q, i) => `${i ? 'L' : 'M'}${q.x},${q.y}`).join(' ');
+  const down = vals[vals.length - 1] < vals[0];
+  const col = d.tone === 'bad' || (d.tone !== 'good' && down) ? TONES.bad : c.acc;
+  const tip = pp[pp.length - 1];
+  const lastV = String(txt(pts[Math.min(n - 1, Math.round(upto))]?.label ?? pts[Math.min(n - 1, Math.round(upto))]?.display) || '');
+  return (
+    <Glass glow={0.4} strong r={36} style={{width: W, height: H, ...pop(prog(c, 0), 24)}}>
+      <div style={{position: 'absolute', left: 34, top: 28, right: 34, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between'}}>
+        <div style={{...font(700, 26, 1.1), color: c.th.mut}}>{txt(d.label)}</div>
+        {lastV ? <div style={{...font(900, 54, 1), color: col, fontVariantNumeric: 'tabular-nums'}}>{lastV}</div> : null}
+      </div>
+      <svg width={W} height={H} style={{position: 'absolute', left: 0, top: 0, overflow: 'visible'}}>
+        {[0, 1, 2, 3].map((i) => <line key={i} x1={PL} x2={W - PR} y1={PT + (i * (H - PT - PB)) / 3} y2={PT + (i * (H - PT - PB)) / 3} stroke={c.th.track} strokeWidth={1.5} />)}
+        <path d={`${line} L${tip.x},${H - PB} L${pp[0].x},${H - PB} Z`} fill={rgba(col, 0.14)} />
+        <path d={line} fill="none" stroke={col} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={tip.x} cy={tip.y} r={10} fill={col} stroke={c.th.dark ? '#141518' : '#fff'} strokeWidth={4} />
+      </svg>
+      {evs.map((e, i) => {
+        const q = xy(idxOf(e));
+        const k = ease(c.t, at0(e, 0.6 + i * 0.8), 0.5, Easing.bezier(0.34, 1.5, 0.64, 1));
+        if (k <= 0) return null;
+        const ec = toneColor(e?.tone, c.acc);
+        const left = Math.min(W - 40, Math.max(40, q.x));
+        return (
+          <React.Fragment key={i}>
+            <div style={{position: 'absolute', left: q.x - 1.5, top: q.y + 12, width: 3, height: Math.max(0, H - PB - q.y - 12), background: `repeating-linear-gradient(${ec} 0 8px, transparent 8px 14px)`, opacity: k}} />
+            <div style={{position: 'absolute', left: q.x - 12, top: q.y - 12, width: 24, height: 24, borderRadius: 12, background: ec, border: '4px solid #fff', boxSizing: 'border-box',
+              transform: `scale(${k})`, boxShadow: `0 0 24px ${rgba(ec, 0.6)}`}} />
+            <div style={{position: 'absolute', left, top: q.y - 30, transform: `translate(-50%, -100%) scale(${k})`, transformOrigin: '50% 100%', padding: '10px 20px', borderRadius: 14,
+              background: ec, ...font(800, 28, 1.1), color: e?.tone === 'bad' ? '#fff' : onAccent(ec), whiteSpace: 'nowrap', textWrap: 'nowrap', boxShadow: `0 10px 26px ${rgba(ec, 0.4)}`}}>{txt(e?.label)}</div>
+          </React.Fragment>
+        );
+      })}
+      {(d.x ?? []).length ? (
+        <div style={{position: 'absolute', left: PL, right: PR, bottom: 22, display: 'flex', justifyContent: 'space-between', ...font(700, 24, 1), color: c.th.mut}}>
+          {(d.x as any[]).map((s0, i) => <span key={i}>{txt(s0)}</span>)}</div>
+      ) : null}
+    </Glass>
+  );
+};
+
+/**
+ * Rang lista sa licima: 3–5 redova (lice, ime, traka sa vrednošću). `countdown: true` = otkriva od poslednjeg ka prvom
+ * na reči; `tone: "good"` red svetli bojom brenda (o kome je priča).
+ */
+const Ranking: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  const rows: any[] = (d.items ?? []).slice(0, 5);
+  const n = rows.length;
+  const nums = rows.map((r) => Number(String(r?.value ?? '').replace(/[^0-9.]/g, '')) || 0);
+  const mx = Math.max(1, ...nums);
+  const RH = n >= 5 ? 92 : 104;
+  const order = rows.map((_, i) => (d.countdown ? n - 1 - i : i));
+  return (
+    <div style={{width: 880, display: 'flex', flexDirection: 'column', gap: 14}}>
+      {d.title ? <div style={{...font(800, 40), color: c.th.ink, textAlign: 'center', marginBottom: 8, ...pop(prog(c, 0), 12)}}>{txt(d.title)}</div> : null}
+      {rows.map((r, i) => {
+        const a = beat(c, r, order.indexOf(i), n);
+        const k = prog(c, a, 0.55);
+        const bk = ease(c.t, a + 0.15, 0.9);
+        const good = r?.tone === 'good', bad = r?.tone === 'bad';
+        const col = bad ? TONES.bad : c.acc;
+        const v = String(r?.value ?? '');
+        return (
+          <div key={i} style={{height: RH, display: 'flex', alignItems: 'center', gap: 18, padding: '0 22px', borderRadius: 24, ...pop(k, 18),
+            background: good ? rgba(c.acc, 0.16) : c.th.glass, border: `1.5px solid ${good ? c.acc : c.th.line}`, boxShadow: good ? `0 0 40px ${rgba(c.acc, 0.35)}` : undefined}}>
+            <div style={{width: 46, textAlign: 'center', ...font(900, 40, 1), color: good ? c.acc : c.th.mut}}>{i + 1}</div>
+            <Face f={r} size={RH - 22} ring={good ? 1 : 0} />
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{...font(800, 34, 1.1), color: c.th.ink, whiteSpace: 'nowrap', textWrap: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{txt(r?.name)}</div>
+              <div style={{height: 12, borderRadius: 6, background: c.th.track, marginTop: 10, overflow: 'hidden'}}>
+                <div style={{width: `${(nums[i] / mx) * 100 * bk}%`, height: '100%', borderRadius: 6, background: col}} /></div>
+            </div>
+            <div style={{...font(900, 36, 1), color: good ? c.acc : c.th.ink, fontVariantNumeric: 'tabular-nums', minWidth: 120, textAlign: 'right'}}>{countUp(v, ease(c.t, a, 1.0))}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const Background: React.FC<{th: Theme; acc: string; t: number}> = ({th, acc, t}) => {
   const o1 = {x: 330 + Math.sin(t / 3.4) * 80, y: 420 + Math.cos(t / 4.0) * 50};
   const o2 = {x: 760 + Math.cos(t / 3.0) * 70, y: 600 + Math.sin(t / 3.6) * 60};
@@ -2629,8 +2899,10 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
       </C.Provider>
     );
   }
-  if (['timeline', 'quote', 'network', 'dossier', 'lowerthird', 'compare'].includes(it.kind)) {  // priča i ljudi (faza 1)
-    const el = it.kind === 'timeline' ? <Timeline d={d} sf={sf} height={height} />
+  if (['timeline', 'quote', 'network', 'dossier', 'lowerthird', 'compare', 'map', 'breaking'].includes(it.kind)) {  // priča i ljudi (faze 1–2)
+    const el = it.kind === 'map' ? <WorldMap d={d} height={height} />
+      : it.kind === 'breaking' ? <Breaking d={d} sf={sf} height={height} />
+      : it.kind === 'timeline' ? <Timeline d={d} sf={sf} height={height} />
       : it.kind === 'quote' ? <Quote d={d} height={height} />
       : it.kind === 'network' ? <Network d={d} height={height} />
       : it.kind === 'dossier' ? <Dossier d={d} sf={sf} />
@@ -2698,6 +2970,8 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
     : it.kind === 'mediatext' ? <MediaText d={d} sf={sf} />
     : it.kind === 'faceoff' ? <Faceoff d={d} sf={sf} />
     : it.kind === 'pillars' ? <Pillars d={d} />
+    : it.kind === 'trend' ? <Trend d={d} />
+    : it.kind === 'ranking' ? <Ranking d={d} />
     : it.kind === 'resource' ? <Resource d={d} />
     : it.kind === 'posts' ? <PostStack d={d} />
     : it.kind === 'post' && d.src ? <Screenshot d={d} />

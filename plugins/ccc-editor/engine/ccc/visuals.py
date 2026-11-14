@@ -56,6 +56,11 @@ KINDS = {
     "dossier": {"required": ["name"], "optional": ["file", "facts", "kicker", "start"]},  # facts [{label, value, at, tone}] ≤ 4
     "lowerthird": {"required": ["file", "name"], "optional": ["sub", "place", "tag", "at", "start"]},  # snimak/foto + TV natpis
     "compare": {"required": ["before", "after"], "optional": ["title"]},  # before/after {file, label, at}: brisanje na after.at
+    # PRIČA I LJUDI faza 2: mapa, breaking news, grafik sa događajima, rang lista sa licima
+    "map": {"required": ["pins"], "optional": ["lines", "focus", "zoom", "title"]},  # pins [{lat, lon, label, sub, file, at, tone}] ≤ 8; lines [{between, at, tone}]
+    "breaking": {"required": ["headline"], "optional": ["file", "label", "ticker", "channel", "live", "at", "start"]},  # tačan naslov vesti preko snimka
+    "trend": {"required": ["points"], "optional": ["events", "label", "x", "tone", "source"]},  # points [{value, label}] iz izvora; events [{index, label, at, tone}] ≤ 3
+    "ranking": {"required": ["items"], "optional": ["title", "countdown", "source"]},  # items [{file, name, value, at, tone}] 3–5
     # Stubići sa licem/logom na vrhu svakog (recenzija aazar-trial-1 v3, s02/s27): bars: [{file, name, logo}] × 2–3,
     # sets: [{label, at, values: [n…], display: ["$4.2M"…], tones: [...], note: {text, at, tone}}] — skup se smenjuje na reč.
     "pillars": {"required": ["bars", "sets"], "optional": []},
@@ -407,10 +412,10 @@ def validate_plan(plan: dict, job) -> list[str]:
                     yield from files_in(v)
         if k == "post" and d.get("platform") not in ("x", "reddit", "linkedin", "threads"):
             errs.append(f"moment {i} (post): platform mora biti x | reddit | linkedin | threads")
-        if k in ("timeline", "quote", "network", "dossier", "lowerthird", "compare"):
+        if k in ("timeline", "quote", "network", "dossier", "lowerthird", "compare", "map", "breaking", "trend", "ranking"):
             errs += _story_errors(i, k, d, job)
         if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow",
-                 "timeline", "quote", "network", "dossier", "compare"):
+                 "timeline", "quote", "network", "dossier", "compare", "map", "ranking"):
             from .assets import nfc, prepare
             man = prepare(job)
             for f in files_in(d):
@@ -989,6 +994,46 @@ def _story_errors(i: int, k: str, d: dict, job=None) -> list[str]:
             v = d.get(side)
             if not (isinstance(v, dict) and v.get("file")):
                 errs.append(f"moment {i} (compare): {side} traži {{file, label}} (pravi snimak tada / sada)")
+    if k == "map":
+        pins = d.get("pins") or []
+        if not 1 <= len(pins) <= 8:
+            errs.append(f"moment {i} (map): 1–8 pins [{{lat, lon, label, at}}]")
+        for x in pins:
+            try:
+                ok = isinstance(x, dict) and -60 <= float(x.get("lat")) <= 85 and -180 <= float(x.get("lon")) <= 180
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                errs.append(f"moment {i} (map): svaki pin traži lat (−60…85) i lon (−180…180) kao brojeve — koordinate mesta iz izvora")
+                break
+        for l in d.get("lines") or []:
+            ab = l.get("between") if isinstance(l, dict) else None
+            if not (isinstance(ab, list) and len(ab) == 2 and all(isinstance(v, int) and 0 <= v < len(pins) for v in ab) and ab[0] != ab[1]):
+                errs.append(f"moment {i} (map): line traži between: [pin, pin] (brojevi pinova 0–{len(pins) - 1})")
+                break
+        if d.get("zoom") is not None and not (isinstance(d.get("zoom"), (int, float)) and 4 <= d["zoom"] <= 360):
+            errs.append(f"moment {i} (map): zoom = širina pogleda u stepenima (4–360; grad ~6, država ~25, kontinent ~70, svet 360)")
+    if k == "breaking":
+        if len(str(d.get("headline") or "")) > 90:
+            errs.append(f"moment {i} (breaking): naslov najviše 90 znakova (tačan naslov vesti, skraćen sa …)")
+    if k == "trend":
+        pts = d.get("points") or []
+        if not 3 <= len(pts) <= 24:
+            errs.append(f"moment {i} (trend): 3–24 points [{{value, label}}] — prave vrednosti iz izvora")
+        for e in d.get("events") or []:
+            if not (isinstance(e, dict) and isinstance(e.get("index"), int) and 0 <= e["index"] < len(pts) and _t(e.get("label"))):
+                errs.append(f"moment {i} (trend): event traži index (tačka 0–{len(pts) - 1}) + label")
+                break
+        if len(d.get("events") or []) > 3:
+            errs.append(f"moment {i} (trend): najviše 3 događaja na grafiku")
+    if k == "ranking":
+        its = d.get("items") or []
+        if not 3 <= len(its) <= 5:
+            errs.append(f"moment {i} (ranking): 3–5 items [{{file, name, value, at}}]")
+        for x in its:
+            if not (isinstance(x, dict) and _t(x.get("name")) and str(x.get("value") or "")):
+                errs.append(f"moment {i} (ranking): svaki red traži name + value")
+                break
     if k == "lowerthird":
         if not d.get("file"):
             errs.append(f"moment {i} (lowerthird): traži file — pravi snimak ili foto osobe")
@@ -1183,6 +1228,21 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
             if isinstance(x, dict):
                 cap(_t(x.get("label")), 26, "oznaka činjenice")
                 cap(str(x.get("value") or ""), 20, "vrednost")
+    elif kind == "map":
+        for x in d.get("pins") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 22, "oznaka pina")
+    elif kind == "breaking":
+        cap(str(d.get("ticker") or ""), 120, "traka")
+    elif kind == "trend":
+        for x in d.get("events") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("label")), 22, "oznaka događaja")
+    elif kind == "ranking":
+        for x in d.get("items") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("name")), 22, "ime")
+                cap(str(x.get("value") or ""), 10, "vrednost")
     elif kind == "lowerthird":
         cap(_t(d.get("name")), 26, "ime")
         cap(" · ".join(filter(None, [_t(d.get("sub")), _t(d.get("place"))])), 44, "uloga · mesto")
