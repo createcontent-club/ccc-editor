@@ -113,9 +113,12 @@ Each principle: the rule, then **Why** (the thinking behind it), then where the 
     collage or a two-shot goes full-width (spotlight / photo / image) — choose the animation FROM the picture you
     found, not the picture for a planned animation. *Engine:* mediatext with a wide image without a face or with 2+
     faces → error.
-19. **Never an empty frame.** Something is on screen from the first frame of every scene: a card with its label enters
-    at once and the number counts up on its word; a list or flow starts at the moment's first word. *Engine:* first
-    element later than 0.7 s → warning; `stat` template shows the card immediately.
+19. **Never an empty frame — never more than 0.5 s with nothing on screen.** Something is on screen from the first frame
+    of every scene and stays until the next thing arrives: a card with its label enters at once and the number counts up
+    on its word; a list or flow starts at the moment's first word; in a `scene` the first actor is there on the moment's
+    first word and the next one arrives before the previous one leaves. **Why (owner, transformer v1 s08):** "a very
+    important rule: we must never have empty frames longer than half a second." *Engine:* first element later than
+    0.5 s, or any gap inside a scene longer than 0.5 s → `[must]`; `stat` template shows the card immediately.
 20. **Long picture scenes change pictures.** A mediatext/photo scene longer than ~5 s swaps 2–3 pictures inside the
     same shape on the words (`more: [{file, at}]`), so one image never stands for 8 seconds. *Engine:* warning.
 21. **A reveal is shown on the subject itself.** "And she doesn't exist" → her photo glitches and fades to a ghost on

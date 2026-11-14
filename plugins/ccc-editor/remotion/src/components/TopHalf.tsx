@@ -1604,7 +1604,7 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
   const glide = (T: number, len = 0.9) => ease(c.t, T, len, CAM_GLIDE);
   const actorBox = (a: any, w: number, h: number, key: string, extra: React.CSSProperties, img?: any) => {
     const f = img ?? a;
-    const logo = isLogo(f);
+    const logo = a.logo === false ? false : isLogo(f);  // fotografija proizvoda na crnoj/providnoj podlozi nije logo (transformer test)
     const inner = f.src
       ? (logo ? <LogoPlate f={f} size={Math.min(w, h)} at={0} /> : (
         <div style={{width: w, height: h, borderRadius: a.round ? 999 : 22, overflow: 'hidden', background: a.frame ? '#fff' : '#000',
@@ -1712,6 +1712,8 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
     const k = ease(c.t, b.T, 0.55, Easing.bezier(0.34, 1.4, 0.64, 1));
     if (k <= 0) return;
     const tgt = actors.find((a) => a.id === b.target);
+    // oznaka vezana za glumca nestaje zajedno sa njim (exit) — inače ostaje kao krhotina kad glumci odu (transformer test)
+    const gone = tgt ? beats.filter((x) => x.do === 'exit' && x.target === b.target).reduce((m, x) => Math.max(m, ease(c.t, x.T, 0.4)), 0) : 0;
     const col = b.tone === 'bad' ? TONES.bad : c.acc;
     const stamp = b.do === 'stamp';
     const ts = fit(stamp ? String(b.text ?? '').toUpperCase() : b.text, 900, b.size ?? (stamp ? 64 : 46), ZONE.w - 80 - (stamp ? 12 : 0), 26,
@@ -1721,7 +1723,7 @@ const Scene: React.FC<{d: any; sf: number; height: number}> = ({d, height}) => {
     const x = clampX(b.x ?? tgt?.x ?? 540, bw * (stamp ? 1 : 1)), y = clampY(b.y ?? (tgt ? (tgt.y ?? 480) : 780), bh);
     nodes.push(
       <div key={`t${i}`} style={{position: 'absolute', left: x, top: y, zIndex: 3000, whiteSpace: 'nowrap',
-        transform: `translate(-50%, -50%) scale(${(stamp ? 1.5 - 0.5 * k : 0.7 + 0.3 * k)}) rotate(${stamp ? -8 : 0}deg)`, opacity: Math.min(1, k * 1.5),
+        transform: `translate(-50%, -50%) scale(${(stamp ? 1.5 - 0.5 * k : 0.7 + 0.3 * k)}) rotate(${stamp ? -8 : 0}deg)`, opacity: Math.min(1, k * 1.5) * (1 - gone),
         ...font(900, ts, 1), letterSpacing: stamp ? '0.02em' : '-0.02em',
         color: stamp ? col : onAccent(col), background: stamp ? 'rgba(0,0,0,0.35)' : col,
         border: stamp ? `6px solid ${col}` : undefined, padding: stamp ? '10px 26px' : '10px 26px', borderRadius: 18,

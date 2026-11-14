@@ -481,6 +481,10 @@ def _label(kind: str, d: dict, key: str, s: dict) -> str:
         return f"screenshot of {t[:60]}"
     if kind == "video":
         return f"video clip: {(s.get('title') or s.get('source') or '').replace('—', ',')}"
+    if s.get("kind") == "video":
+        return f"video clip: {(s.get('title') or s.get('source') or '').replace('—', ',')}"
+    if s.get("kind") in ("image", "photo"):  # slika u bilo kom šablonu (spotlight, dosije, scena, mapa…) je za klijenta "photo"
+        return f"photo of {name}" if name else "photo"
     return (s.get("title") or kind).replace("—", ",")
 
 

@@ -287,9 +287,38 @@ def warnings(items: list[dict]) -> list[str]:
         walk_a(it["data"])
         if it["kind"] == "comment":
             ts = [0.0]  # komentar se kuca od početka; odgovor na reč
-        if ts and min(ts) > 0.7:
+        if ts and min(ts) > EMPTY_MAX:
             out.append(f"'{it['kind']}' od {it['start']:.2f}s: prvi deo se pojavljuje tek posle {min(ts):.1f}s — gornja polovina je "
                        "prazna; prvi deo na prvu reč momenta ili kreni moment kasnije (nikad prazan kadar)")
+    # Scena (vlasnik, transformer v1 s08: "ne smemo da imamo prazne frejmove duže od pola sekunde"): glumci ulaze na reč i
+    # izlaze (exit) — ni na početku ni USRED scene ne sme biti > 0.5 s bez ijednog glumca/oznake na ekranu.
+    for it in items:
+        if it["kind"] != "scene":
+            continue
+        d = it["data"]
+        dur = it["end"] - it["start"]
+        beats_ = [b for b in d.get("beats") or [] if isinstance(b, dict)]
+        spans = []
+        for a in d.get("actors") or []:
+            if not isinstance(a, dict):
+                continue
+            t0 = float(a.get("atT", 0.0))
+            ex = [float(b.get("atT", dur)) + 0.4 for b in beats_ if b.get("do") == "exit" and b.get("target") == a.get("id")]
+            spans.append((t0, min(ex) if ex else dur))
+        for b in beats_:
+            if b.get("do") in ("tag", "stamp"):
+                ex = [float(x.get("atT", dur)) + 0.4 for x in beats_ if x.get("do") == "exit" and b.get("target") and x.get("target") == b.get("target")]
+                spans.append((float(b.get("atT", 0.0)), min(ex) if ex else dur))
+        cur, worst, at_ = 0.0, 0.0, 0.0
+        for a0, a1 in sorted(spans):
+            if a0 - cur > worst:
+                worst, at_ = a0 - cur, cur
+            cur = max(cur, a1)
+        if dur - cur > worst:
+            worst, at_ = dur - cur, cur
+        if worst > EMPTY_MAX:
+            out.append(f"'scene' od {it['start']:.2f}s: prazan kadar {worst:.1f}s (od {it['start'] + at_:.2f}s) — nijedan glumac na ekranu; "
+                       "prvi glumac na prvu reč momenta, sledeći ulazi pre nego što prethodni ode (nikad prazan kadar > 0.5 s)")
     # Duža scena sa jednom slikom (recenzija ai-actor-0 v1, s21): smeni 2–3 slike u istom okviru.
     for it in items:
         d = it["data"]
@@ -661,7 +690,8 @@ def describe(p: dict, job=None) -> str:
 # [must] = mora da se popravi pre build-a (čitljivost, tajming, prazan kadar); [aim] = cilj koji zavisi od materijala
 # (pravi materijal %, raznovrsnost, portreti…) — najviše 2 kruga ispravki, pa objasniti u rezimeu (QA 0.8.0, P0:
 # "popravi svaki !" je vodilo u beskonačne ispravke ili u ignorisanje svega).
-MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen", "van momenta", "ne postoji",
+EMPTY_MAX = 0.5  # s — vlasnik (transformer v1 s08): nikad prazan kadar duži od pola sekunde
+MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "prazan kadar", "izbačen", "van momenta", "ne postoji",
                 "nema reči", "prazn", "fokus screenshot-a")
 
 
