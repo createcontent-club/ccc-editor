@@ -2,10 +2,11 @@ import React from 'react';
 import {Easing, interpolate} from 'remotion';
 import * as Ph from '@phosphor-icons/react';
 import {SERIF_FONT} from '../style';
-import {P, Rect, Pal, W, H, GLIDE, ease, T, txt, RED, rgba, ui, center, abs, St, Skin, Caret, typedAt} from './appCore';
+import {P, Rect, Pal, W, H, GLIDE, ease, T, txt, RED, rgba, ui, center, abs, St, Skin, Caret, typedAt, ReplyText, UserBubble} from './appCore';
 import {ClaudeMark, OpenAIMark, NotionMark, SheetsMark} from './appIcons';
 import {PHONE_SKINS, PhoneChrome, Touch} from './AppPhone';
 import {DESK_SKINS} from './AppDesk';
+import {DESK2_SKINS} from './AppDesk2';
 
 /**
  * App UI kit (principles.md 45–47, recenzija test-video-petar v1): verne rekreacije alata o kojima klijenti pričaju
@@ -18,7 +19,8 @@ import {DESK_SKINS} from './AppDesk';
  * Tekst je krupan (≥ 22 px na skali 1) jer se gleda na telefonu.
  */
 
-export const APPS = ['claude', 'chatgpt', 'notion', 'sheets', 'instagram', 'iphone', 'gmail', 'n8n', 'zapier', 'make', 'web'] as const;
+export const APPS = ['claude', 'chatgpt', 'notion', 'sheets', 'instagram', 'iphone', 'gmail', 'n8n', 'zapier', 'make', 'web',
+  'gemini', 'perplexity', 'midjourney', 'slack', 'calendar', 'stripe', 'shopify', 'google'] as const;
 
 // ------------------------------------------------------------------ palete
 const PAL = {
@@ -74,37 +76,6 @@ const TrafficLights: React.FC = () => (
     {['#FF5F57', '#FEBC2E', '#28C840'].map((c) => <div key={c} style={{width: 14, height: 14, borderRadius: 7, background: c}} />)}
   </div>
 );
-
-const Shimmer: React.FC<{st: St; x: number; y: number; w: number; T0: number; n?: number}> = ({st, x, y, w, T0, n = 3}) => (
-  <>
-    {Array.from({length: n}).map((_, i) => {
-      const k = ease(st.t, T0 + i * 0.18, 0.4);
-      const ww = [1, 0.86, 0.6][i % 3] * w;
-      const sh = (st.t * 0.9 + i * 0.2) % 1;
-      return (
-        <div key={i} style={{position: 'absolute', left: x, top: y + i * 38, width: ww * k, height: 20, borderRadius: 10, opacity: k,
-          background: `linear-gradient(90deg, ${st.pal.bubble} ${sh * 100 - 30}%, ${st.dark ? '#5A5955' : '#DCD9CF'} ${sh * 100}%, ${st.pal.bubble} ${sh * 100 + 30}%)`}} />
-      );
-    })}
-  </>
-);
-
-const ReplyText: React.FC<{st: St; x: number; y: number; w: number; T0: number}> = ({st, x, y, w, T0}) => {
-  const r = st.d.reply;
-  if (!r) return <Shimmer st={st} x={x} y={y + 6} w={w} T0={T0} />;
-  const s = txt(r);
-  const k = interpolate(st.t - T0, [0, Math.min(1.8, s.length * 0.03)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  return <div style={{position: 'absolute', left: x, top: y, width: w, ...ui(500, 25, st.pal.ink, 1.4)}}>{s.slice(0, Math.round(k * s.length))}</div>;
-};
-
-const UserBubble: React.FC<{st: St; right: number; top: number; maxW: number}> = ({st, right, top, maxW}) => {
-  const k = st.sendP;
-  if (k <= 0) return null;
-  return (
-    <div style={{position: 'absolute', right: W - right, top: top + (1 - k) * 60, maxWidth: maxW, padding: '14px 22px', borderRadius: 22,
-      background: st.pal.bubble, opacity: k, ...ui(500, 26, st.pal.ink, 1.35)}}>{st.sent}</div>
-  );
-};
 
 const claude: Skin = {
   menuFrom: 'plus',
@@ -385,7 +356,7 @@ const sheets: Skin = {
   },
 };
 
-const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS};
+const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS, ...DESK2_SKINS};
 
 // ------------------------------------------------------------------ zajednički slojevi
 const Cursor: React.FC<{x: number; y: number; click: number; s: number}> = ({x, y, click, s}) => (

@@ -117,3 +117,36 @@ export const APP_COLORS: Record<string, string> = {
   claude: '#D97757', webhook: '#FF6D5A', typeform: '#262627', calendly: '#006BFF', hubspot: '#FF7A59', zoom: '#2D8CFF',
   tiktok: '#111111', youtube: '#FF0000', linkedin: '#0A66C2', x: '#000000', discord: '#5865F2', airtable: '#18BFFF',
 };
+
+// ------------------------------------------------------------------ zajednički chat delovi (Claude, ChatGPT, Gemini, Perplexity)
+export const Shimmer: React.FC<{st: St; x: number; y: number; w: number; T0: number; n?: number}> = ({st, x, y, w, T0, n = 3}) => (
+  <>
+    {Array.from({length: n}).map((_, i) => {
+      const k = ease(st.t, T0 + i * 0.18, 0.4);
+      const ww = [1, 0.86, 0.6][i % 3] * w;
+      const sh = (st.t * 0.9 + i * 0.2) % 1;
+      return (
+        <div key={i} style={{position: 'absolute', left: x, top: y + i * 38, width: ww * k, height: 20, borderRadius: 10, opacity: k,
+          background: `linear-gradient(90deg, ${st.pal.bubble} ${sh * 100 - 30}%, ${st.dark ? '#5A5955' : '#DCD9CF'} ${sh * 100}%, ${st.pal.bubble} ${sh * 100 + 30}%)`}} />
+      );
+    })}
+  </>
+);
+
+export const ReplyText: React.FC<{st: St; x: number; y: number; w: number; T0: number}> = ({st, x, y, w, T0}) => {
+  const r = st.d.reply;
+  if (!r) return <Shimmer st={st} x={x} y={y + 6} w={w} T0={T0} />;
+  const s = txt(r);
+  const k = interpolate(st.t - T0, [0, Math.min(1.8, s.length * 0.03)], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  return <div style={{position: 'absolute', left: x, top: y, width: w, ...ui(500, 25, st.pal.ink, 1.4)}}>{s.slice(0, Math.round(k * s.length))}</div>;
+};
+
+export const UserBubble: React.FC<{st: St; right: number; top: number; maxW: number}> = ({st, right, top, maxW}) => {
+  const k = st.sendP;
+  if (k <= 0) return null;
+  return (
+    <div style={{position: 'absolute', right: W - right, top: top + (1 - k) * 60, maxWidth: maxW, padding: '14px 22px', borderRadius: 22,
+      background: st.pal.bubble, opacity: k, ...ui(500, 26, st.pal.ink, 1.35)}}>{st.sent}</div>
+  );
+};
+

@@ -65,7 +65,10 @@ KINDS = {
                                                "following", "grid", "follow", "button", "own", "story", "category", "link",
                                                "metric", "chart", "rows", "period", "dates", "threads", "requests",
                                                "notifications", "date", "time", "wallpaper", "emails", "count", "compose",
-                                               "nodes", "run", "file", "url", "marks", "scroll"]},
+                                               "nodes", "run", "file", "url", "marks", "scroll",
+                                               # faza 2: gemini / perplexity / midjourney / slack / calendar / stripe·shopify / google
+                                               "sources", "images", "generate", "upscale", "channel", "channels", "messages",
+                                               "events", "month", "label", "counter", "payments", "overview", "results", "query"]},
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -635,7 +638,8 @@ MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen
                 "nema reči", "prazn", "fokus screenshot-a")
 
 
-APPS = ("claude", "chatgpt", "notion", "sheets", "instagram", "iphone", "gmail", "n8n", "zapier", "make", "web")
+APPS = ("claude", "chatgpt", "notion", "sheets", "instagram", "iphone", "gmail", "n8n", "zapier", "make", "web",
+        "gemini", "perplexity", "midjourney", "slack", "calendar", "stripe", "shopify", "google")
 APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx (ostale aplikacije: meni samo sa svojim items)
     "claude": ["Add files or photos", "Take a screenshot", "Add to project", "Use a skill"],
     "chatgpt": ["Add photos & files", "Create image", "Deep research", "Agent mode"],
@@ -672,6 +676,20 @@ def _app_anchor_names(app: str, d: dict) -> set[str]:
         return {"compose", "inbox", "search", "list", "sidebar", "draft", "input", "send", "toast", "main"} | {f"row{j}" for j in range(8)}
     if app in ("n8n", "zapier", "make"):
         return {"canvas", "title", "flow"} | {f"node{j}" for j in range(len(d.get("nodes") or []))}
+    if app == "gemini":
+        return {"window", "rail", "main", "greeting", "input", "plus", "mic", "send", "model", "chat"}
+    if app == "perplexity":
+        return {"window", "rail", "logo", "input", "send", "question", "sources", "answer"} | {f"src{j}" for j in range(min(4, len(d.get("sources") or [])))}
+    if app == "midjourney":
+        return {"window", "input", "send", "grid"} | {f"tile{j}" for j in range(4)}
+    if app == "slack":
+        return {"window", "sidebar", "channel", "list", "input", "send"} | {f"msg{j}" for j in range(len(d.get("messages") or []))}
+    if app == "calendar":
+        return {"window", "header", "week"} | {f"day{j}" for j in range(5)} | {f"ev{j}" for j in range(len(d.get("events") or []))}
+    if app in ("stripe", "shopify"):
+        return {"window", "sidebar", "metric", "value", "chart", "list"} | {f"row{j}" for j in range(5)}
+    if app == "google":
+        return {"window", "search", "input", "overview", "results"} | {f"res{j}" for j in range(len(d.get("results") or []))}
     if app == "web":
         return {"page", "bar", "focus"} | {f"mark{j}" for j in range(len(d.get("marks") or []))} \
             | {_t(m).lower() for m in d.get("marks") or []}
@@ -769,6 +787,43 @@ def _app_errors(i: int, d: dict, job=None) -> list[str]:
             if not (isinstance(x, dict) and _t(x.get("label"))):
                 errs.append(f"moment {i} (app): svaki čvor traži label")
                 break
+    if app == "perplexity" and len(d.get("sources") or []) > 4:
+        errs.append(f"moment {i} (app): perplexity prikazuje najviše 4 izvora")
+    if app == "midjourney":
+        if not (d.get("send") or d.get("generate")):
+            errs.append(f"moment {i} (app): midjourney traži send (posle input-a) ili generate {{at}} — kad slike počnu da se razvijaju")
+        if len(d.get("images") or []) > 4:
+            errs.append(f"moment {i} (app): midjourney ima 4 slike")
+        up = d.get("upscale")
+        if isinstance(up, dict) and not 0 <= int(up.get("index", 0) or 0) <= 3:
+            errs.append(f"moment {i} (app): upscale.index je 0–3")
+    if app == "slack":
+        if not (d.get("messages") or d.get("input")):
+            errs.append(f"moment {i} (app): slack traži messages [{{name, text, at}}] ili input (poruka koja se kuca)")
+        for x in d.get("messages") or []:
+            if not (isinstance(x, dict) and _t(x.get("name")) and _t(x.get("text"))):
+                errs.append(f"moment {i} (app): svaka slack poruka traži name + text")
+                break
+    if app == "calendar":
+        evs = d.get("events") or []
+        if not evs:
+            errs.append(f"moment {i} (app): calendar traži events [{{title, day, start, end, at}}] (pon–pet, 9–17 h)")
+        for x in evs:
+            if not (isinstance(x, dict) and _t(x.get("title"))):
+                errs.append(f"moment {i} (app): svaki događaj traži title")
+                break
+        if len(evs) > 12:
+            errs.append(f"moment {i} (app): najviše 12 događaja u nedelji (čitljivost)")
+    if app in ("stripe", "shopify"):
+        if not isinstance(d.get("metric"), dict) and not d.get("payments"):
+            errs.append(f"moment {i} (app): {app} traži metric {{label, value, start, at}} i/ili payments [{{amount, customer, at}}]")
+        if len(d.get("payments") or []) > 5:
+            errs.append(f"moment {i} (app): {app} prikazuje najviše 5 uplata/porudžbina")
+    if app == "google":
+        if not (d.get("input") or d.get("query")):
+            errs.append(f"moment {i} (app): google traži input (upit koji se kuca) ili query")
+        if len(d.get("results") or []) > 3:
+            errs.append(f"moment {i} (app): google prikazuje najviše 3 rezultata (krupno i čitljivo)")
     if app == "web":
         if not d.get("file"):
             errs.append(f"moment {i} (app): web traži file — screenshot stranice iz `ccc shot` (sa --mark za fraze koje se klikću/ističu)")
@@ -923,6 +978,21 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
             if isinstance(x, dict):
                 cap(_t(x.get("label")), 26, "red")
         cap(_t(d.get("bio")), 120, "bio")
+        for x in d.get("messages") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("text")), 60, "slack poruka")
+        for x in d.get("events") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("title")), 20, "događaj")
+        for x in d.get("results") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("title")), 60, "naslov rezultata")
+                cap(_t(x.get("snippet")), 80, "opis rezultata")
+        for x in d.get("sources") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("title")), 44, "izvor")
+        if isinstance(d.get("overview"), dict):
+            cap(_t(d["overview"]), 180, "AI Overview")
     elif kind == "scene":
         for b in d.get("beats") or []:
             if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):
