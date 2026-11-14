@@ -102,14 +102,23 @@ APP_NAMES = {"claude": ("claude", "anthropic", "cowork"), "chatgpt": ("chatgpt",
              "shopify": ("shopify",), "google": ("google", "search", "seo"),
              "terminal": ("claude code", "terminal", "cli"), "cursor": ("cursor",), "vscode": ("vs code", "vscode", "copilot"),
              "canva": ("canva",), "capcut": ("capcut",), "ads": ("meta ads", "ads manager", "facebook ads", "ad"),
-             "ytstudio": ("youtube",), "tiktok": ("tiktok",)}
+             "ytstudio": ("youtube",), "tiktok": ("tiktok",),
+             "copilot": ("copilot", "microsoft"), "grok": ("grok", "xai"), "deepseek": ("deepseek",), "metaai": ("meta ai",),
+             "lechat": ("le chat", "mistral"), "outlook": ("outlook",), "hubspot": ("hubspot", "crm"), "linear": ("linear",),
+             "gumroad": ("gumroad",), "kajabi": ("kajabi",), "paypal": ("paypal",), "analytics": ("google analytics", "analytics"),
+             "beehiiv": ("beehiiv", "newsletter")}
 
 
 def _app_of(e: dict, it: dict) -> bool:
     """Da li `app` moment prikazuje alat o kom je entitet (po imenu ili match frazama)."""
     if it.get("kind") != "app":
         return False
-    names = APP_NAMES.get(str((it.get("data") or {}).get("app")), ())
+    d = it.get("data") or {}
+    if d.get("app") == "custom":  # bilo koji alat: ime iz brand.name
+        nm = str((d.get("brand") or {}).get("name") or "").lower()
+        names = (nm,) if nm else ()
+    else:
+        names = APP_NAMES.get(str(d.get("app")), ())
     hay = " ".join([str(e.get("name") or "")] + [str(m) for m in e.get("match") or []]).lower()
     return any(n in hay for n in names)
 

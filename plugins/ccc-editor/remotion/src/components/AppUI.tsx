@@ -8,6 +8,7 @@ import {PHONE_SKINS, PhoneChrome, Touch} from './AppPhone';
 import {DESK_SKINS} from './AppDesk';
 import {DESK2_SKINS} from './AppDesk2';
 import {KIT3_SKINS} from './AppKit3';
+import {SPEC_SKINS, customSkin} from './AppSpec';
 
 /**
  * App UI kit (principles.md 45–47, recenzija test-video-petar v1): verne rekreacije alata o kojima klijenti pričaju
@@ -22,7 +23,8 @@ import {KIT3_SKINS} from './AppKit3';
 
 export const APPS = ['claude', 'chatgpt', 'notion', 'sheets', 'instagram', 'iphone', 'gmail', 'n8n', 'zapier', 'make', 'web',
   'gemini', 'perplexity', 'midjourney', 'slack', 'calendar', 'stripe', 'shopify', 'google',
-  'terminal', 'cursor', 'vscode', 'canva', 'capcut', 'ads', 'ytstudio', 'tiktok'] as const;
+  'terminal', 'cursor', 'vscode', 'canva', 'capcut', 'ads', 'ytstudio', 'tiktok',
+  'copilot', 'grok', 'deepseek', 'metaai', 'lechat', 'outlook', 'hubspot', 'linear', 'gumroad', 'kajabi', 'paypal', 'analytics', 'beehiiv', 'custom'] as const;
 
 // ------------------------------------------------------------------ palete
 const PAL = {
@@ -358,7 +360,7 @@ const sheets: Skin = {
   },
 };
 
-const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS, ...DESK2_SKINS, ...KIT3_SKINS};
+const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS, ...DESK2_SKINS, ...KIT3_SKINS, ...SPEC_SKINS};
 
 // ------------------------------------------------------------------ zajednički slojevi
 const Cursor: React.FC<{x: number; y: number; click: number; s: number}> = ({x, y, click, s}) => (
@@ -481,8 +483,9 @@ const Note: React.FC<{st: St; text: string; x: number; y: number; k: number; dim
 // ------------------------------------------------------------------ moment
 export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   // živa stranica: telefonski screenshot (uspravan) ide u telefon, desktop u pregledač
-  const app = d.app === 'web' && d.w && d.h && d.h > d.w * 1.3 ? 'webphone' : SKINS[d.app] ? d.app : 'claude';
-  const skin = SKINS[app];
+  const app = d.app === 'web' && d.w && d.h && d.h > d.w * 1.3 ? 'webphone' : d.app === 'custom' ? 'custom' : SKINS[d.app] ? d.app : 'claude';
+  // custom = bilo koji alat: šablon (chat | list | dashboard) sa imenom, bojom i logom iz plana (faza B)
+  const skin = app === 'custom' ? customSkin(d) : SKINS[app];
   const FW = skin.size?.w ?? W, FH = skin.size?.h ?? H;
   const phone = skin.frame === 'phone';
   // Podrazumevano svetla tema aplikacije (najprepoznatljivija); `theme: "dark"` za tamnu varijantu.

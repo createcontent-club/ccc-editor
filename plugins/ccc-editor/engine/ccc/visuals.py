@@ -15,6 +15,7 @@ Stil (dark / light) bira klijent (`top_style`); akcenat = boja brenda, font = iz
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -72,7 +73,9 @@ KINDS = {
                                                # faza 3: terminal / cursor·vscode / canva / capcut / ads / ytstudio / tiktok
                                                "lines", "code", "add", "files", "project", "elements", "background", "variants",
                                                "cuts", "captions", "caption", "media", "length", "campaigns", "metrics", "videos",
-                                               "likes", "like", "commentCount", "comments", "saves", "shares", "sound"]},
+                                               "likes", "like", "commentCount", "comments", "saves", "shares", "sound",
+                                               # faza B: custom (bilo koji alat)
+                                               "brand", "type", "columns"]},
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -644,7 +647,14 @@ MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen
 
 APPS = ("claude", "chatgpt", "notion", "sheets", "instagram", "iphone", "gmail", "n8n", "zapier", "make", "web",
         "gemini", "perplexity", "midjourney", "slack", "calendar", "stripe", "shopify", "google",
-        "terminal", "cursor", "vscode", "canva", "capcut", "ads", "ytstudio", "tiktok")
+        "terminal", "cursor", "vscode", "canva", "capcut", "ads", "ytstudio", "tiktok",
+        # faza B: aplikacije kao podaci (remotion/src/components/AppSpec.tsx) + custom = bilo koji alat
+        "copilot", "grok", "deepseek", "metaai", "lechat", "outlook", "hubspot", "linear",
+        "gumroad", "kajabi", "paypal", "analytics", "beehiiv", "custom")
+SPEC_CHAT = ("copilot", "grok", "deepseek", "metaai", "lechat")
+SPEC_LIST = ("outlook", "hubspot", "linear")
+SPEC_DASH = ("gumroad", "kajabi", "paypal", "analytics", "beehiiv")
+SPEC_COLS = {"outlook": ("from", "subject", "time"), "hubspot": ("name", "stage", "amount"), "linear": ("id", "title", "status")}
 APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx (ostale aplikacije: meni samo sa svojim items)
     "claude": ["Add files or photos", "Take a screenshot", "Add to project", "Use a skill"],
     "chatgpt": ["Add photos & files", "Create image", "Deep research", "Agent mode"],
@@ -710,6 +720,13 @@ def _app_anchor_names(app: str, d: dict) -> set[str]:
         return {"window", "metrics", "chart", "list", "m0", "m1", "m2", "row0", "row1", "row2"}
     if app == "tiktok":
         return {"video", "likes", "comments", "share", "caption", "drawer", "rail"}
+    kind = d.get("type") if app == "custom" else ("chat" if app in SPEC_CHAT else "list" if app in SPEC_LIST else "dashboard" if app in SPEC_DASH else None)
+    if kind == "chat":
+        return {"window", "rail", "main", "greeting", "input", "plus", "mic", "send", "model", "chat"}
+    if kind == "list":
+        return {"window", "sidebar", "header", "button", "list"} | {f"row{j}" for j in range(8)}
+    if kind == "dashboard":
+        return {"window", "sidebar", "metric", "value", "chart", "list"} | {f"row{j}" for j in range(5)}
     if app == "web":
         return {"page", "bar", "focus"} | {f"mark{j}" for j in range(len(d.get("marks") or []))} \
             | {_t(m).lower() for m in d.get("marks") or []}
@@ -871,6 +888,33 @@ def _app_errors(i: int, d: dict, job=None) -> list[str]:
         errs.append(f"moment {i} (app): ytstudio ima 3 metrike (Views, Watch time, Subscribers)")
     if app == "tiktok" and len(d.get("comments") or []) > 4:
         errs.append(f"moment {i} (app): tiktok fioka prikazuje najviše 4 komentara")
+    if app == "custom":
+        b = d.get("brand") if isinstance(d.get("brand"), dict) else {}
+        if not _t(b.get("name")):
+            errs.append(f"moment {i} (app): custom traži brand {{name, color, logo: {{file}}}} — ime alata (logo iz `ccc logo` kad postoji)")
+        if b.get("color") and not re.match(r"^#[0-9a-fA-F]{6}$", str(b.get("color"))):
+            errs.append(f"moment {i} (app): brand.color mora biti hex (#RRGGBB)")
+        if d.get("type") not in ("chat", "list", "dashboard"):
+            errs.append(f"moment {i} (app): custom type mora biti chat | list | dashboard (AI asistent / inbox-CRM-zadaci / prihod-pretplatnici)")
+        if isinstance(b.get("logo"), str):
+            errs.append(f"moment {i} (app): brand.logo je objekat {{\"file\": \"web-logo-….png\"}}")
+    kind = d.get("type") if app == "custom" else ("list" if app in SPEC_LIST else "dashboard" if app in SPEC_DASH else None)
+    if kind == "list":
+        rows = d.get("rows") or []
+        if not rows:
+            errs.append(f"moment {i} (app): {app} traži rows [{{…, at, tone}}] — redovi koji stižu na reč")
+        if len(rows) > 7:
+            errs.append(f"moment {i} (app): lista prikazuje najviše 7 redova")
+        keys = SPEC_COLS.get(app) or tuple(str((c.get("key") if isinstance(c, dict) else c)) for c in d.get("columns") or []) or ("name", "status", "time")
+        for r in rows:
+            if isinstance(r, dict) and not any(_t(r.get(k)) for k in keys):
+                errs.append(f"moment {i} (app): red u listi nema nijedno polje od {list(keys)}")
+                break
+    if kind == "dashboard":
+        if not isinstance(d.get("metric"), dict) and not (d.get("payments") or d.get("rows")):
+            errs.append(f"moment {i} (app): {app} traži metric {{label, value, start, at}} i/ili payments [{{amount, customer, at}}]")
+        if len(d.get("payments") or d.get("rows") or []) > 5:
+            errs.append(f"moment {i} (app): dashboard prikazuje najviše 5 redova")
     if app == "web":
         if not d.get("file"):
             errs.append(f"moment {i} (app): web traži file — screenshot stranice iz `ccc shot` (sa --mark za fraze koje se klikću/ističu)")
