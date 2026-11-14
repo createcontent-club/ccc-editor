@@ -93,10 +93,12 @@ const beat = (c: Ctx, x: any, i: number, n: number) => {
   const t = typeof x?.atT === 'number' ? x.atT : n <= 1 ? 0 : (i * Math.min(c.dur * 0.55, 0.45 * (n - 1))) / (n - 1);
   return i === 0 ? Math.min(t, 0.2) : t;
 };
-// textWrap 'balance' (recenzija test-video-petar v1, "Just record / it"): kad se tekst prelama, redovi su ujednačeni,
-// pa nijedna reč ne ostaje sama u poslednjem redu (principles.md 5, 48). Na tekst u jednom redu ne utiče.
+// text-wrap-style 'balance' (recenzija test-video-petar v1, "Just record / it"): kad se tekst prelama, redovi su
+// ujednačeni, pa nijedna reč ne ostaje sama u poslednjem redu (principles.md 5, 48). Longhand (ne `textWrap`): skraćenica
+// `text-wrap` je poništavala `whiteSpace: 'nowrap'` pa su trake i natpisi u jednom redu pucali u više redova (14. nov,
+// traka breaking vesti u 3 reda). Chrome 158 (Remotion) podržava longhand.
 const font = (w: number, size: number, lh = 1.15): React.CSSProperties =>
-  ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em', textWrap: 'balance'} as React.CSSProperties);
+  ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em', textWrapStyle: 'balance'} as React.CSSProperties);
 
 /**
  * Auto-fit teksta (QA 0.8.0, P1-23): šabloni su birali veličinu po broju slova i `nowrap` — dugačko ime ili brojka
@@ -272,10 +274,11 @@ const Stat: React.FC<{d: any}> = ({d}) => {
   const subAt = at0(d.sub, Math.min(0.8, c.dur * 0.45));
   // Nikad prazan kadar (recenzija ai-actor-0 v1, s15): kartica sa natpisom ulazi odmah, a broj se odbrojava na reč.
   const parts = [
-    {h: size + (d.label ? 70 : 0) + (d.of ? 90 : 0) + 60, at: 0, el: (
+    {h: (d.src ? Math.min(size, 150) + 164 : size) + (d.label ? 70 : 0) + (d.of ? 90 : 0) + 60, at: 0, el: (
       <Glass glow={0.5} style={{width: 880, padding: '42px 56px 46px', textAlign: 'center'}}>
+        {d.src ? <div style={{display: 'flex', justifyContent: 'center', marginBottom: 14}}><Face f={d} size={150} ring={ease(c.t, at, 0.8)} tone={d.tone} /></div> : null}
         {d.label ? <div style={{...font(600, 44), color: c.th.mut}}>{d.label}</div> : null}
-        <div style={{...font(800, size, 1), letterSpacing: '-0.05em', color: c.th.ink, marginTop: 12, fontVariantNumeric: 'tabular-nums',
+        <div style={{...font(800, d.src ? Math.min(size, 150) : size, 1), letterSpacing: '-0.05em', color: c.th.ink, marginTop: 12, fontVariantNumeric: 'tabular-nums',
           opacity: 0.25 + 0.75 * ease(c.t, at - 0.1, 0.35)}}>
           {countUp(v, ease(c.t, at, 1.1))}
         </div>
@@ -1040,12 +1043,12 @@ const Notify: React.FC<{d: any}> = ({d}) => {
   const parts = items.map((x, i) => ({h: 140, at: times[i], el: (
     <Glass glow={0.25} strong r={34} style={{width: 880, padding: '24px 30px'}}>
       <div style={{display: 'flex', alignItems: 'center', gap: 26}}>
-        <NeonTile name={x.icon ?? 'bell'} size={92} tone={x.tone} />
+        {x.src ? <Face f={x} size={92} tone={x.tone} /> : <NeonTile name={x.icon ?? 'bell'} size={92} tone={x.tone} />}
         <div style={{flex: 1, textAlign: 'left'}}>
           <div style={{...font(800, 46), color: c.th.ink}}>{x.title}</div>
           {x.body ? <div style={{...font(600, 34), color: c.th.mut, marginTop: 4}}>{x.body}</div> : null}
         </div>
-        <div style={{...font(600, 30), color: c.th.mut}}>now</div>
+        <div style={{...font(600, 30), color: c.th.mut}}>{txt(x.time) || 'now'}</div>
       </div>
     </Glass>
   )}));
@@ -1961,7 +1964,9 @@ const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number;
               <div style={{position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 6}}>
                 {d.src ? <Img src={staticFile(d.src)} style={{position: 'absolute', left: -(r.x - p2), top: -(r.y - p2), width: iw, height: ih}} /> : null}
               </div>
-              {m.blur ? (
+              {m.redact ? (
+                <div style={{position: 'absolute', left: -2, top: 0, bottom: 0, width: `calc(${k * 100}% + 4px)`, borderRadius: 3, background: '#0A0A0B'}} />
+              ) : m.blur ? (
                 <div style={{position: 'absolute', inset: -4, borderRadius: 10, backdropFilter: `blur(${14 * k}px)`,
                   background: `rgba(${lightPage ? '255,255,255' : '20,20,24'},${0.25 * k})`}} />
               ) : (
@@ -1972,6 +1977,22 @@ const PicLayer: React.FC<{d: any; s: number; tx: number; ty: number; kh: number;
           );
         });
       })}
+    </div>
+  );
+};
+
+/** Pečat preko dokumenta/screenshota (ekran, ne slika): nakrivljen, udari na reč — "LEAKED", "CONFIDENTIAL", "SOLD OUT". */
+const DocStamp: React.FC<{d: any}> = ({d}) => {
+  const c = useC();
+  if (!d.stamp) return null;
+  const k = ease(c.t, at0(d.stamp, 0.8), 0.35, Easing.bezier(0.34, 1.7, 0.64, 1));
+  if (k <= 0) return null;
+  const col = d.stamp.tone === 'good' ? c.acc : TONES.bad;
+  return (
+    <div style={{position: 'absolute', left: 0, right: 0, top: '44%', display: 'flex', justifyContent: 'center', zIndex: 20, pointerEvents: 'none'}}>
+      <div style={{padding: '14px 36px', border: `8px solid ${col}`, borderRadius: 18, ...font(900, 84, 1), color: col, letterSpacing: '0.06em',
+        background: rgba(c.th.dark ? '#0A0A0B' : '#FFFFFF', 0.55), transform: `rotate(-9deg) scale(${2.2 - 1.2 * k})`, opacity: Math.min(1, k * 1.4),
+        boxShadow: `0 0 40px ${rgba(col, 0.35)}`, whiteSpace: 'nowrap'}}>{txt(d.stamp).toUpperCase()}</div>
     </div>
   );
 };
@@ -1992,6 +2013,7 @@ const PictureFull: React.FC<{d: any; plan: PicPlan}> = ({d, plan}) => {
   return (
     <div style={{position: 'absolute', inset: 0, overflow: 'hidden', background: plan.bg}}>
       <PicLayer d={d} s={s} tx={tx} ty={ty} kh={kh} bg={plan.bg} />
+      <DocStamp d={d} />
       {plan.mode === 'bleed' || light ? (
         <div style={{position: 'absolute', left: 0, right: 0, bottom: 0, height: LIGHT_SHADE.h,
           background: `linear-gradient(180deg, rgba(12,12,16,0) 0%, rgba(12,12,16,${LIGHT_SHADE.a * 0.12}) 35%, rgba(12,12,16,${LIGHT_SHADE.a * 0.4}) 62%, rgba(12,12,16,${LIGHT_SHADE.a * 0.75}) 84%, rgba(12,12,16,${LIGHT_SHADE.a}) 100%)`}} />
@@ -2040,6 +2062,7 @@ const Screenshot: React.FC<{d: any; photo?: boolean}> = ({d, photo}) => {
         ) : null}
         <div style={{width: fw, height: fh, borderRadius: phone ? 42 : 14, overflow: 'hidden', position: 'relative', background: '#fff'}}>
           <PicLayer d={d} s={s * (iw / iw)} tx={tx} ty={ty} kh={kh} bg={d.edge ?? '#FFFFFF'} />
+          <DocStamp d={d} />
         </div>
       </Glass>
       {capH ? (
@@ -2838,6 +2861,52 @@ const Ranking: React.FC<{d: any}> = ({d}) => {
   );
 };
 
+/**
+ * Datum kao prelaz ("March 2024", "6 months later"): stranica kalendara, nova se okreće preko stare na svoju reč;
+ * ispod kratka napomena. Kad priča skoči u vremenu, gledalac to vidi, ne samo čuje.
+ */
+const DateJump: React.FC<{d: any; height: number}> = ({d, height}) => {
+  const c = useC();
+  const dates: any[] = (d.dates ?? []).slice(0, 3);
+  const ats = dates.map((x, i) => beat(c, x, i, dates.length));
+  let cur = 0;
+  ats.forEach((a, i) => { if (c.t >= a - 0.05) cur = i; });
+  const W = 560, Hc = 440, top = Math.max(230, (height - Hc) / 2 - 40);
+  const page = (x: any, i: number) => {
+    const t0 = txt(x);
+    const sp = t0.split(/\s+/);
+    const big = sp.length > 1 && /^\d{4}$/.test(sp[sp.length - 1]) ? sp[sp.length - 1] : t0;
+    const band = sp.length > 1 && /^\d{4}$/.test(sp[sp.length - 1]) ? sp.slice(0, -1).join(' ') : (txt(x?.band) || '');
+    return (
+      <div key={i} style={{position: 'absolute', inset: 0, borderRadius: 34, overflow: 'hidden', background: '#FFFFFF', boxShadow: `0 30px 70px rgba(0,0,0,${c.th.dark ? 0.5 : 0.2})`}}>
+        <div style={{height: 110, background: x?.tone === 'bad' ? TONES.bad : c.acc, display: 'grid', placeItems: 'center', ...font(900, 52, 1),
+          color: x?.tone === 'bad' ? '#fff' : onAccent(c.acc), letterSpacing: '0.04em'}}>{band.toUpperCase()}</div>
+        <div style={{position: 'absolute', left: 0, right: 0, top: 110, bottom: 0, display: 'grid', placeItems: 'center', ...font(900, fit(big, 900, 190, W - 80, 70), 1),
+          color: '#0A0A0B', letterSpacing: '-0.04em'}}>{big}</div>
+        {[0.28, 0.72].map((fx) => <div key={fx} style={{position: 'absolute', top: -18, left: `${fx * 100}%`, width: 26, height: 52, marginLeft: -13, borderRadius: 13,
+          background: c.th.dark ? '#2A2B30' : '#C9CBD1'}} />)}
+      </div>
+    );
+  };
+  return (
+    <div style={{position: 'absolute', inset: 0}}>
+      <div style={{position: 'absolute', left: (1080 - W) / 2, top, width: W, height: Hc, perspective: 1600, ...pop(prog(c, 0), 30)}}>
+        {dates.map((x, i) => {
+          if (i > cur) return null;
+          const fk = i === 0 ? 1 : ease(c.t, ats[i] - 0.05, 0.6, Easing.bezier(0.3, 1.25, 0.6, 1));
+          const under = i < cur && ease(c.t, ats[i + 1] - 0.05, 0.6) >= 1;
+          if (under) return null;
+          return <div key={i} style={{position: 'absolute', inset: 0, transformOrigin: '50% 0%', transform: `rotateX(${(1 - fk) * -95}deg)`, zIndex: i}}>{page(x, i)}</div>;
+        })}
+      </div>
+      {d.sub ? (
+        <div style={{position: 'absolute', left: 0, right: 0, top: top + Hc + 40, textAlign: 'center', ...pop(prog(c, at0(d.sub, ats[ats.length - 1] + 0.3)), 16)}}>
+          <span style={{...font(800, 46), color: c.th.ink}}>{txt(d.sub)}</span></div>
+      ) : null}
+    </div>
+  );
+};
+
 const Background: React.FC<{th: Theme; acc: string; t: number}> = ({th, acc, t}) => {
   const o1 = {x: 330 + Math.sin(t / 3.4) * 80, y: 420 + Math.cos(t / 4.0) * 50};
   const o2 = {x: 760 + Math.cos(t / 3.0) * 70, y: 600 + Math.sin(t / 3.6) * 60};
@@ -2899,8 +2968,9 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
       </C.Provider>
     );
   }
-  if (['timeline', 'quote', 'network', 'dossier', 'lowerthird', 'compare', 'map', 'breaking'].includes(it.kind)) {  // priča i ljudi (faze 1–2)
+  if (['timeline', 'quote', 'network', 'dossier', 'lowerthird', 'compare', 'map', 'breaking', 'date'].includes(it.kind)) {  // priča i ljudi (faze 1–3)
     const el = it.kind === 'map' ? <WorldMap d={d} height={height} />
+      : it.kind === 'date' ? <DateJump d={d} height={height} />
       : it.kind === 'breaking' ? <Breaking d={d} sf={sf} height={height} />
       : it.kind === 'timeline' ? <Timeline d={d} sf={sf} height={height} />
       : it.kind === 'quote' ? <Quote d={d} height={height} />

@@ -287,7 +287,8 @@ in for actions (a video-camera icon for "record your screen", a link icon for "a
     "who is this" → `dossier` (portrait + sourced facts); an interview/appearance → `lowerthird` on the real clip;
     a transformation → `compare` (before/after wipe); a place or spread → `map` (pins on real coordinates); breaking
     news → `breaking` (TV banner over the real footage); a number that moved with an event → `trend` (marker on that
-    point); "top 5" → `ranking` with faces. **Why (owner):** "make as many visual options as possible for
+    point); "top 5" → `ranking` with faces; a jump in time → `date` (calendar flip); a document → the real page with
+    redacted phrases and a stamp; a number about someone → `stat` with their face. **Why (owner):** "make as many visual options as possible for
     scenes about characters and events" — the people stay on screen (principle 42) and every fact is visibly sourced
     (16). *Engine:* timeline 2–5 dated events, quote ≤ 160 chars with name and highlights inside the quote, network
     links between existing people, dossier with a real portrait, compare with both pictures, map pins with real coordinates, trend events on existing points, ranking 3–5 rows.

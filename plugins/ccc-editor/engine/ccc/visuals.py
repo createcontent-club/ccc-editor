@@ -22,7 +22,7 @@ from pathlib import Path
 # Vrste momenata. Delovi unutar momenta mogu imati "at": "<id reči>" — pojavljuju se TAČNO kad se ta reč izgovori
 # (engine pretvara u "atT" = sekunde od početka momenta). Bez "at" delovi se ravnomerno pojavljuju.
 KINDS = {
-    "stat": {"required": ["value"], "optional": ["label", "sub", "at", "ring", "of", "tone", "source"]},
+    "stat": {"required": ["value"], "optional": ["label", "sub", "at", "ring", "of", "tone", "source", "file"]},  # file = lice/logo kome broj pripada
     "week": {"required": ["value"], "optional": ["label", "per", "days", "sub", "at"]},
     "steps": {"required": ["items"], "optional": ["active", "title", "total", "icon"]},  # items: tekst ili {"text","at"}; active -1 = uvod (framework), n = svi otkriveni
     "flow": {"required": ["nodes"], "optional": ["title", "hero", "layout", "loop", "center"]},  # nodes: {"icon"|"file","label","at"}; layout: row|column|quad|hub; loop/center samo uz quad
@@ -32,13 +32,13 @@ KINDS = {
     "chat": {"required": ["messages"], "optional": ["title", "platform"]},     # {"from": "them"|"you","text","at"}
     "filter": {"required": ["label"], "optional": ["total", "keep", "at", "sub", "icon"]},
     "headline": {"required": ["words"], "optional": ["accent", "sub", "tone"]},  # words: fraze ili {"text","at"}
-    "notify": {"required": ["items"], "optional": []},                         # {"icon","title","body","at"}
+    "notify": {"required": ["items"], "optional": []},                         # {"icon" | "file", "title","body","at","time"}
     "key": {"required": ["line1"], "optional": ["icon", "line2"]},
     "search": {"required": ["logo"], "optional": ["query", "meter", "placeholder"]},  # logo {"file"}, query {"text","at"}, meter {"value","label","used","at","tone"}
     "resource": {"required": ["title"], "optional": ["sub", "badge", "badgeAt", "icon", "rows", "kicker", "at"]},  # CTA resurs (izveštaj/vodič) kao predmet
     "comment": {"required": ["text"], "optional": ["user", "reply", "at", "platform", "author", "typing"]},  # typing: CTA — ključna reč se kuca u Instagram polje
     "logo": {"required": [], "optional": ["file", "name", "sub", "logos", "title", "at"]},      # pravi logo(i) sa interneta
-    "screenshot": {"required": ["file"], "optional": ["focus", "highlight", "device", "zoomAt", "url", "marks"]},  # marks: [{"text","at"}] iz ccc shot --mark
+    "screenshot": {"required": ["file"], "optional": ["focus", "highlight", "device", "zoomAt", "url", "marks", "stamp"]},  # marks: [{"text","at","redact"}] iz ccc shot --mark; stamp {text, at, tone}
     "news": {"required": ["headline", "outlet"], "optional": ["logo", "image", "date", "highlight", "at"]},
     "photo": {"required": ["file"], "optional": ["name", "sub", "at", "focus"]},   # prava fotografija (osoba/proizvod/mesto)
     "post": {"required": ["platform", "text"], "optional": ["name", "handle", "avatar", "time", "title", "community",
@@ -61,6 +61,8 @@ KINDS = {
     "breaking": {"required": ["headline"], "optional": ["file", "label", "ticker", "channel", "live", "at", "start"]},  # tačan naslov vesti preko snimka
     "trend": {"required": ["points"], "optional": ["events", "label", "x", "tone", "source"]},  # points [{value, label}] iz izvora; events [{index, label, at, tone}] ≤ 3
     "ranking": {"required": ["items"], "optional": ["title", "countdown", "source"]},  # items [{file, name, value, at, tone}] 3–5
+    # faza 3: datum kao prelaz (kalendar se okreće), zacrnjenje i pečat na screenshotu (marks.redact, stamp)
+    "date": {"required": ["dates"], "optional": ["sub"]},  # dates [{text, at, tone}] 1–3 ("March 2024"), sub {text, at}
     # Stubići sa licem/logom na vrhu svakog (recenzija aazar-trial-1 v3, s02/s27): bars: [{file, name, logo}] × 2–3,
     # sets: [{label, at, values: [n…], display: ["$4.2M"…], tones: [...], note: {text, at, tone}}] — skup se smenjuje na reč.
     "pillars": {"required": ["bars", "sets"], "optional": []},
@@ -412,9 +414,9 @@ def validate_plan(plan: dict, job) -> list[str]:
                     yield from files_in(v)
         if k == "post" and d.get("platform") not in ("x", "reddit", "linkedin", "threads"):
             errs.append(f"moment {i} (post): platform mora biti x | reddit | linkedin | threads")
-        if k in ("timeline", "quote", "network", "dossier", "lowerthird", "compare", "map", "breaking", "trend", "ranking"):
+        if k in ("timeline", "quote", "network", "dossier", "lowerthird", "compare", "map", "breaking", "trend", "ranking", "date"):
             errs += _story_errors(i, k, d, job)
-        if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow",
+        if k in ("logo", "screenshot", "news", "photo", "post", "search", "faceoff", "pillars", "scene", "flow", "stat", "notify",
                  "timeline", "quote", "network", "dossier", "compare", "map", "ranking"):
             from .assets import nfc, prepare
             man = prepare(job)
@@ -431,6 +433,9 @@ def validate_plan(plan: dict, job) -> list[str]:
             if any(key in hl for key in ("x", "y", "w", "h")) or d.get("focus"):
                 errs.append(f"moment {i} (screenshot): ručne koordinate isticanja/fokusa nisu dozvoljene (seku tekst) — "
                             "uzmi ih iz stranice: ccc shot --find \"<fraza>\" (fokus) i --mark \"<ime/cifra>\" (oznake)")
+            stp = d.get("stamp")
+            if stp is not None and not (isinstance(stp, dict) and 1 <= len(_t(stp)) <= 14):
+                errs.append(f"moment {i} (screenshot): stamp je {{text (≤ 14 znakova, npr. \"LEAKED\"), at, tone}}")
             if d.get("marks"):
                 from .web import sources
                 src = sources(job).get(str(d["file"])) or {}
@@ -1033,6 +1038,14 @@ def _story_errors(i: int, k: str, d: dict, job=None) -> list[str]:
         for x in its:
             if not (isinstance(x, dict) and _t(x.get("name")) and str(x.get("value") or "")):
                 errs.append(f"moment {i} (ranking): svaki red traži name + value")
+                break
+    if k == "date":
+        ds = d.get("dates") or []
+        if not 1 <= len(ds) <= 3:
+            errs.append(f"moment {i} (date): 1–3 dates [{{text, at}}] (\"March 2024\" → \"Today\")")
+        for x in ds:
+            if len(_t(x)) > 18:
+                errs.append(f"moment {i} (date): datum \"{_t(x)}\" je predug (najviše 18 znakova: \"March 2024\", \"6 months later\")")
                 break
     if k == "lowerthird":
         if not d.get("file"):
