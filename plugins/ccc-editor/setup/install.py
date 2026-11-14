@@ -262,6 +262,34 @@ def install_remotion(home: Path, node: Path) -> None:
     if r.returncode != 0:
         fail("Downloading the render browser failed:\n" + "\n".join((r.stderr or r.stdout).splitlines()[-6:]), "network")
     ok("render browser (Chrome Headless Shell)")
+    install_ffprobe(home)
+
+
+FFPROBE_SH = """#!/bin/sh
+# CCC: Remotion's ffprobe on macOS finds its libav*.dylib only via DYLD_LIBRARY_PATH (they sit next to it).
+# Without this, a Mac without Homebrew ffmpeg could not read ANY video (CCC_BAD_FILE) — found by CI, 0.8.3.
+for d in "$(cd "$(dirname "$0")/.." && pwd)"/remotion/node_modules/@remotion/compositor-darwin-*; do
+  if [ -x "$d/ffprobe" ]; then DYLD_LIBRARY_PATH="$d" exec "$d/ffprobe" "$@"; fi
+done
+echo "ffprobe is missing (run the editor setup again)" >&2
+exit 127
+"""
+
+
+def install_ffprobe(home: Path) -> None:
+    """ffprobe for the engine: Windows uses Remotion's ffprobe.exe directly (DLLs load from its folder);
+    macOS gets a launcher in <home>/bin (first in the engine's PATH) that sets the library path."""
+    if IS_WIN:
+        return
+    f = home / "bin" / "ffprobe"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    if not f.exists() or f.read_text() != FFPROBE_SH:
+        f.write_text(FFPROBE_SH)
+        f.chmod(0o755)
+    r = subprocess.run([str(f), "-version"], capture_output=True, text=True)
+    if r.returncode != 0:
+        fail("ffprobe (video reader) doesn't start: " + (r.stderr or r.stdout).strip()[-300:])
+    ok("video reader (ffprobe)")
 
 
 # ------------------------------------------------------------------ fonts + models
@@ -380,6 +408,8 @@ def missing_parts(home: Path) -> list[str]:
         out.append("Node.js")
     if not (home / "bin" / f"ffmpeg{EXE}").exists():
         out.append("ffmpeg")
+    if not IS_WIN and not (home / "bin" / "ffprobe").exists():
+        out.append("video reader (ffprobe)")
     fonts = home / "tools" / "fonts"
     bad = [n for n, (_, h) in FONTS.items() if not good(fonts / n, h)] + [n for n, h in INTER_FILES.items() if not good(fonts / n, h)]
     if bad:
