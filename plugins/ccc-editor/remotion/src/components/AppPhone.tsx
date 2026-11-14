@@ -18,7 +18,7 @@ const file = (x: any): string | null => (x && typeof x === 'object' && x.src ? x
 
 // ------------------------------------------------------------------ okvir + dodir
 export const PhoneChrome: React.FC<{st: St; dark: boolean; filter?: string; children: React.ReactNode}> = ({st, dark, filter, children}) => {
-  const light = st.app === 'iphone' || st.dark;  // beli status bar na tamnoj podlozi
+  const light = st.app === 'iphone' || st.app === 'tiktok' || st.dark;  // beli status bar na tamnoj podlozi
   const ink = light ? '#FFFFFF' : '#000000';
   return (
     <>

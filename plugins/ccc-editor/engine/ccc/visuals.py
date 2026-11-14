@@ -68,7 +68,11 @@ KINDS = {
                                                "nodes", "run", "file", "url", "marks", "scroll",
                                                # faza 2: gemini / perplexity / midjourney / slack / calendar / stripe·shopify / google
                                                "sources", "images", "generate", "upscale", "channel", "channels", "messages",
-                                               "events", "month", "label", "counter", "payments", "overview", "results", "query"]},
+                                               "events", "month", "label", "counter", "payments", "overview", "results", "query",
+                                               # faza 3: terminal / cursor·vscode / canva / capcut / ads / ytstudio / tiktok
+                                               "lines", "code", "add", "files", "project", "elements", "background", "variants",
+                                               "cuts", "captions", "caption", "media", "length", "campaigns", "metrics", "videos",
+                                               "likes", "like", "commentCount", "comments", "saves", "shares", "sound"]},
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -639,7 +643,8 @@ MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen
 
 
 APPS = ("claude", "chatgpt", "notion", "sheets", "instagram", "iphone", "gmail", "n8n", "zapier", "make", "web",
-        "gemini", "perplexity", "midjourney", "slack", "calendar", "stripe", "shopify", "google")
+        "gemini", "perplexity", "midjourney", "slack", "calendar", "stripe", "shopify", "google",
+        "terminal", "cursor", "vscode", "canva", "capcut", "ads", "ytstudio", "tiktok")
 APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx (ostale aplikacije: meni samo sa svojim items)
     "claude": ["Add files or photos", "Take a screenshot", "Add to project", "Use a skill"],
     "chatgpt": ["Add photos & files", "Create image", "Deep research", "Agent mode"],
@@ -690,6 +695,21 @@ def _app_anchor_names(app: str, d: dict) -> set[str]:
         return {"window", "sidebar", "metric", "value", "chart", "list"} | {f"row{j}" for j in range(5)}
     if app == "google":
         return {"window", "search", "input", "overview", "results"} | {f"res{j}" for j in range(len(d.get("results") or []))}
+    if app == "terminal":
+        return {"window", "lines", "input", "send", "header"} | {f"line{j}" for j in range(len(d.get("lines") or []))}
+    if app in ("cursor", "vscode"):
+        n = len(d.get("code") or []) + len(d.get("add") or [])
+        return {"window", "tree", "editor", "chat", "input", "send"} | ({"diff"} if d.get("add") else set()) | {f"line{j}" for j in range(n)}
+    if app == "canva":
+        return {"window", "toolbar", "canvas", "share", "magic", "variants"}
+    if app == "capcut":
+        return {"window", "preview", "timeline", "captions", "track0", "track1", "track2"}
+    if app == "ads":
+        return {"window", "metrics", "table", "spent", "results", "roas"} | {f"row{j}" for j in range(len(d.get("campaigns") or []))}
+    if app == "ytstudio":
+        return {"window", "metrics", "chart", "list", "m0", "m1", "m2", "row0", "row1", "row2"}
+    if app == "tiktok":
+        return {"video", "likes", "comments", "share", "caption", "drawer", "rail"}
     if app == "web":
         return {"page", "bar", "focus"} | {f"mark{j}" for j in range(len(d.get("marks") or []))} \
             | {_t(m).lower() for m in d.get("marks") or []}
@@ -824,6 +844,33 @@ def _app_errors(i: int, d: dict, job=None) -> list[str]:
             errs.append(f"moment {i} (app): google traži input (upit koji se kuca) ili query")
         if len(d.get("results") or []) > 3:
             errs.append(f"moment {i} (app): google prikazuje najviše 3 rezultata (krupno i čitljivo)")
+    if app == "terminal":
+        ls = d.get("lines") or []
+        if not ls and not d.get("input"):
+            errs.append(f"moment {i} (app): terminal traži lines [{{text, kind, at}}] (kind: cmd | out | ok | err | claude | tool) ili input")
+        for x in ls:
+            if isinstance(x, dict) and x.get("kind") not in (None, "cmd", "out", "ok", "err", "claude", "tool", "prompt"):
+                errs.append(f"moment {i} (app): terminal kind \"{x.get('kind')}\" ne postoji (cmd | out | ok | err | claude | tool)")
+                break
+    if app in ("cursor", "vscode"):
+        if not (d.get("code") or d.get("add")):
+            errs.append(f"moment {i} (app): {app} traži code (postojeće linije) i/ili add [{{text, at}}] (linije koje se dopisuju)")
+        if len(d.get("code") or []) + len(d.get("add") or []) > 14:
+            errs.append(f"moment {i} (app): editor prikazuje najviše 14 linija koda (čitljivost)")
+    if app == "canva" and not d.get("elements"):
+        errs.append(f"moment {i} (app): canva traži elements [{{text | file, at}}] (prvi tekst = naslov dizajna)")
+    if app == "capcut" and not (d.get("captions") or d.get("cuts")):
+        errs.append(f"moment {i} (app): capcut traži captions {{at, text}} i/ili cuts [{{at}}]")
+    if app == "ads":
+        cs = d.get("campaigns") or []
+        if not cs:
+            errs.append(f"moment {i} (app): ads traži campaigns [{{name, results, cost, roas, at, tone, off}}]")
+        if len(cs) > 5:
+            errs.append(f"moment {i} (app): ads prikazuje najviše 5 kampanja")
+    if app == "ytstudio" and len(d.get("metrics") or []) > 3:
+        errs.append(f"moment {i} (app): ytstudio ima 3 metrike (Views, Watch time, Subscribers)")
+    if app == "tiktok" and len(d.get("comments") or []) > 4:
+        errs.append(f"moment {i} (app): tiktok fioka prikazuje najviše 4 komentara")
     if app == "web":
         if not d.get("file"):
             errs.append(f"moment {i} (app): web traži file — screenshot stranice iz `ccc shot` (sa --mark za fraze koje se klikću/ističu)")
@@ -993,6 +1040,17 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
                 cap(_t(x.get("title")), 44, "izvor")
         if isinstance(d.get("overview"), dict):
             cap(_t(d["overview"]), 180, "AI Overview")
+        for x in d.get("lines") or []:
+            cap(_t(x), 60, "linija terminala")
+        for x in (d.get("code") or []) + (d.get("add") or []):
+            cap(_t(x), 52, "linija koda")
+        for x in d.get("campaigns") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("name")), 34, "ime kampanje")
+        for x in d.get("comments") or []:
+            if isinstance(x, dict):
+                cap(_t(x.get("text")), 70, "komentar")
+        cap(_t(d.get("caption")), 90, "opis videa")
     elif kind == "scene":
         for b in d.get("beats") or []:
             if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):

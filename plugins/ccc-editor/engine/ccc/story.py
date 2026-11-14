@@ -99,7 +99,10 @@ APP_NAMES = {"claude": ("claude", "anthropic", "cowork"), "chatgpt": ("chatgpt",
              "iphone": ("iphone", "notification", "stripe", "shopify"),
              "gemini": ("gemini", "google ai", "bard"), "perplexity": ("perplexity",), "midjourney": ("midjourney",),
              "slack": ("slack",), "calendar": ("calendar", "calendly", "booked", "call"), "stripe": ("stripe",),
-             "shopify": ("shopify",), "google": ("google", "search", "seo")}
+             "shopify": ("shopify",), "google": ("google", "search", "seo"),
+             "terminal": ("claude code", "terminal", "cli"), "cursor": ("cursor",), "vscode": ("vs code", "vscode", "copilot"),
+             "canva": ("canva",), "capcut": ("capcut",), "ads": ("meta ads", "ads manager", "facebook ads", "ad"),
+             "ytstudio": ("youtube",), "tiktok": ("tiktok",)}
 
 
 def _app_of(e: dict, it: dict) -> bool:

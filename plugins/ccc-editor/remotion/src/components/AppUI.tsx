@@ -7,6 +7,7 @@ import {ClaudeMark, OpenAIMark, NotionMark, SheetsMark} from './appIcons';
 import {PHONE_SKINS, PhoneChrome, Touch} from './AppPhone';
 import {DESK_SKINS} from './AppDesk';
 import {DESK2_SKINS} from './AppDesk2';
+import {KIT3_SKINS} from './AppKit3';
 
 /**
  * App UI kit (principles.md 45–47, recenzija test-video-petar v1): verne rekreacije alata o kojima klijenti pričaju
@@ -20,7 +21,8 @@ import {DESK2_SKINS} from './AppDesk2';
  */
 
 export const APPS = ['claude', 'chatgpt', 'notion', 'sheets', 'instagram', 'iphone', 'gmail', 'n8n', 'zapier', 'make', 'web',
-  'gemini', 'perplexity', 'midjourney', 'slack', 'calendar', 'stripe', 'shopify', 'google'] as const;
+  'gemini', 'perplexity', 'midjourney', 'slack', 'calendar', 'stripe', 'shopify', 'google',
+  'terminal', 'cursor', 'vscode', 'canva', 'capcut', 'ads', 'ytstudio', 'tiktok'] as const;
 
 // ------------------------------------------------------------------ palete
 const PAL = {
@@ -356,7 +358,7 @@ const sheets: Skin = {
   },
 };
 
-const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS, ...DESK2_SKINS};
+const SKINS: Record<string, Skin> = {claude, chatgpt, notion, sheets, ...PHONE_SKINS, ...DESK_SKINS, ...DESK2_SKINS, ...KIT3_SKINS};
 
 // ------------------------------------------------------------------ zajednički slojevi
 const Cursor: React.FC<{x: number; y: number; click: number; s: number}> = ({x, y, click, s}) => (
