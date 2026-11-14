@@ -164,6 +164,9 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
         words = set(e.get("words") or []) | _mentions(kept, e.get("match") or [])
         hit = sorted({i for w in words if (i := in_item(w)) is not None})
         if not assets:
+            # alat prikazan kroz UI kit (app moment tog alata) JESTE pravi materijal (video-86f7e4 / ai-skills test: Notion)
+            if any(_app_of(e, items[i]) for i in hit):
+                continue
             if hit and e.get("type") in ("person", "event", "product", "character") and \
                     e.get("status") not in ("not found", "asked client", "client file"):
                 out.append(f"'{e.get('name')}' ({e.get('type')}) se pominje (moment {hit[0] + 1}), a nema materijala "

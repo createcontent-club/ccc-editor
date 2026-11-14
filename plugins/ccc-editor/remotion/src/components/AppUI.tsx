@@ -108,7 +108,7 @@ const claude: Skin = {
           <div style={{position: 'absolute', left: 16, bottom: 20, width: 40, height: 40, borderRadius: 20, background: st.dark ? '#5B5A55' : '#D9D6CC',
             display: 'grid', placeItems: 'center', ...ui(700, 18, p.ink)}}>{String(st.d.user ?? 'A').slice(0, 1).toUpperCase()}</div>
         </div>
-        <div style={{...abs(a.greeting), display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, opacity: g,
+        <div style={{...abs(a.greeting), display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18, opacity: Math.max(0, 1 - st.sendP * 2.5) * (1 - Math.min(1, 1.6 * (st.menuK ?? 0))),
           transform: `translateY(${-st.sendP * 40}px)`}}>
           <ClaudeMark size={50} />
           <span style={{fontFamily: `"${SERIF_FONT}", Georgia, serif`, fontSize: 56, color: p.ink, letterSpacing: '-0.01em'}}>
@@ -187,7 +187,7 @@ const chatgpt: Skin = {
         </div>
         <div style={{position: 'absolute', right: 26, top: 56, width: 38, height: 38, borderRadius: 19, background: '#7C5CFF',
           display: 'grid', placeItems: 'center', ...ui(700, 17, '#fff')}}>{String(st.d.user ?? 'A').slice(0, 1).toUpperCase()}</div>
-        <div style={{...abs(a.greeting), display: 'grid', placeItems: 'center', opacity: 1 - st.sendP, ...ui(600, 42, p.ink)}}>
+        <div style={{...abs(a.greeting), display: 'grid', placeItems: 'center', opacity: Math.max(0, 1 - st.sendP * 2.5) * (1 - Math.min(1, 1.6 * (st.menuK ?? 0))), ...ui(600, 42, p.ink)}}>
           {txt(st.d.greeting) || 'What can I help with?'}
         </div>
         <UserBubble st={st} right={860} top={80} maxW={560} />
@@ -510,6 +510,7 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
   const hlT = menu?.highlight ? T(menu.highlight, menuT + 0.5) : 1e9;
   const closeT = menu?.close ? T(menu.close, 1e9) : 1e9;
   const mk = menu ? ease(t, menuT, 0.32) * (1 - ease(t, closeT, 0.25)) : 0;
+  st.menuK = mk;
   const from = a[skin.menuFrom] ?? a.input ?? {x: 40, y: 80, w: 60, h: 40};
   const mh = items.length * 56 + 16;
   const mw = Math.min(420, FW - 20);
@@ -648,7 +649,12 @@ export const AppMoment: React.FC<P> = ({d, t, dur, acc, dark, height}) => {
           const dim = nxt && t >= nxt.T ? ease(t, nxt.T, 0.4) : 0;
           const old = notes[i + 2] && t >= notes[i + 2].T ? ease(t, notes[i + 2].T, 0.3) : 0;
           const c0 = curAtT(n.T);
-          const x = Math.min(FW - 400, Math.max(20, c0.x + 34)), y = Math.min(FH - 90, Math.max(56, c0.y - 96));
+          let x = Math.min(FW - 400, Math.max(20, c0.x + 34)), y = Math.min(FH - 90, Math.max(56, c0.y - 96));
+          const inp = a.input;
+          if (inp && y + 70 > inp.y && y < inp.y + inp.h) {  // beleška bi pala na polje → ispod polja, desno (iznad je pozdrav/sadržaj)
+            y = Math.min(FH - 76, inp.y + inp.h + 14);
+            x = Math.min(FW - 400, Math.max(20, inp.x + inp.w - 380));
+          }
           return <Note key={i} st={st} text={txt(n)} x={x} y={y} k={k * (1 - old)} dim={dim} />;
         })}
         {cur ? (phone ? <Touch x={cur.x} y={cur.y} click={cur.click} s={s} />

@@ -168,10 +168,12 @@ const IgProfile: React.FC<{st: St; a: Record<string, Rect>}> = ({st, a}) => {
         const src = file(g);
         return (
           <div key={i} style={{...abs(r), overflow: 'hidden', background: src ? '#ddd' : TILE_BG[(i * 4) % TILE_BG.length],
-            opacity: Math.min(1, k * 1.2), transform: `scale(${0.85 + 0.15 * k})`}}>
+            opacity: Math.min(1, k * 1.2), transform: `scale(${0.85 + 0.15 * k})`, zIndex: g?.tone === 'good' ? 2 : 1,
+            boxShadow: g?.tone === 'good' ? `inset 0 0 0 ${5 * k}px ${st.acc}, 0 0 24px ${rgba(st.acc, 0.6 * k)}` : undefined}}>
             {src ? <Img src={staticFile(src)} style={{width: '100%', height: '100%', objectFit: 'cover'}} /> : null}
-            {txt(g?.views) ? <span style={{position: 'absolute', left: 8, bottom: 6, display: 'flex', alignItems: 'center', gap: 4, ...ui(600, 15, '#fff'),
-              textShadow: '0 1px 4px rgba(0,0,0,0.5)'}}><Ph.Play size={14} weight="fill" />{txt(g.views)}</span> : null}
+            {txt(g?.views) ? <span style={{position: 'absolute', left: 8, bottom: 6, display: 'flex', alignItems: 'center', gap: 4,
+              ...(g?.tone === 'good' ? {padding: '3px 8px', borderRadius: 8, background: st.acc, ...ui(800, 19, '#111')} : {...ui(600, 15, '#fff'), textShadow: '0 1px 4px rgba(0,0,0,0.5)'})}}>
+              <Ph.Play size={g?.tone === 'good' ? 16 : 14} weight="fill" />{txt(g.views)}</span> : null}
           </div>
         );
       })}

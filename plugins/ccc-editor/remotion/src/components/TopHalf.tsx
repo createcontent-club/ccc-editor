@@ -767,7 +767,8 @@ const IgChat: React.FC<{d: any}> = ({d}) => {
 const IgComment: React.FC<{d: any}> = ({d}) => {
   const c = useC();
   const P = c.th.dark ? IG.dark : IG.light;
-  const ra = d.atT ?? Math.min(0.8, c.dur * 0.45);
+  // CTA kucanje bez `at`: odgovor autora tek POSLE objavljenog komentara (ai-skills test: odgovor se video dok se kucalo)
+  const ra = d.atT ?? (d.typing ? Math.min(c.dur - 0.25, 0.25 + String(d.text).length * 0.07 + 0.75) : Math.min(0.8, c.dur * 0.45));
   const kr = prog(c, ra, 0.55);
   const row = (name: string, text: string, size: number, author?: boolean) => (
     <div style={{display: 'flex', gap: 22, alignItems: 'flex-start'}}>

@@ -67,6 +67,7 @@ export const fmtNum = (n: number, like: any): string => {
 export type St = {
   t: number; d: any; acc: string; dark: boolean; pal: Pal; app: string;
   typed: string; typing: boolean; caret: boolean; sendP: number; sent: string; tabs: any[]; activeTab: number;
+  menuK?: number;  // 0→1 dok je meni otvoren (osnova ispod se povlači — bez krhotina teksta oko menija)
 };
 export type Skin = {
   anchors: (st: St) => Record<string, Rect>;
