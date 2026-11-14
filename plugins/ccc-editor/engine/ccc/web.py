@@ -456,6 +456,11 @@ def _pretty_source(url: str) -> str:
 def _label(kind: str, d: dict, key: str, s: dict) -> str:
     """Kratak opis pravog vizuala za klijentov izveštaj (engleski)."""
     name = d.get("name") or d.get("label") or ""
+    # logo bez imena (čvor hub-a, glumac u sceni) → ime iz fajla, ne domen izvora (bag: "thumb.wikimedia.org logo")
+    fn = str((d.get(key) or {}).get("file") if isinstance(d.get(key), dict) else d.get(key) or "")
+    if fn.startswith("web-logo-") and key != "avatar" and kind != "news":
+        brand = fn[len("web-logo-"):].rsplit(".", 1)[0].replace("-", " ").strip().title()
+        return f"{(d.get('name') if kind == 'logo' else '') or brand} logo"
     if key == "avatar":
         return f"{d.get('name') or 'author'} profile photo"
     if key == "logo" and kind == "news":
@@ -471,10 +476,12 @@ def _label(kind: str, d: dict, key: str, s: dict) -> str:
     if kind == "screenshot" and s.get("source") == "platform.twitter.com":
         return "X post"
     if kind == "screenshot":
-        return f"screenshot of {(s.get('title') or s.get('source') or '').split(' | ')[0][:60]}"
+        # naslov stranice ide klijentu: bez " | sajt" / " — sajt" repa i nikad sa em crticom (pravilo skill-a)
+        t = (s.get('title') or s.get('source') or '').split(' | ')[0].split(' — ')[0].replace('—', ',')
+        return f"screenshot of {t[:60]}"
     if kind == "video":
-        return f"video clip: {s.get('title') or s.get('source')}"
-    return s.get("title") or kind
+        return f"video clip: {(s.get('title') or s.get('source') or '').replace('—', ',')}"
+    return (s.get("title") or kind).replace("—", ",")
 
 
 def real_visuals(job, p: dict) -> list[str]:

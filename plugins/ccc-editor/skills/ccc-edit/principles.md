@@ -228,3 +228,53 @@ order, every time, before planning anything else:
     **Why (owner, v4 s02):** "when Kylie's counter appeared, the counter above Selena that was already in frame reset —
     a random error." It reads as a glitch and breaks trust in the whole graphic. *Template:* `pillars` keeps unchanged
     values and labels still; new templates must follow the same rule (test: render a frame just after the second beat).
+
+## Software and AI-tool videos (review test-video-petar v1, owner's answers 14 Nov 2026)
+
+Most CCC clients talk about software (Claude, ChatGPT, Notion, Instagram...). In these videos the "real thing" is a
+screen: the tool's interface doing the thing the speaker describes. v1 of this test passed every automatic check and
+still failed: a lone logo as the hook, a dimmed article where only small random text was readable, and icons standing
+in for actions (a video-camera icon for "record your screen", a link icon for "a random tab").
+
+45. **The tool in action is the visual. An icon never stands for a concrete thing.** "You record your screen" → the
+    tool's real interface: the recording starts (red frame, timer), the cursor does the task, a voice waveform moves on
+    "you talk". "It's called Record a Skill" → the "+" menu opens and that exact menu item lights up on its word. A
+    generic icon (camera, link, sparkles) is only for something truly abstract.
+    **Why (owner):** the viewer must see what happens with the sound off; an icon is a label, not an action.
+    *Template:* `app` (Claude, ChatGPT, Notion, Google Sheets; answer 2: "a real copy of the Claude interface, and of a
+    few other well-known tools, so it can always be used"). *Engine:* an `app` of the video's tool counts as real
+    material and carries the tool's mark in the hook.
+46. **The same thing never stays through the whole video. Continuity comes from callbacks.** The interface may return,
+    but every return is a new presentation (a close-up of the menu, the skill card, the comparison, the comment box),
+    and the look changes every 3–5 s (principle 37). Build continuity by setting something up early and paying it off
+    later: the actions the cursor does become the skill's steps; "it runs itself" = those steps tick by themselves; "a
+    random tab becomes part of the job" = a new red step is added to the same card.
+    **Why (owner, answer 1):** "we must never have one same thing through the whole video." A callback keeps the story
+    connected without freezing the screen.
+47. **A result is shown happening, not labeled.** "It runs the whole thing itself" → the steps tick ✓ one by one and
+    the cursor moves with no hand on it; never a stamp that says "Runs itself" on top of a static icon. A tag or stamp
+    may only name an action that is already visible.
+48. **Old vs new = two objects, not two sentences.** "Before, you had to write every step by hand… this skips it" → a
+    long document being typed slowly (dims with a red ✗ on "nobody was doing that") against the one record button and
+    the finished skill card (✓). A `versus` card with only words is the fallback, and its labels never leave one word
+    alone on a line.
+49. **A warning lands as a consequence on the thing it is about.** "If you wander into a random tab, that becomes part
+    of the job" → the cursor drifts to an unrelated tab and that tab appears as a red step in the skill. Not a headline
+    card about the warning.
+50. **A short bridge sentence (under ~2 s) gets no visual of its own.** "Most people still haven't heard about it" is
+    carried by the previous moment (the menu item with its "NEW" badge stays); a filler template there (a dot grid)
+    only adds noise.
+51. **On a screenshot, exactly the important text is visible: big, sharp, in the middle.** The headline (or the marked
+    phrase) is what the camera ends on; a frame where the readable part is small side text while the headline is dim or
+    cut is a failed moment, even if the plan saved. If the focus box does not contain the whole `--find` phrase (a
+    3-line headline found as one line, `⚠ … veći od ekrana`), shoot again with a phrase that fits; never deliver it.
+    **Why (owner, answer 4):** "we must always make sure exactly what matters is visible on screen; last time you left
+    small random text visible instead of the headline that matters." *Engine:* the phrase finder skips sticky/hidden copies and
+    prefers the real headline; a cut-off focus is `[must]` and fails the build check; Split Screen builds stop at
+    `CCC_REVIEW_NEEDED` with a sheet of every moment (middle + final frame) that Claude must look at before `ccc export`.
+52. **Ask the client for a file only when nothing else can show it.** If the process can be recreated with a custom
+    animation (with the real UI kit), recreate it. Ask only for what only the client can make: a personalized screen
+    recording of their own account, dashboard or workflow. One sentence, saying exactly which moment it is for.
+    **Why (owner, answer 3).** It is the one allowed exception to "no approvals in between".
+53. **A CTA that asks for a comment gets the native comment UI** (extends 11): "tell me what you taught it" → the
+    Instagram "Add a comment…" field opening with a blinking cursor, big and readable at once; never a small headline.

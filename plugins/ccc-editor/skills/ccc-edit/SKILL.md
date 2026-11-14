@@ -150,6 +150,7 @@ Each line is one spoken chunk with its first–last word id. For a cut **inside*
 - **Listen to the cut before building:** `ccc verify <name>` transcribes the FINISHED audio three times (whole + two sets of short windows) and prints:
   - `čuje se ponovljeno "…"` at a source time — a leftover take the transcript didn't show (Whisper often writes two takes as one). `ccc listen <name> <t-3> <t+3>` to see both takes, then remove the earlier one: with `ccc remove` if its words are in the transcript, else `ccc cutout <name> <start> <end>` (source seconds, cut between the two takes at a quiet moment).
   - `se ne čuju` — kept words that aren't heard: listen there; a removal cut real speech → `ccc keep`.
+  - **Words at the wrong time** (the speaker restarted a sentence and the transcript glued the takes together: two neighbouring words seconds apart in `ccc at`/the timeline, or the cut keeps an abandoned start): `ccc listen` the stretch in short pieces (~4–6 s) to find each take, then `ccc relisten <name> <start> <end> --words wA-wB` with the range of the LAST complete take. The words move there; the earlier takes have no words left and drop out of the cut. Then `ccc verify` again.
   - It also moves every kept word's timing to where it is actually heard (captions land exactly on the voice). `ccc build` runs it automatically; fix every `!` line it prints before delivering. A natural one-word repeat the speaker meant ("more, more connected") may stay — then say so in the summary.
 - **Keep** anything that is content, even if unusual. When in doubt, keep it.
 - Never rewrite or invent words.
@@ -169,12 +170,19 @@ Do every step the format file requires, in this order, before `ccc build`:
 ## Step 5 — Build
 
 ```
-ccc build <name>        # the format's steps → final render → 15+ automatic checks → export
+ccc build <name>        # the format's steps → final render → 15+ automatic checks → export (Split Screen: review first)
 ```
 
 Run it in the background (~3–5 min). Tell the client it's being edited and roughly how long. When it ends:
 
-- **Success:** the last lines are `▶ Izvoz: <file>` and the client report. The file is `<original name>-CCC-edit.mp4` next to their original video; a rebuild never overwrites it — it becomes `-CCC-edit-v2.mp4`, `-v3`… (the previous version stays). `! EXPORT_NOTE` = the original's folder wasn't writable, the file went to the Desktop — say where. Deliver with this shape (your own friendly words):
+- **Split Screen: `CCC_REVIEW_NEEDED: <sheet>`** — the checks passed, but nothing is exported until you have looked at it. The automatic checks cannot see meaning; a video that passed them can still show a lone logo, an unreadable page or icons instead of actions. **Read the sheet** (two frames per moment, left to right: 1a 1b 2a 2b… = the middle of the moment and its final framing; two moments per row) and check every moment:
+  1. With the sound off, does it show what that sentence says (`principles.md` 1, 45, 47)? A label or icon standing in for an action fails.
+  2. Is the important part big, sharp and readable on a phone (a headline, a menu item, a number) in the final frame? Small side text while the main thing is dim or cut fails (51); an `app` moment that ends on the full window (tiny text) fails, except a short hook where the window itself is the subject.
+  3. Nothing cut at the edges, nothing covering the key part, no stray line or mark that looks like a glitch (9, 10, 18).
+  4. Two neighbouring moments are never the same presentation with nothing new happening (41, 46). A callback to the same object (the same skill card, the same person) is right when something new happens on it.
+  All good → `ccc export <name>` (exports, prints `▶ Izvoz: <file>` and the client report; then deliver as below). Any frame fails → fix the plan (Step 4, `ccc visuals <name> --set …`), `ccc build <name>` again, look again. At most 2 review rounds; anything you still can't fix, say in the summary. `CCC_NO_REVIEW` from `ccc export` = the video was rendered again since the last review → build again.
+
+- **Success** (Basic: `ccc build`; Split Screen: `ccc export` after the review): the last lines are `▶ Izvoz: <file>` and the client report. The file is `<original name>-CCC-edit.mp4` next to their original video; a rebuild never overwrites it — it becomes `-CCC-edit-v2.mp4`, `-v3`… (the previous version stays). `! EXPORT_NOTE` = the original's folder wasn't writable, the file went to the Desktop — say where. Deliver with this shape (your own friendly words):
   1. *"Your video is ready: `<file>`"* (+ "the previous version is still there" on a rebuild);
   2. length before → after, what was cut (with times), the styles used;
   3. anything you noticed that the client should decide (fact mismatches, a natural repeat you kept, `NO_FACE`);

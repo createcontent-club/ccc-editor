@@ -10,6 +10,8 @@ export const C = {
 export const CAPTION_FONT = 'CCC Inter';
 export const HOOK_FONT = 'CCC Hook';
 export const SERIF_FONT = 'CCC Serif';
+/** Font rekreiranih aplikacija (Claude, ChatGPT, Notion, Sheets) — ne menja se sa klijentovim izborom fonta. */
+export const UI_FONT = 'CCC UI';
 
 /** Glow + senka iz CCC brifa. */
 export const textGlow = (rgb = '255,255,255') =>
@@ -63,6 +65,7 @@ export const useCccFonts = (spec: FontSpec = DEFAULT_FONT) => {
         loadFace(f.family, f.file, {weight: f.weight, ...(f.stretch ? {stretch: f.stretch} : {})}),
       ),
       loadFace(SERIF_FONT, 'InstrumentSerif-Regular.ttf', {weight: '400'}), // hook Stil 2
+      loadFace(UI_FONT, 'PlusJakartaSans-Variable.ttf', {weight: '200 800'}), // app UI kit (AppUI.tsx), uvek isti
     ]).then(() => {
       setReady(true);
       continueRender(handle);

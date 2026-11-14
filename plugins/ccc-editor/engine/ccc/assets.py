@@ -89,7 +89,7 @@ def _open_image(f: Path) -> Image.Image:
     return im
 
 
-PREP_V = 2  # verzija pripreme (deo ključa keša): 2 = isecanje "slike u slici" (inner_panel)
+PREP_V = 4  # verzija pripreme (deo ključa keša): 2 = isecanje "slike u slici" (inner_panel); 3 = screenshot se ne seče
 
 
 def inner_panel(im: Image.Image) -> tuple[int, int] | None:
@@ -123,12 +123,14 @@ def inner_panel(im: Image.Image) -> tuple[int, int] | None:
     return None
 
 
-def _image(f: Path, ready: Path, preview: Path, u: str) -> dict:
+def _image(f: Path, ready: Path, preview: Path, u: str, shot: bool = False) -> dict:
     im = ImageOps.exif_transpose(_open_image(f))  # fotografije sa telefona: prava rotacija
     alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
     im = im.convert("RGBA" if alpha else "RGB")
     panel = None
-    if not alpha and not f.name.startswith("web-shot") and "logo" not in f.stem.lower():
+    # screenshot stranice se nikad ne seče (ai-actor-0-r2: `ccc shot` sada daje "web-<sajt>-….png", ne "web-shot-…", pa je
+    # inner_panel isekao bele margine članka, a fokus/oznake su ostali u koordinatama celog snimka → kamera na pogrešnom redu)
+    if not alpha and not shot and not f.name.startswith("web-shot") and "logo" not in f.stem.lower():
         panel = inner_panel(im)  # samo pravi kadar ide dalje — okvir se centrira prema njemu, ne prema zamućenim stranama
         if panel:
             im = im.crop((panel[0], 0, panel[1], im.height))
@@ -208,10 +210,15 @@ def _logo_tone(im: Image.Image) -> dict:
         return {}
     small = im.copy()
     small.thumbnail((200, 200))
-    vals = [(r * 0.2126 + g * 0.7152 + b * 0.0722) / 255 for r, g, b, a in small.getdata() if a > 128]
+    alpha = [a for r, g, b, a in small.getdata()]
+    px = [(r, g, b) for r, g, b, a in small.getdata() if a > 128]
+    vals = [(r * 0.2126 + g * 0.7152 + b * 0.0722) / 255 for r, g, b in px]
     if not vals:
         return {}
-    return {"dark": sum(vals) / len(vals) < 0.3}
+    # ikonica aplikacije = popunjen oblik sa SVOJOM pozadinom (Photoshop "Ps", Premiere "Pr" na tamnoplavom):
+    # ostaje u svojim bojama; prebojena u belo bila bi beo kvadrat (bag: video-86f7e4, flow hub)
+    filled = len(px) / max(1, len(alpha)) > 0.8
+    return {"dark": sum(vals) / len(vals) < 0.3 and not filled}
 
 
 def _video(f: Path, ready: Path, preview: Path, u: str) -> dict:
@@ -257,6 +264,11 @@ def prepare(job, notes: dict | None = None) -> dict:
     man_f = d / "_manifest.json"
     man = json.loads(man_f.read_text()) if man_f.exists() else {}
     names = {nfc(f.name) for f in originals(job)}
+    try:  # screenshot-ovi stranica (po zapisu porekla, ne po imenu fajla)
+        from .web import sources
+        shots = {nfc(n) for n, src in sources(job).items() if src.get("kind") == "screenshot"}
+    except Exception:  # noqa: BLE001
+        shots = set()
     man = {k: v for k, v in man.items() if k in names}
     if not names:
         return {}
@@ -270,7 +282,7 @@ def prepare(job, notes: dict | None = None) -> dict:
         ext = f.suffix.lower()
         try:
             if ext in IMAGE_EXT:
-                info = _image(f, ready, preview, u)
+                info = _image(f, ready, preview, u, shot=nfc(f.name) in shots)
             elif ext in VIDEO_EXT:
                 info = _video(f, ready, preview, u)
             else:

@@ -90,6 +90,21 @@ def signature(items: list[dict]) -> list[str]:
     return [it["kind"] + (f":{(it.get('data') or {}).get('layout') or 'row'}" if it["kind"] == "flow" else "") for it in items]
 
 
+# `app` moment je verna rekreacija pravog alata (principles.md 45): za video o tom alatu to JE pravi materijal i nosi
+# njegov znak (Claude zvezdica, OpenAI cvet, Notion N, Sheets ikonica) — kao logo.
+APP_NAMES = {"claude": ("claude", "anthropic", "cowork"), "chatgpt": ("chatgpt", "openai", "gpt"),
+             "notion": ("notion",), "sheets": ("google sheets", "sheets", "spreadsheet")}
+
+
+def _app_of(e: dict, it: dict) -> bool:
+    """Da li `app` moment prikazuje alat o kom je entitet (po imenu ili match frazama)."""
+    if it.get("kind") != "app":
+        return False
+    names = APP_NAMES.get(str((it.get("data") or {}).get("app")), ())
+    hay = " ".join([str(e.get("name") or "")] + [str(m) for m in e.get("match") or []]).lower()
+    return any(n in hay for n in names)
+
+
 def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
     from .visuals import _out_time
     out: list[str] = []
@@ -104,13 +119,19 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
         if t is not None:
             t_of[w["id"]] = t
     r = research(job)
+    try:  # screenshot-ovi po zapisu porekla (`ccc shot` ih sada zove "web-<sajt>-…", ne samo "web-shot-…")
+        from .web import sources as _s0
+        _shots = {n for n, x in _s0(job).items() if x.get("kind") == "screenshot"}
+    except Exception:  # noqa: BLE001
+        _shots = set()
 
     def in_item(wid: str) -> int | None:
         t = t_of.get(wid)
         if t is None:
             return None
         for i, it in enumerate(items):
-            if it["start"] - 0.01 <= t < it["end"]:
+            # reč na samoj granici (moment počinje NA njoj, zaokruživanje ±50 ms) pripada momentu koji tu počinje
+            if it["start"] - 0.06 <= t < it["end"] - 0.06 or (i == len(items) - 1 and t >= it["start"] - 0.06):
                 return i
         return None
 
@@ -136,6 +157,8 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
             # nativni Instagram UI (komentar/DM) ne nosi logo — ključna reč u komentaru je tekst platforme
             if it["kind"] in ("comment", "chat") and (it.get("data") or {}).get("platform") == "instagram":
                 continue
+            if _app_of(e, it):
+                continue
             if it["kind"] in TEMPLATES and not (_files(it.get("data")) & assets):
                 what = "GLAVNA TEMA videa" if e.get("_subject") else f"'{e.get('name')}'"
                 out.append(f"moment {i + 1} ({it['kind']}, {it['start']:.1f}s) pominje {what}, a postoji pravi materijal "
@@ -150,12 +173,13 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
     first = items[0]
 
     def pics(e: dict) -> set[str]:  # lica / proizvodi / snimci — ne logo i ne stranica
-        return {a for a in (e.get("assets") or []) if isinstance(a, str) and not a.startswith(("web-logo-", "web-shot-"))}
+        return {a for a in (e.get("assets") or []) if isinstance(a, str) and not a.startswith(("web-logo-", "web-shot-")) and a not in _shots}
 
     early = [w for w in kept if t_of[w["id"]] < HOOK_S]
     seen = [e for e in ents if pics(e) and _mentions(early, e.get("match") or [])]
     shown = _files(first.get("data"))
-    if seen and (first["kind"] not in REAL or first["kind"] == "logo") and not any(shown & pics(e) for e in seen):
+    if seen and (first["kind"] not in REAL or first["kind"] == "logo") and not any(shown & pics(e) for e in seen) \
+            and not any(_app_of(e, first) for e in seen):
         out.append(f"hook (moment 1, {first['kind']}): prva tvrdnja pominje {', '.join(repr(e.get('name')) for e in seen)}, "
                    "a otvaranje ne pokazuje pravu sliku/snimak toga — hook je KO/ŠTA je tema, prepoznatljivo od prvog "
                    "frejma (principles.md 30; sam logo nije dovoljan, 34)")
@@ -261,7 +285,7 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
             continue
         told.add(frozenset(logos))
         hook_hit = [w for w in _mentions(kept, e.get("match") or []) if in_item(w) == 0]
-        if hook_hit and not (_files(items[0].get("data")) & logos):
+        if hook_hit and not (_files(items[0].get("data")) & logos) and not _app_of(e, items[0]):
             out.append(f"hook (moment 1) pominje '{e.get('name')}', a njegov logo nije u hook animaciji — alat/platforma "
                        f"iz hooka mora biti jasno vidljiv ceo ({', '.join(sorted(logos))})")
     # (b) screenshot samo kad je stranica TO o čemu se govori — ne kao ukras ni "dokaz da postoji"
@@ -275,11 +299,20 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
                   or (items[0]["kind"] == "post" and (items[0].get("data") or {}).get("file"))):
         out.append(f"hook (moment 1, {items[0]['kind']}) je screenshot/statična stranica — hook mora imati pokret: pravi "
                    "snimak teme ili custom animacija koja dramatizuje rečenicu (logo alata unutra)")
+    try:
+        from .web import sources as _src
+        _all_src = _src(job)
+    except Exception:  # noqa: BLE001
+        _all_src = {}
     for i, it in enumerate(items):
         d = it.get("data") or {}
         used = _files(d) & shots
         if not used:
             continue
+        # principles.md 51: vidljiv mora biti TAČNO bitan tekst — fokus koji ne staje u kadar se ne isporučuje
+        if it["kind"] == "screenshot" and (_all_src.get(str(d.get("file"))) or {}).get("partial"):
+            out.append(f"moment {i + 1} (screenshot): fokus screenshot-a je isečen (fraza veća od ekrana) — snimi ponovo sa "
+                       "frazom koja staje (naslov, jedna rečenica), pa pogledaj kadar (principles.md 51)")
         if it["kind"] != "screenshot":
             out.append(f"moment {i + 1} ({it['kind']}) koristi screenshot stranice ({', '.join(sorted(used))}) kao sliku uz tekst — "
                        "screenshot ne daje kontekst kad nije TO o čemu se govori; prikaži ideju (logo + animacija)")
@@ -295,7 +328,8 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
     for i, it in enumerate(items):
         if it["kind"] == "steps":
             d = it.get("data") or {}
-            key = tuple(_texts(d.get("items")))
+            # samo tekst stavke — {"text", "at"} ne sme da doda id reči kao još jedan "korak" (bag: video-86f7e4)
+            key = tuple(str(x.get("text", "")) if isinstance(x, dict) else str(x) for x in (d.get("items") or []))
             groups.setdefault(key, []).append(int(d.get("active") or 0))
     for key, acts in groups.items():
         n = len(key)
@@ -303,20 +337,40 @@ def story_warnings(job, p: dict, items: list[dict]) -> list[str]:
         if miss and len(acts) >= 1:
             out.append(f"framework '{' / '.join(key)}' pokriva {n - len(miss)} od {n} koraka — isti okvir se koristi za "
                        f"SVAKI korak kroz ceo video (nedostaju koraci {', '.join(miss)})")
-    # (d) CTA "comment <reč>" → nativni Instagram komentar sa ključnom reči, krupno (comment + typing)
-    for w in kept:
-        if re.sub(r"[^a-z]", "", w["text"].lower()) == "comment":
+    # (d) CTA "comment <reč>" → nativni Instagram komentar sa ključnom reči, krupno (comment + typing);
+    # i otvoreno pitanje gledaocima ("tell me…", "let me know…", "drop a comment") → nativni komentar (principles.md 53)
+    norm = [re.sub(r"[^a-z]", "", w["text"].lower()) for w in kept]
+    for j, w in enumerate(kept):
+        if norm[j] == "comment":
             i = in_item(w["id"])
             if i is not None and items[i]["kind"] != "comment":
                 out.append(f"moment {i + 1} ({items[i]['kind']}): CTA 'comment …' na {t_of[w['id']]:.1f}s — prikaži nativni "
                            "Instagram komentar sa ključnom reči (kind comment, platform instagram, typing: true)")
             break
+    asks = (("tell", "me"), ("let", "me", "know"), ("drop", "a"), ("comment", "below"), ("in", "the", "comments"))
+    for j, w in enumerate(kept):
+        if any(tuple(norm[j:j + len(a)]) == a for a in asks) and t_of[w["id"]] > (items[-1]["end"] - 8.0):
+            i = in_item(w["id"])
+            if i is not None and items[i]["kind"] != "comment":
+                out.append(f"moment {i + 1} ({items[i]['kind']}): poziv gledaocima da odgovore ('{w['text']} …' na "
+                           f"{t_of[w['id']]:.1f}s) — prikaži nativni Instagram komentar, krupno (principles.md 53)")
+            break
+    # (d2) kratka prelazna rečenica ne dobija svoj vizual (principles.md 50): moment < 2 s koji nije nastavak
+    for i, it in enumerate(items[:-1]):
+        ln = it["end"] - it["start"]
+        d = it.get("data") or {}
+        # hook (prvih 12 s) je namerno brz, a preokret (`fx`) je udarac, ne prelaz (ai-actor-0-r2: "she doesn't exist")
+        if ln < 2.0 and it["kind"] != "comment" and not (it["kind"] == "app" and d.get("cont")) \
+                and it["start"] >= HOOK_S and not d.get("fx"):
+            out.append(f"moment {i + 1} ({it['kind']}, {it['start']:.1f}s) traje {ln:.1f}s — kratka prelazna rečenica nema "
+                       "svoj vizual: spoji je sa prethodnim momentom ili je nastavi (`cont`) (principles.md 50)")
 
     # 3c) recenzija ai-actor-0 v1 → pravila za svaki video (skills/ccc-edit/principles.md 15–21)
     # (e) video o konkretnoj osobi/proizvodu/događaju: gornja polovina je PRVENSTVENO pravi materijal
     concrete = bool(subj.get("name")) or any(e.get("type") in ("person", "character", "product", "event") for e in ents)
     if concrete and len(items) >= 6:
-        real = [i for i, it in enumerate(items) if it["kind"] in REAL and _files(it.get("data"))]
+        real = [i for i, it in enumerate(items) if (it["kind"] in REAL and _files(it.get("data")))
+                or it["kind"] == "app"]  # verna rekreacija alata = pravi materijal (principles.md 45)
         share = len(real) / len(items)
         if share < 0.5:
             out.append(f"video je o nečem konkretnom ('{subj.get('name') or ents[0].get('name')}'), a pravi materijal je u samo "

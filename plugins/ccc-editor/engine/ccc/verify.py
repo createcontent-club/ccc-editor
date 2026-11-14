@@ -37,7 +37,9 @@ def _seg_of(segs: list[tuple[float, float]], t: float) -> tuple[int, float]:
 def kept_words(p: dict) -> list[dict]:
     rm = {w for r in p.get("removed", []) for w in r["words"]}
     segs = [(s["srcStart"], s["srcEnd"]) for s in p["segments"]]
-    return [w for w in p["words"] if w["id"] not in rm and any(a < w["end"] and b > w["start"] for a, b in segs)]
+    # reč sakrivena sa `ccc word wID ""` (duh iz transkripta) se ne očekuje u zvuku
+    return [w for w in p["words"] if w["id"] not in rm and _n(w.get("text", ""))
+            and any(a < w["end"] and b > w["start"] for a, b in segs)]
 
 
 def listen(job, p: dict, retime: bool = True) -> list[str]:
@@ -56,9 +58,28 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
     SR = 16000
     total = len(audio) / SR
 
-    def run(clip, t0):
+    # Koliko reči treba da se čuje u delu gotovog zvuka (zadržane reči → vreme u gotovom zvuku). Whisper ume da
+    # proglasi ceo deo "tišinom" i preskoči ga (test: prolaz preko celog zvuka je preskočio prvih ~22 s, jedan prozor je
+    # vratio skoro ništa) → reči tu ispadnu "nečujne" u svim prolazima. Takav deo se sluša ponovo bez preskakanja.
+    offs, acc = [], 0.0
+    for a_, b_ in segs:
+        offs.append((a_, b_, acc))
+        acc += b_ - a_
+    kept_out = []
+    for w in kept:
+        for a_, b_, o_ in offs:
+            if a_ - 0.02 <= w["start"] < b_:
+                kept_out.append(o_ + max(0.0, w["start"] - a_))
+                break
+
+    def expected(a, b):
+        return sum(1 for x in kept_out if a <= x < b)
+
+    def run(clip, t0, relaxed: bool = False):
+        extra = dict(no_speech_threshold=None, log_prob_threshold=None, compression_ratio_threshold=None,
+                     temperature=0.0) if relaxed else {}
         out, _ = model.transcribe(clip, language=lang, word_timestamps=True, vad_filter=False,
-                                  condition_on_previous_text=False, initial_prompt=names or None)
+                                  condition_on_previous_text=False, initial_prompt=names or None, **extra)
         return [(w.word.strip(), t0 + w.start, t0 + w.end) for sg in out for w in sg.words or [] if w.word.strip()]
 
     def windows(offset: float, win: float = 12.0, step: float = 10.0):
@@ -66,7 +87,13 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
         heard, t = [], 0.0 if offset == 0 else offset - step
         while t < total:
             a = max(0.0, t)
-            ws = run(audio[int(a * SR):int(min(total, t + win) * SR)], a)
+            clip = audio[int(a * SR):int(min(total, t + win) * SR)]
+            ws = run(clip, a)
+            exp = expected(a, min(total, t + win))
+            if exp >= 6 and len(ws) < 0.6 * exp:  # prozor je "preskočen" → ponovo, bez preskakanja tišine
+                ws2 = run(clip, a, relaxed=True)
+                if len(ws2) > len(ws):
+                    ws = ws2
             lo = a + (0.0 if a == 0 else (win - step) / 2)
             hi = t + win - (0.0 if t + win >= total else (win - step) / 2)
             heard += [x for x in ws if lo <= (x[1] + x[2]) / 2 < hi]
@@ -76,7 +103,28 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
     # Tri slušanja: ceo zvuk (stabilna vremena) + dva niza kratkih prozora pomerena za pola koraka (Whisper u kratkom
     # prozoru čuje ponovljenu frazu koju preko dužeg zvuka "spoji" — aazar-trial-1). Ponavljanje važi ako ga čuje
     # BILO KOJE slušanje; reč "se ne čuje" samo ako je ne čuje NIJEDNO (granice prozora ne prave lažne uzbune).
-    passes = [run(audio, 0.0), windows(0.0), windows(5.0)]
+    def fill(heard):
+        """Delovi od 6 s u kojima je slušanje čulo manje od pola očekivanih reči → taj deo (±1 s) ponovo, bez
+        preskakanja tišine, i ubaci umesto onoga što je bilo čuto tu."""
+        B0, b = 6.0, 0.0
+        bad: list[list[float]] = []
+        while b < total:
+            exp = expected(b, b + B0)
+            got = sum(1 for x in heard if b <= (x[1] + x[2]) / 2 < b + B0)
+            if exp >= 4 and got < 0.5 * exp:
+                if bad and abs(bad[-1][1] - b) < 1e-6:
+                    bad[-1][1] = b + B0
+                else:
+                    bad.append([b, b + B0])
+            b += B0
+        for a, e in bad:
+            a0, e0 = max(0.0, a - 1.0), min(total, e + 1.0)
+            new = [x for x in run(audio[int(a0 * SR):int(e0 * SR)], a0, relaxed=True) if a <= (x[1] + x[2]) / 2 < e]
+            if len(new) > sum(1 for x in heard if a <= (x[1] + x[2]) / 2 < e):
+                heard = [x for x in heard if not a <= (x[1] + x[2]) / 2 < e] + new
+        return sorted(heard, key=lambda x: x[1])
+
+    passes = [fill(run(audio, 0.0)), fill(windows(0.0)), fill(windows(5.0))]
     A = [_n(w["text"]) for w in kept]
     problems: list[str] = []
     repeats: dict[int, str] = {}
@@ -84,6 +132,29 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
     singles_txt: dict[int, str] = {}
     unheard: list[set[int]] = []
     moved = 0
+    joined = {_n(w["text"]) for w in kept if re.search(r"\w-\w", w["text"])}
+
+    def merge_hyphens(heard):  # "talked-about" u tekstu = "talked" + "about" u slušanju → jedna reč
+        # i obrnuto: u tekstu "glass box", a čuje se "glass-box" (test: lažno "box idea themselves se ne čuju")
+        split = []
+        for t, a, b in heard:
+            parts = [x for x in re.split(r"-", t) if x]
+            if len(parts) > 1 and _n(t) not in joined:
+                step = (b - a) / len(parts)
+                split += [(x, a + i * step, a + (i + 1) * step) for i, x in enumerate(parts)]
+            else:
+                split.append((t, a, b))
+        heard = split
+        out, k = [], 0
+        while k < len(heard):
+            if k + 1 < len(heard) and _n(heard[k][0]) + _n(heard[k + 1][0]) in joined:
+                out.append((heard[k][0] + "-" + heard[k + 1][0], heard[k][1], heard[k + 1][2]))
+                k += 2
+            else:
+                out.append(heard[k])
+                k += 1
+        return out
+    passes = [merge_hyphens(h) for h in passes]
     for pi, heard in enumerate(passes):
         B = [_n(t) for t, _, _ in heard]
         miss: set[int] = set()
@@ -108,7 +179,16 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
                 rep = [x for x in extra if x and x in around]
                 _, src = _seg_of(segs, heard[j1][1] + 0.02)
                 key = round(src)
-                if len(rep) >= 2 or (len(extra) >= 2 and " ".join(extra) in " ".join(around)):
+                # Whisper uz listu imena kao nagoveštaj ume da napiše ceo deo u Title Case (Svaka Reč Velikim Slovom) i da
+                # ga na granici prozora ponovi (test-video-1: lažno "ponovljeno" na 33 s). Takav deo se računa kao ČUJEN
+                # (za nečujne reči), ali nije dokaz zaostalog pokušaja. (Prva verzija ga je izbacivala → rupe → lažno
+                # "se ne čuju", test.)
+                orig = [t for t, _, _ in heard[j1:j2]]
+                caps = [x[:1].isupper() for x in orig[1:] if x[:1].isalpha()]
+                title_case = len(caps) >= 6 and sum(caps) / len(caps) >= 0.8
+                if title_case:
+                    pass
+                elif len(rep) >= 2 or (len(extra) >= 2 and " ".join(extra) in " ".join(around)):
                     if not any(abs(key - k2) <= 1 for k2 in repeats):
                         repeats[key] = " ".join(t for t, _, _ in heard[j1:j2])
                 elif len(extra) == 1 and len(extra[0]) > 3 and extra[0] in (B[j1 - 1] if j1 else "", B[j2] if j2 < len(B) else ""):
@@ -116,8 +196,13 @@ def listen(job, p: dict, retime: bool = True) -> list[str]:
                     # da "udvoji" reč na tvrdom rezu)
                     singles.setdefault(key, set()).add(pi)
                     singles_txt[key] = heard[j1][0]
-            if op == "delete" or op == "replace":
+            if op == "delete":
                 miss |= set(range(i1, i2))
+            elif op == "replace":
+                # "replace" = deo se razlikuje (Whisper je nešto pomešao ili ponovio na granici prozora): nečujna je samo
+                # reč koje NEMA ni u tom čutom delu (test: "box idea themselves" se čulo, a sve je bilo označeno)
+                got = set(B[j1:j2])
+                miss |= {i for i in range(i1, i2) if A[i] not in got}
         unheard.append(miss)
     for key, ps in singles.items():
         near = [k for k in singles if abs(k - key) <= 1]

@@ -215,6 +215,38 @@ def compute(words: list[dict], utterances: list[dict], removed: dict[str, str], 
               if has_word(s, e) or any(max(0.0, a - e, s - b) <= tol for a, b in anchored)]
     if not pieces:
         raise SystemExit("Ništa ne ostaje posle sečenja.")
+    # Tih početak reči koji VAD ne vidi (ai-actor-0-r2: "…most | talked-about", 't' na 2.00 s, a VAD kreće od
+    # 2.22 → rez od 1.98 do 2.22 je pojeo početak reči, verify: "ne čuje se"). Zadržana reč čiji početak pada u rupu
+    # između komada vuče sledeći komad do sebe (samo početak: Whisper krajeve reči često razvuče u tišinu) — najviše EDGE_REACH, nikad preko izbačenog dela.
+    EDGE_REACH = 0.25
+    pieces = sorted(pieces)
+    for w in words:
+        if w["id"] in removed or not w.get("text", "").strip():
+            continue
+        ws = w["start"]
+        if any(a <= ws < b for a, b in pieces):
+            pass
+        else:
+            nxt = next((k for k, (a, b) in enumerate(pieces) if a > ws), None)
+            # prvi komad ne: početak videa mora da krene tačno sa glasom (provera "početak ≤ 1 frejm")
+            if nxt is not None and nxt > 0 and pieces[nxt][0] - ws <= EDGE_REACH and \
+                    not any(hs < pieces[nxt][0] and he > ws for hs, he in hole_spans):
+                # Samo zvuk koji NEPREKIDNO ulazi u komad (suglasnik na početku reči). Dah pred rečju ima tišinu između
+                # sebe i reči → ne vraća se (ai-actor-0-r2: dva daha u gotovom zvuku posle prve verzije ove popravke).
+                a = pieces[nxt][0]
+                k = int(round(a / HOP)) - 1
+                lo_k = max(0, int(round(ws / HOP)))
+                while k >= lo_k and k < len(voice.rel) and voice.rel[k] > QUIET_DB:
+                    k -= 1
+                start = (k + 1) * HOP
+                # i nikad toliko da rupa do prethodnog komada padne ispod max_gap: to bi spojilo komade PREKO daha
+                # između njih (ai-actor-0-r2: jedan segment je tako narastao 0.69 s i vratio dah)
+                if nxt > 0 and a - pieces[nxt - 1][1] > cfg["max_gap"]:
+                    start = max(start, pieces[nxt - 1][1] + cfg["max_gap"] + 0.01)
+                # najviše 50 ms: dovoljno za zatvoreni suglasnik ("talked": VAD 2.22 → 2.18), premalo za dah
+                start = max(start, a - 0.05)
+                if start < a - 0.005:
+                    pieces[nxt] = (start, pieces[nxt][1])
 
     def hole_between(a: float, b: float) -> tuple[float, float] | None:
         for s, e in hole_spans:

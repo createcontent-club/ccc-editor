@@ -3,6 +3,7 @@ import {Easing, Img, OffthreadVideo, Sequence, interpolate, staticFile, useCurre
 import {Camera, Check, Heart, User, Video} from 'lucide-react';
 import * as Ph from '@phosphor-icons/react';
 import {CAPTION_FONT, useFontSpec} from '../style';
+import {AppMoment} from './AppUI';
 
 /**
  * Split Screen — gornja polovina (PLAN.md §11; pravila: skills/ccc-edit/formats/split-screen.md).
@@ -91,8 +92,10 @@ const beat = (c: Ctx, x: any, i: number, n: number) => {
   const t = typeof x?.atT === 'number' ? x.atT : n <= 1 ? 0 : (i * Math.min(c.dur * 0.55, 0.45 * (n - 1))) / (n - 1);
   return i === 0 ? Math.min(t, 0.2) : t;
 };
+// textWrap 'balance' (recenzija test-video-petar v1, "Just record / it"): kad se tekst prelama, redovi su ujednačeni,
+// pa nijedna reč ne ostaje sama u poslednjem redu (principles.md 5, 48). Na tekst u jednom redu ne utiče.
 const font = (w: number, size: number, lh = 1.15): React.CSSProperties =>
-  ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em'});
+  ({fontFamily: CAPTION_FONT, fontWeight: w, fontSize: size, lineHeight: lh, letterSpacing: '-0.03em', textWrap: 'balance'} as React.CSSProperties);
 
 /**
  * Auto-fit teksta (QA 0.8.0, P1-23): šabloni su birali veličinu po broju slova i `nowrap` — dugačko ime ili brojka
@@ -873,7 +876,7 @@ const Resource: React.FC<{d: any}> = ({d}) => {
   };
   let F = 1;
   while (F > 0.62 && bodyH(F) > PH - 24) F -= 0.04;
-  const titleSize = Math.min(Math.round(tBase * F), ...title.split(/\s+/).map((w) => fit(w, 800, Math.round(tBase * F), TW)));
+  const titleSize = Math.min(Math.round(tBase * F), ...title.split(/\s+/).map((w: string) => fit(w, 800, Math.round(tBase * F), TW)));
   return (
     <div style={{position: 'relative', width: 900, height: PH + 20, ...pop(enter, 40)}}>
       {page(-7 * fan, -170 * fan, 1)}
@@ -1877,13 +1880,28 @@ const markView = (v1: View, m: any, iw: number, ih: number, free = false, W = 10
   const r = m.rect;
   const lh = Math.max(8, m.lh || r.h);
   const sv = W / v1.w;
-  const sc = Math.min(fitW / r.w, Math.max(sv * 1.05, Math.min(70 / lh, sv * 3.2)));
+  let sc = Math.min(fitW / r.w, Math.max(sv * 1.05, Math.min(70 / lh, sv * 3.2)));
+  // Oznaka unutar NASLOVA (kratak istaknut deo, do ~4 reda): ceo naslov mora da stane — zoom staje tamo gde staje
+  // (ai-actor-0-r2 pregled kadrova: "$38000" i "ad pulled" krupno, a naslov isečen desno; principles.md 51).
+  // Pasus (duži istaknut deo) ostaje krupno na oznaci.
+  // Samo pravi naslov: krupan font, pa i kad ceo stane, red teksta ostaje ≥ 34 px (inače je to pasus — ostaje zoom na
+  // oznaci; prva verzija pravila je i kratke pasuse smanjila na celu stranicu sa sitnim tekstom).
+  if (main && main.w && main.h && main.h <= lh * 4.5) {
+    const whole = Math.max(sv, fitW / main.w);
+    if (whole * lh >= 34) sc = Math.min(sc, whole);
+  }
+  // Oznaka u PASUSU: redovi pasusa se nikad ne seku sa strane (video-86f7e4 pregled kadrova: "channe|", "Adob|"
+  // odsečeni desno jer je zoom gledao samo oznaku). Kolona pasusa staje u širinu kadra kad tekst i tada ostaje
+  // čitljiv (red ≥ 26 px); samo preširoka desktop kolona sme da se seče.
+  const para = Boolean(main && main.w && main.h && main.h > lh * 4.5);
+  const colW = para ? Math.max(fitW, W * 0.9) : fitW;
+  if (para && (colW / main.w) * lh >= 26) sc = Math.min(sc, colW / main.w);
   const w = W / sc, h = w * (v1.h / v1.w);
   let x = r.x + r.w / 2 - center.x / sc;
   const y = r.y + r.h / 2 - center.y / sc;
   // ceo istaknuti deo (npr. naslov) ostaje vidljiv kad god staje uz krupne oznake — ne seče se zbog markera
-  if (main && main.w && main.w * sc <= fitW) {
-    const lo = main.x + main.w - (center.x + fitW / 2) / sc, hi = main.x - (center.x - fitW / 2) / sc;
+  if (main && main.w && main.w * sc <= colW + 0.5) {
+    const lo = main.x + main.w - (center.x + colW / 2) / sc, hi = main.x - (center.x - colW / 2) / sc;
     if (lo <= hi) x = Math.min(Math.max(x, lo), hi);
   }
   if (free) return {x, y, w, h};
@@ -2312,6 +2330,16 @@ const Moment: React.FC<{it: TopItem; t: number; fps: number; th: Theme; acc: str
         </C.Provider>
       );
     }
+  }
+  if (it.kind === 'app') {  // verna rekreacija alata (Claude, ChatGPT, Notion, Sheets) — principles.md 45–47
+    return (
+      <C.Provider value={ctx}>
+        <div style={{position: 'absolute', left: 0, top: 0, width: 1080, height, opacity: 1 - out,
+          filter: out > 0.01 ? `blur(${out * 10}px)` : undefined}}>
+          <AppMoment d={d} t={t - it.start} dur={it.end - it.start} acc={acc} dark={th.dark} height={height} />
+        </div>
+      </C.Provider>
+    );
   }
   if (it.kind === 'scene') {  // full-screen custom animacija: cela gornja polovina je pozornica
     return (

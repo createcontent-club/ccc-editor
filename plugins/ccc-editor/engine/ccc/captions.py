@@ -234,6 +234,15 @@ def split_place(p: dict) -> None:
     face = p.get("face") or {}
     head = face.get("head_top")
     crop = (head - SPLIT_HEADROOM) if head is not None else (1920 - half) // 2
+    chin = face.get("chin")
+    if head is not None and chin is not None:
+        # brada najviše 1800 na ekranu (provera 3c2), teme najmanje line+40: kad krupno lice ne staje sa punim razmakom
+        # iznad glave, isečak ide niže koliko treba (test, Ramp: teme 1070, brada 1806 → pad iako glava staje)
+        # …ali teme ostaje ispod hook-a na liniji (~line+100; prva verzija je dozvolila line+40 → hook je dodirnuo glavu)
+        lo, hi = chin + line - 1798, head - 102
+        crop = max(crop, lo)
+        if lo <= hi:
+            crop = min(crop, hi)
     lay["cropY"] = int(max(0, min(1920 - half, round(crop))))
     p["captionY"] = line
 

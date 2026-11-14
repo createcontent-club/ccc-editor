@@ -173,6 +173,23 @@ def _build(job: Job, name: str) -> None:
         print("CCC_CHECK_FAILED: provera nije prošla — ispravi pa ponovo ./ccc build (video NIJE izvezen).")
         sys.exit(EXIT_CHECK)
 
+    if (p.get("layout") or {}).get("type") == "split":
+        # Pregled kadrova pre izvoza (principles.md 51): provere ne vide smisao — Claude mora da pogleda svaki moment.
+        from .review_sheet import make_sheet
+        from .visuals import timeline
+        items = timeline(p)[0]
+        sheet = make_sheet(job, p, items)
+        p["review"] = {"video_mtime": (job.dir / "final.mp4").stat().st_mtime, "sheet": str(sheet), "moments": len(items)}
+        job.save(p)
+        print(f"CCC_REVIEW_NEEDED: {sheet} ({len(items)} momenata) — pogledaj svaki kadar pre izvoza; "
+              f"sve u redu → ccc export {name}; inače popravi plan pa ccc build {name} (video još NIJE izvezen)")
+        return
+    _export(job, p)
+
+
+def _export(job: Job, p: dict) -> None:
+    """Gotov i proveren final.mp4 → pored klijentovog originala (+ izveštaj; u razvoju i storyboard)."""
+    from .review import client_report
     from .storage import export
     src = Path(p["source"]["path"])
     prev = p.get("exported")
@@ -279,6 +296,9 @@ def main(argv: list[str]) -> None:
     sl = sub.add_parser("listen"); sl.add_argument("name"); sl.add_argument("start", type=float); sl.add_argument("end", type=float)
     sy = sub.add_parser("key"); sy.add_argument("name"); sy.add_argument("index", type=int); sy.add_argument("word")
     sa = sub.add_parser("approve"); sa.add_argument("name"); sa.add_argument("gate", choices=["cut", "captions", "hook", "camera", "audio", "final"])
+    rl = sub.add_parser("relisten"); rl.add_argument("name"); rl.add_argument("start", type=float); rl.add_argument("end", type=float)
+    rl.add_argument("--words", help="reči ovog dela, npr. w149-w160 (kad su im sadašnja vremena pogrešna)")
+    ex = sub.add_parser("export"); ex.add_argument("name")  # Split Screen: izvoz posle pregleda kadrova (CCC_REVIEW_NEEDED)
     sb = sub.add_parser("storyboard"); sb.add_argument("name"); sb.add_argument("--label")
     sb.add_argument("--artifact", help="URL objavljenog storyboard-a (upisuje se u meta.json poslednje verzije)")
     sfb = sub.add_parser("feedback"); sfb.add_argument("name"); sfb.add_argument("--save", dest="notes", required=True,
@@ -628,6 +648,40 @@ def main(argv: list[str]) -> None:
         from .transcribe import listen
         out = listen(job.dir / "source-audio.wav", a.start, a.end)
         print(" ".join(f"{w}@{t0:.2f}" + ("?" if pr < 0.5 else "") for t0, _, w, pr in out) or "(tišina)")
+    elif a.cmd == "relisten":
+        # Pogrešna vremena reči u jednom delu izvora (test, Ramp: "Talent rarely pitches" — prekinut pokušaj pa cela
+        # rečenica 4 s kasnije; Whisper je reči druge verzije stavio na prvi pokušaj i tišinu, pa je rez zadržao prekid +
+        # 7 s govora bez reči). Deo se presluša ponovo i reči iz transkripta dobiju vremena gde se stvarno čuju
+        # (poravnanje po tekstu); prekinut pokušaj ostaje bez reči i ispada iz reza sam.
+        import difflib
+        import re as _re
+        from .transcribe import listen
+        heard = listen(job.dir / "source-audio.wav", a.start, a.end)
+        nz = lambda x: _re.sub(r"[^a-z0-9]", "", str(x).lower())  # noqa: E731
+        if a.words:  # tačno koje reči pripadaju ovom delu (njihova sadašnja vremena su pogrešna, pa se ne biraju po vremenu)
+            lo_id, _, hi_id = a.words.partition("-")
+            lo_n, hi_n = int(lo_id.lstrip("w")), int((hi_id or lo_id).lstrip("w"))
+            ws = [w for w in p["words"] if lo_n <= int(w["id"][1:]) <= hi_n and nz(w["text"])]
+        else:
+            ws = [w for w in p["words"] if w["end"] > a.start and w["start"] < a.end and nz(w["text"])]
+        A, B = [nz(w["text"]) for w in ws], [nz(h[2]) for h in heard]
+        moved = []
+        for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, A, B, autojunk=False).get_opcodes():
+            if op == "equal":
+                for k in range(i2 - i1):
+                    w, h = ws[i1 + k], heard[j1 + k]
+                    if abs(w["start"] - h[0]) > 0.08:
+                        moved.append(w["id"])
+                    w["start"], w["end"] = round(h[0], 3), round(max(h[1], h[0] + 0.05), 3)
+        for ui, u in enumerate(p["utterances"]):
+            uw = [w for w in p["words"] if w["u"] == ui]
+            if uw and any(w["id"] in moved for w in uw):
+                u["start"], u["end"] = round(min(w["start"] for w in uw), 3), round(max(w["end"] for w in uw), 3)
+        miss = [w["id"] for w in ws if w["id"] not in moved and not any(abs(w["start"] - h[0]) <= 0.08 for h in heard)]
+        p = _recut(job, p)
+        print(f"✓ preslušano {a.start:.1f}–{a.end:.1f}s: novo vreme za {len(moved)} reči"
+              + (f" ({moved[0]}–{moved[-1]})" if moved else "") + f" · trajanje {p['stats']['after']}s"
+              + (f" · ! bez para u slušanju: {', '.join(miss[:8])}" if miss else ""))
     elif a.cmd == "retime":
         from .transcribe import retime_numbers
         changed = retime_numbers(job.dir / "source-audio.wav", p["words"], p["utterances"])
@@ -730,6 +784,13 @@ def main(argv: list[str]) -> None:
                 print(f"! Hook ima {len(h['lines'])} reda i ne staje ni ispod titla ni iznad glave — treba kraći tekst.")
     elif a.cmd == "build":
         _build(job, a.name)
+    elif a.cmd == "export":
+        rv = p.get("review") or {}
+        fin = job.dir / "final.mp4"
+        if not rv or not fin.exists() or abs(fin.stat().st_mtime - float(rv.get("video_mtime") or 0)) > 0.5:
+            raise SystemExit("CCC_NO_REVIEW: nema pregledanog gotovog videa (ili je video renderovan ponovo) — "
+                             f"prvo ccc build {a.name}, pogledaj list kadrova, pa ccc export {a.name}")
+        _export(job, p)
     elif a.cmd == "storyboard":
         from . import storyboard
         if a.artifact:

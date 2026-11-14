@@ -53,6 +53,13 @@ KINDS = {
     "pillars": {"required": ["bars", "sets"], "optional": []},
     # Full-screen custom animacija (principles.md 36): actors [{id, file|icon|text, x, y, size, aspect, at}] + beats [{at, do, target…}].
     "scene": {"required": ["actors"], "optional": ["beats"]},  # slika/snimak + rečenice {"text","at"}; more: [{"file","at"}] — još slika u istom okviru
+    # Verna rekreacija alata (principles.md 45–47): app claude|chatgpt|notion|sheets + događaji na reč — menu {items,
+    # highlight {text, at}, badge, at, close}, input {text, at}, send {at}, reply, rec {at}, voice {at, label}, notes [{text, at}],
+    # card {title, at, steps [{text, at, tone}], run {at}, center, cont, status}, tabs [{label, at, tone, page, active}],
+    # cursor [{to, at, click}], zoom [{to, at, scale}], cont (nastavak prethodnog app momenta, bez ulaza).
+    "app": {"required": ["app"], "optional": ["theme", "title", "greeting", "placeholder", "model", "user", "workspace", "pages",
+                                               "icon", "blocks", "cells", "input", "send", "reply", "menu", "cursor", "rec", "voice",
+                                               "notes", "card", "tabs", "zoom", "cont", "dim"]},
     "posts": {"required": ["items"], "optional": []},
     "spotlight": {"required": ["file"], "optional": ["title", "logo", "start", "fx"]},  # fx: {"type": "vanish", "at"} — slika zaigra i izbledi (preokret "ne postoji")  # hook: tema velika + naslov + logo na reč   # 2–3 objave jedna preko druge: post podaci ili {"file","at"}
     "video": {"required": ["file"], "optional": ["note", "caption", "start"]},   # start = s u klipu odakle kreće
@@ -350,6 +357,8 @@ def validate_plan(plan: dict, job) -> list[str]:
                     errs.append(f"moment {i}: scene beat '{b.get('do')}' traži target")
                 if b.get("do") == "cycle" and not any(x.get("do") == "clone" and x.get("target") == b.get("target") for x in d.get("beats") or []):
                     errs.append(f"moment {i}: 'cycle' vrti kopije — prvo 'clone' istog glumca")
+        if k == "app":
+            errs += _app_errors(i, d)
         if k == "faceoff":
             sides = d.get("sides") or []
             if len(sides) != 2:
@@ -610,14 +619,79 @@ def describe(p: dict, job=None) -> str:
         from .story import story_warnings
         story = story_warnings(job, p, items)
     return "\n".join(lines + [f"! [must] {x}" for x in problems]
-                     + [f"! [{severity(x)}] {x}" for x in warnings(items)] + [f"! [aim] {x}" for x in story])
+                     + [f"! [{severity(x)}] {x}" for x in warnings(items)] + [f"! [{story_severity(x)}] {x}" for x in story])
 
 
 # [must] = mora da se popravi pre build-a (čitljivost, tajming, prazan kadar); [aim] = cilj koji zavisi od materijala
 # (pravi materijal %, raznovrsnost, portreti…) — najviše 2 kruga ispravki, pa objasniti u rezimeu (QA 0.8.0, P0:
 # "popravi svaki !" je vodilo u beskonačne ispravke ili u ignorisanje svega).
 MUST_MARKERS = ("je na ekranu", "pre kraja", "prvi deo se pojavljuje", "izbačen", "van momenta", "ne postoji",
-                "nema reči", "prazn")
+                "nema reči", "prazn", "fokus screenshot-a")
+
+
+APPS = ("claude", "chatgpt", "notion", "sheets")
+APP_MENU = {  # isto kao MENU_DEFAULT u remotion/src/components/AppUI.tsx
+    "claude": ["Add files or photos", "Take a screenshot", "Add to project", "Use a skill"],
+    "chatgpt": ["Add photos & files", "Create image", "Deep research", "Agent mode"],
+    "notion": ["Text", "Heading 1", "To-do list", "Table", "Ask AI"],
+    "sheets": ["Add-ons", "Macros", "Apps Script"],
+}
+APP_ANCHORS = {
+    "claude": {"window", "rail", "main", "greeting", "input", "plus", "toggle", "model", "mic", "send", "chat"},
+    "chatgpt": {"window", "rail", "main", "greeting", "input", "plus", "mic", "send", "model", "chat"},
+    "notion": {"window", "sidebar", "page", "title", "blocks", "input"},
+    "sheets": {"window", "title", "menubar", "toolbar", "formula", "grid", "input"}
+              | {f"{c}{r}" for c in "ABCDE" for r in range(1, 9)},
+}
+
+
+def _app_errors(i: int, d: dict) -> list[str]:
+    """Oblik `app` momenta: poznata aplikacija, stavka menija postoji, kamera/kursor ciljaju postojeće delove."""
+    errs = []
+    app = d.get("app")
+    if app not in APPS:
+        return [f"moment {i} (app): app mora biti {' | '.join(APPS)} (dobijeno {app!r})"]
+    menu = d.get("menu") if isinstance(d.get("menu"), dict) else None
+    items = [_t(x) for x in (menu.get("items") or APP_MENU[app])] if menu else []
+    names = set(APP_ANCHORS[app]) | {"menu", "top"}
+    if menu and menu.get("highlight"):
+        h = _t(menu["highlight"]).lower()
+        if h not in [x.lower() for x in items]:
+            errs.append(f"moment {i} (app): menu.highlight \"{_t(menu['highlight'])}\" nije među stavkama menija {items} — "
+                        "dodaj ga u menu.items (tačan tekst kao u aplikaciji)")
+        names.add("item")
+    if menu and len(items) > 6:
+        errs.append(f"moment {i} (app): meni ima {len(items)} stavki (najviše 6 staje i čita se)")
+    card = d.get("card") if isinstance(d.get("card"), dict) else None
+    if card:
+        names.add("card")
+        if not _t(card.get("title")):
+            errs.append(f"moment {i} (app): card traži title (ime skill-a / dokumenta)")
+        if len(card.get("steps") or []) > 6:
+            errs.append(f"moment {i} (app): kartica ima najviše 6 koraka")
+    tabs = d.get("tabs") or []
+    if len(tabs) > 4:
+        errs.append(f"moment {i} (app): najviše 4 taba")
+    names |= {f"tab{j}" for j in range(len(tabs))}
+    for z in d.get("zoom") or []:
+        if isinstance(z, dict) and str(z.get("to")) not in names:
+            errs.append(f"moment {i} (app): zoom.to \"{z.get('to')}\" ne postoji (za {app}: {', '.join(sorted(names))})")
+    for c in d.get("cursor") or []:
+        to = c.get("to") if isinstance(c, dict) else None
+        if not isinstance(to, dict) and str(to) not in names:
+            errs.append(f"moment {i} (app): cursor.to \"{to}\" ne postoji (za {app}: {', '.join(sorted(names))})")
+    if len(d.get("notes") or []) > 3:
+        errs.append(f"moment {i} (app): najviše 3 beleške (notes) po momentu")
+    if d.get("send") and not d.get("input"):
+        errs.append(f"moment {i} (app): send bez input-a — šta se šalje?")
+    return errs
+
+
+STORY_MUST = ("fokus screenshot-a",)  # priča/smisao je inače [aim]; ovo se ne isporučuje (principles.md 51)
+
+
+def story_severity(msg: str) -> str:
+    return "must" if any(m in msg for m in STORY_MUST) else "aim"
 
 
 def severity(msg: str) -> str:
@@ -717,6 +791,20 @@ def _lengths(i: int, kind, d: dict) -> list[str]:
         cap(_t(d.get("badge")), 28, "badge")
         for r in d.get("rows") if isinstance(d.get("rows"), list) else []:
             cap(_t(r), 70, "red")
+    elif kind == "app":
+        m = d.get("menu") if isinstance(d.get("menu"), dict) else {}
+        for x in m.get("items") or []:
+            cap(_t(x), 26, "stavka menija")
+        cap(_t(d.get("input")), 70, "kucani tekst")
+        cap(_t(d.get("reply")), 140, "odgovor")
+        for n in d.get("notes") or []:
+            cap(_t(n), 42, "beleška")
+        c = d.get("card") if isinstance(d.get("card"), dict) else {}
+        cap(_t(c.get("title")), 30, "naslov kartice")
+        for st in c.get("steps") or []:
+            cap(_t(st), 30, "korak")
+        for tb in d.get("tabs") or []:
+            cap(_t(tb), 18, "tab")
     elif kind == "scene":
         for b in d.get("beats") or []:
             if isinstance(b, dict) and b.get("do") in ("tag", "stamp"):

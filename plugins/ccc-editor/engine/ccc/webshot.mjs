@@ -137,46 +137,95 @@ if (!o.svg) {
 }
 
 let rect = null;
-if (o.find || o.selector) {
-  rect = await js(`(() => {
-    let el = null;
-    const sel = ${JSON.stringify(o.selector || '')}, needle = ${JSON.stringify((o.find || '').toLowerCase().replace(/\s+/g, ' ').trim())};
-    if (sel) el = document.querySelector(sel);
-    if (!el && needle) {
-      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let best = null;
-      while (w.nextNode()) {
-        const n = w.currentNode, p = n.parentElement;
-        if (!p) continue;
-        const t = (p.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
-        if (t.includes(needle)) { const r = p.getBoundingClientRect(); if (r.width && r.height && (!best || t.length < best.t)) best = {p, t: t.length}; }
-      }
-      el = best && best.p;
+// Nalaženje fraze (recenzija test-video-petar v1, principles.md 51): ranije je uzimao element sa NAJKRAĆIM tekstom koji
+// sadrži frazu — na androidheadlines.com to je bio lepljivi naslov u zaglavlju (1 red, 1490×73) koji CLEAN posle ukloni,
+// pa je kamera ostala na celoj tamnoj stranici, a pravi naslov (h1, 3 reda) nije istaknut. Sada: samo vidljivi elementi
+// u toku stranice (bez fixed/sticky pretka), prednost naslovima (h1–h3) i krupnijem fontu, a pravougaonik se meri
+// POSLE poslednjeg čišćenja stranice.
+const FINDER = `(() => {
+  const sel = ${JSON.stringify(o.selector || '')}, needle = ${JSON.stringify((o.find || '').toLowerCase().replace(/\s+/g, ' ').trim())};
+  if (sel) return document.querySelector(sel);
+  if (!needle) return null;
+  const pinned = (e) => { for (let n = e; n && n !== document.body; n = n.parentElement) { const cs = getComputedStyle(n);
+    if (cs.position === 'fixed' || cs.position === 'sticky' || cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity < 0.1) return true; } return false; };
+  const seen = new Set(), cands = [];
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) {
+    const p = w.currentNode.parentElement;
+    if (!p) continue;
+    for (let e = p, d = 0; e && e !== document.body && d < 4; e = e.parentElement, d++) {
+      if (seen.has(e)) break;
+      seen.add(e);
+      const t = (e.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
+      if (!t.includes(needle)) continue;
+      const r = e.getBoundingClientRect();
+      if (!r.width || !r.height || pinned(e)) break;
+      const fs = parseFloat(getComputedStyle(e).fontSize) || 16;
+      const head = /^H[1-3]$/.test(e.tagName) || e.getAttribute('role') === 'heading' ? 1 : 0;
+      cands.push({e, len: t.length, fs, head});
+      break;
     }
-    if (!el) return null;
-    el.scrollIntoView({block: 'center'});
-    return true;
-  })()`);
+  }
+  if (!cands.length) return null;
+  const tight = Math.min(...cands.map((c) => c.len));
+  const near = cands.filter((c) => c.len <= Math.max(tight * 1.6, ${JSON.stringify((o.find || '').length)} + 40));
+  near.sort((a, b) => (b.head - a.head) || (b.fs - a.fs) || (a.len - b.len));
+  return near[0].e;
+})()`;
+// Element viši od ekrana (ceo članak u jednom bloku, globaltimes.cn): fokus su redovi oko same fraze — pravougaonik
+// fraze (Range), raširen na širinu bloka i po jedan red gore/dole; stranica se skroluje da fraza bude u sredini.
+const PHRASE = `((el, scroll) => {
+  const needle = ${JSON.stringify((o.find || '').toLowerCase().replace(/\s+/g, ' ').trim())};
+  if (!needle || !el) return null;
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) {
+    const n = w.currentNode, t = (n.nodeValue || '').toLowerCase().replace(/\\s+/g, ' '), i = t.indexOf(needle);
+    if (i < 0) continue;
+    const rg = document.createRange(); rg.setStart(n, i); rg.setEnd(n, Math.min(n.nodeValue.length, i + needle.length));
+    let b = rg.getBoundingClientRect();
+    if (scroll) { window.scrollBy(0, b.top + b.height / 2 - innerHeight / 2); b = rg.getBoundingClientRect(); }
+    const eb = el.getBoundingClientRect(), lh = parseFloat(getComputedStyle(n.parentElement).lineHeight) || b.height * 1.4;
+    const top = Math.max(0, b.top - lh), bottom = Math.min(innerHeight, b.bottom + lh);
+    return {x: Math.max(0, eb.x), y: top, w: Math.min(eb.width, innerWidth), h: bottom - top, cut: false};
+  }
+  return null;
+})`;
+const MEASURE = `(() => {
+  let el = window.__cccFound;
+  if (!el || !el.isConnected) { el = ${FINDER}; window.__cccFound = el; }
+  if (!el) return null;
+  if (el.getBoundingClientRect().height > innerHeight * 0.6) { const q = ${PHRASE}(el, false); if (q) return q; }
+  // Fokus grli sam TEKST, ne ceo element (naslov u kontejneru pune širine: fokus 2000 px širok → kamera nije mogla da
+  // priđe i naslov je ostao sitan; test, Ramp — marketingbrew / musebyclios)
+  let r = el.getBoundingClientRect();
+  if (!${JSON.stringify(Boolean(o.selector))}) {
+    const rg = document.createRange(); rg.selectNodeContents(el);
+    const t = rg.getBoundingClientRect();
+    if (t.width > 20 && t.height > 10 && t.width < r.width - 4) r = t;
+  }
+  const cut = r.x < -2 || r.y < -2 || r.right > innerWidth + 2 || r.bottom > innerHeight + 2;
+  return {x: Math.max(0, r.x), y: Math.max(0, r.y), w: Math.min(r.width, innerWidth), h: Math.min(r.height, innerHeight), cut};
+})()`;
+if (o.find || o.selector) {
+  rect = await js(`(() => { const el = ${FINDER}; window.__cccFound = el; if (!el) return null; el.scrollIntoView({block: 'center'});
+    if (el.getBoundingClientRect().height > innerHeight * 0.6) ${PHRASE}(el, true);
+    return true; })()`);
   if (rect) {
     await sleep(900);
-    rect = await js(`(() => {
-      const sel = ${JSON.stringify(o.selector || '')}, needle = ${JSON.stringify((o.find || '').toLowerCase().replace(/\s+/g, ' ').trim())};
-      let el = sel ? document.querySelector(sel) : null;
-      if (!el) {
-        const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let best = null;
-        while (w.nextNode()) { const p = w.currentNode.parentElement; if (!p) continue;
-          const t = (p.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
-          if (t.includes(needle)) { const r = p.getBoundingClientRect(); if (r.width && r.height && (!best || t.length < best.t)) best = {p, t: t.length}; } }
-        el = best && best.p;
-      }
-      window.__cccFound = el;
-      const r = el.getBoundingClientRect();
-      const cut = r.x < -2 || r.y < -2 || r.right > innerWidth + 2 || r.bottom > innerHeight + 2;
-      return {x: Math.max(0, r.x), y: Math.max(0, r.y), w: Math.min(r.width, innerWidth), h: Math.min(r.height, innerHeight), cut};
-    })()`);
+    rect = await js(MEASURE);
   }
 }
 
+await js(CLEAN);  // iskačući prozori koji su stigli kasnije (newsletter posle par sekundi…)
+await sleep(1500);
+await js(CLEAN);
+await sleep(250);
+if (rect) {  // izmeri ponovo posle čišćenja: uklonjen sloj/zaglavlje pomera stranicu
+  const again = await js(MEASURE);
+  if (again && again.w) rect = again;
+}
+// Oznake se mere POSLE poslednjeg čišćenja (ai-actor-0-r2: uklonjen sloj je pomerio stranicu, pa je marker "200 million
+// views" pao na "been removed" red iznad).
 // Oznake (`marks`): tačan pravougaonik svake izgovorene fraze (ime, cifra) — za isticanje markerom na reč.
 let marks = [];
 if (o.marks && o.marks.length && !o.svg) {
@@ -206,10 +255,6 @@ if (o.marks && o.marks.length && !o.svg) {
   })()`);
 }
 
-await js(CLEAN);  // iskačući prozori koji su stigli kasnije (newsletter posle par sekundi…)
-await sleep(1500);
-await js(CLEAN);
-await sleep(250);
 
 let clip;
 if (o.crop && rect && rect.w) {

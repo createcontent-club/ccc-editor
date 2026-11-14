@@ -228,11 +228,15 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                     f"gornja polovina: {len(items)} momenata, pokriveno 0–{items[-1]['end'] if items else 0:.2f}s od {total:.2f}s"
                     + ("" if not problems else " → " + "; ".join(problems[:4]))))
         from .story import story_warnings
-        from .visuals import severity
+        from .visuals import severity, story_severity
         for w in warnings(items):
             print(f"  · [{severity(w)}] {w}")
-        for w in story_warnings(job, p, items):
-            print(f"  · [aim] {w}")
+        story_w = story_warnings(job, p, items)
+        for w in story_w:
+            print(f"  · [{story_severity(w)}] {w}")
+        blocked = [w for w in story_w if story_severity(w) == "must"]
+        if blocked:  # isečen fokus screenshot-a: provera pada, ništa se ne izvozi (principles.md 51)
+            res.append((False, "gornja polovina: " + "; ".join(blocked[:2])))
         # Klijentovi fajlovi: svaki je iskorišćen ili prijavljen (skill kaže klijentu koji nije i zašto).
         from .assets import nfc, originals, prepare
         from .web import _from_link, sources
