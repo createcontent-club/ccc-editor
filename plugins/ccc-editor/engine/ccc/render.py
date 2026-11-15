@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -65,8 +67,16 @@ def render(job: Job, p: dict, preview: bool) -> tuple[Path, float]:
     args = remotion_cli("render", "CccEdit", str(part), f"--props={props}")
     if preview:
         args += ["--scale=0.5", "--crf=26"]
+    # Brzina (test 15.11., 500 frejmova Split Screen-a): snimak govornika preko @remotion/media (CccEdit.tsx) + crtanje
+    # na GPU-u (--gl=angle) = 12.2 s umesto 23 s. GPU samo na Mac-u (Windows/CI bez GPU-a nisu provereni); ako render
+    # sa GPU-om ikad padne, ponovi bez njega. CCC_GL=<vrednost> ili CCC_GL=off menja izbor (dijagnostika).
+    gl = os.environ.get("CCC_GL") or ("angle" if sys.platform == "darwin" else "")
+    gl_args = [f"--gl={gl}"] if gl and gl != "off" else []
     t0 = time.time()
-    r = subprocess.run(args, cwd=REMOTION, capture_output=True, text=True)
+    r = subprocess.run(args + gl_args, cwd=REMOTION, capture_output=True, text=True)
+    if (r.returncode != 0 or not part.exists()) and gl_args:
+        part.unlink(missing_ok=True)
+        r = subprocess.run(args, cwd=REMOTION, capture_output=True, text=True)
     if r.returncode != 0 or not part.exists():
         part.unlink(missing_ok=True)
         tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])

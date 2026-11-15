@@ -203,10 +203,29 @@ def caption_y(job, p: dict) -> tuple[int, dict]:
         while t < s["srcEnd"] - 0.05:
             times.append(round(t, 2))
             t += 1.5
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "engine")}
-    r = subprocess.run([sys.executable, "-m", "ccc.face", str(job.public / "video.mp4"), json.dumps(times[:60])],
-                       capture_output=True, text=True, env=env)
-    track = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else []
+    # Keš (brzina, 15.11.): isti snimak + isti trenuci = isto lice → rebuild posle izmene plana ne meri ponovo (~10 s).
+    video = job.public / "video.mp4"
+    try:
+        st = video.stat()
+        key = json.dumps([st.st_size, int(st.st_mtime), times[:60]])
+    except OSError:
+        key = None
+    cache = job.dir / "face-track.json"
+    try:
+        c = json.loads(cache.read_text())
+        track = c["track"] if key and c.get("key") == key else None
+    except (OSError, ValueError, KeyError):
+        track = None
+    if track is None:
+        env = {**os.environ, "PYTHONPATH": str(ROOT / "engine")}
+        r = subprocess.run([sys.executable, "-m", "ccc.face", str(video), json.dumps(times[:60])],
+                           capture_output=True, text=True, env=env)
+        track = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else []
+        if key and r.returncode == 0:
+            try:
+                cache.write_text(json.dumps({"key": key, "track": track}))
+            except OSError:
+                pass
     if not track:
         return 1180, {"faces": 0}
     H = track[0]["H"]
