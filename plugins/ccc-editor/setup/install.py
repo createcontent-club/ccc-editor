@@ -374,9 +374,18 @@ def enable_auto_update() -> None:
         return
     mk = data.setdefault("extraKnownMarketplaces", {})
     entry = mk.setdefault(MARKETPLACE, {"source": {"source": "github", "repo": REPO}})
-    if not isinstance(entry, dict) or "autoUpdate" in entry:
-        return
+    if not isinstance(entry, dict) or entry.get("autoUpdate") is False:
+        return  # the client turned it off: respect that
+    changed = "autoUpdate" not in entry
     entry["autoUpdate"] = True
+    # The Claude desktop app sets DISABLE_AUTOUPDATER=1, which (per the plugin docs) also stops plugin updates unless
+    # FORCE_AUTOUPDATE_PLUGINS=1 (test 15 Nov: 0.9.0 installed while 0.20.0 was out). `ccc update-check` is the backup.
+    env = data.setdefault("env", {})
+    if isinstance(env, dict) and "FORCE_AUTOUPDATE_PLUGINS" not in env:
+        env["FORCE_AUTOUPDATE_PLUGINS"] = "1"
+        changed = True
+    if not changed:
+        return
     try:
         cfg.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f.name + ".ccc-tmp")

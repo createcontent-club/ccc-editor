@@ -141,6 +141,7 @@ def client_report(p: dict, exported: str | None) -> str:
         if rv:
             lines.append("Real visuals used (with sources, so you can check you're OK showing them):")
             lines += rv
+    other = "Karaoke" if p.get("caption_style", "clean") == "clean" else "Clean"  # primer nikad nije stil koji već ima
     lines.append("Want changes? Just tell me, e.g. \"bring back the part at 0:22\", \"make the hook shorter\", "
-                 "\"switch captions to Clean\".")
+                 f"\"switch captions to {other}\".")
     return "\n".join(lines)

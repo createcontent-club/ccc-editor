@@ -80,6 +80,13 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
         def _page(self, name: str):
             self._send(200, (PAGE_DIR / name).read_bytes(), "text/html; charset=utf-8")
 
+        def _duration(self):
+            """Dužina snimka: project.json sa diska (prepare ga upiše posle otvaranja stranice), pa snimak pri startu."""
+            try:
+                return json.loads((job.dir / "project.json").read_text())["source"]["duration"]
+            except (OSError, ValueError, KeyError, TypeError):
+                return (p.get("source") or {}).get("duration")
+
         def do_GET(self):
             seen.set()
             path = self.path.split("?", 1)[0]
@@ -123,7 +130,7 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
                     return self._json({"error": "unknown format"}, 404)
                 return self._json({**f, "fixed": formats.fixed(f), "palette": ACCENT_PALETTE,
                                    "default_color": p.get("caption_accent") or DEFAULT_ACCENT, "video": p["name"],
-                                   "duration": (p.get("source") or {}).get("duration"),
+                                   "duration": self._duration(),
                                    "fonts": {k: {"name": v["name"], "desc": v["desc"], "spec": font_spec(k)}
                                              for k, v in FONT_SETS.items()}})
             for prefix, base in (("/assets/", PAGE_DIR / "assets"), ("/fonts/", FONT_DIR)):
@@ -196,7 +203,7 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
                                         for x in data.get("assets") or [] if (d / Path(str(x.get("file", ""))).name).is_file()]
             except (ValueError, json.JSONDecodeError) as err:
                 return self._json({"ok": False, "error": str(err)})
-            self._json({"ok": True})
+            self._json({"ok": True, "duration": self._duration()})  # za vreme izrade na poslednjoj strani
             done.set()
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)

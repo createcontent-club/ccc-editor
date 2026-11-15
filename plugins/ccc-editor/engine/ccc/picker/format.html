@@ -895,6 +895,7 @@ async function submit() {
   } catch (e) { window.cccClosed && window.cccClosed(); return; }  // server je već ugašen (istekao rok)
   if (!res.ok) { $("summary").textContent = res.error; $("go").disabled = false; return; }
   window.cccDone = true;
+  if (res.duration) CFG.duration = res.duration;  // stranica je otvorena pre nego što je prepare upisao dužinu
   window.CCCTour && CCCTour.finish();
   $("app").innerHTML = nextScreen(body);
   document.querySelector(".bar").remove();

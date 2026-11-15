@@ -21,6 +21,7 @@
   ./ccc transcript <ime> [wA-wB] [--words]   delovi sa ID-jevima; --words = svaka reč (w14:First), izbačene ~…~
   ./ccc at <ime> 0:22 [--original]   šta se govori u gotovom videu (ili originalu) u tom trenutku + ID-jevi
   ./ccc support-info                 blok za Discord podršku (verzije, sistem, instalacija, poslednja greška)
+  ./ccc update-check [--force]       da li postoji novija verzija plugina (GitHub, keš 6 h) · ./ccc update = ažuriraj
   ./ccc clean [<ime>|--all]          disk: briše teške fajlove (snimak, zvuk, renderi) — vraćaju se sami iz originala
   ./ccc report <ime>                 izveštaj za klijenta (engleski)
   ./ccc word <ime> wID "tekst"       ispravi tekst reči u titlu (npr. ime brenda) — tajming i rezovi ostaju
@@ -242,6 +243,8 @@ def main(argv: list[str]) -> None:
     sub.add_parser("doctor").add_argument("--quick", action="store_true")
     sub.add_parser("formats")
     sub.add_parser("support-info")
+    sub.add_parser("update-check").add_argument("--force", action="store_true", help="ne koristi keš od 6 h")
+    sub.add_parser("update")
     scl = sub.add_parser("clean"); scl.add_argument("name", nargs="?")
     scl.add_argument("--all", action="store_true", help="svi projekti (odluke ostaju, teški fajlovi se brišu)")
     sat = sub.add_parser("at"); sat.add_argument("name"); sat.add_argument("time", help="0:22, 1:05.5 ili 22.5")
@@ -317,6 +320,12 @@ def main(argv: list[str]) -> None:
         from .project import CODE
         r = subprocess.run([sys.executable, str(CODE / "tools" / "doctor.py")] + (["--quick"] if a.quick else []))
         sys.exit(r.returncode)
+
+    if a.cmd in ("update-check", "update"):  # najnovija verzija plugina (engine/ccc/update.py); nikad ne ruši izmenu
+        from . import update
+        st = update.check(force=a.force) if a.cmd == "update-check" else update.apply()
+        print(update.line(st))
+        return
 
     if a.cmd == "support-info":  # jedan blok za Discord podršku (engine/ccc/support.py)
         from .support import report

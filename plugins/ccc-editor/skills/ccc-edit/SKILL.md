@@ -65,6 +65,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/setup/bootstrap.sh" "${CLAUDE_PLUGIN_DATA}" --check 
 - **UPDATE_NEEDED** (the plugin was updated) or **REPAIR_NEEDED: …** (a part is missing or damaged, e.g. a deleted model): run the same bootstrap command — it only redoes what changed or broke (usually under a minute; a missing speech model ~5 min). Tell the client in one line for REPAIR: *"A part of the editor was missing. Fixing it, one moment."*
 - **INSTALLED**: continue. If anything later looks broken, `ccc support-info` shows the install state.
 
+**Newest version?** Once the editor is installed (right away, or after setup finished), run `ccc update-check` (it asks GitHub at most every 6 hours, takes a second, never stops the edit). Automatic plugin updates don't run in every Claude Code setup (the desktop app switches them off), so this is how the client gets new formats and fixes:
+- `UPDATE_AVAILABLE <have> -> <new>` → start `ccc update` **in the background** and go on with the edit without waiting or mentioning it. It downloads the new version with Claude Code's own plugin commands; this chat keeps working on the current version, so nothing breaks mid-edit.
+- `UP_TO_DATE …` / `UPDATE_CHECK_SKIPPED: …` (offline, development copy) → nothing to do or say.
+- `UPDATE_READY <new>` → already downloaded; mention it at delivery (Step 5, item 5).
+
 `SETUP_FAILED` is followed by `SETUP_REASON:` — tell the client:
 
 | reason | Say |
@@ -187,6 +192,7 @@ Run it in the background (~3–5 min). Tell the client it's being edited and rou
   2. length before → after, what was cut (with times), the styles used;
   3. anything you noticed that the client should decide (fact mismatches, a natural repeat you kept, `NO_FACE`);
   4. **only when the report lists real visuals:** *"The top half uses N real visuals from the web (listed below with their sources). If you post it, credit them in your caption; if you'd rather not use third-party material, tell me and I'll swap them for animations."*
+  5. **only after an update** (`ccc update` printed `UPDATE_INSTALLED <new>`, or the check said `UPDATE_READY`): *"I also updated the editor to version <new> (new styles and fixes). Before your next video, close Claude Code and open it again so it uses the new version."* If `ccc update` printed `UPDATE_MANUAL …` (it couldn't run the update itself): *"A new version of the editor is out. Before your next video, update the CCC Editor plugin (in Claude Code: type /plugin, open Installed, pick ccc-editor, choose Update now), then close Claude Code and open it again."* If `ccc update` is still running, wait for it before delivering (it takes under a minute).
 - **The build stops before rendering** with a `CCC_…` line:
   - `CCC_NEEDS_VERTICAL` — Basic was chosen for a horizontal/square video: switch to Split Screen (`ccc choices <name> format=split-screen` + its options, Step 4), tell the client in one line, build again.
   - `CCC_BUSY` — another command is still working on this project; wait for it, then retry once.

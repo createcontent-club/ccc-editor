@@ -23,7 +23,7 @@ def _version_guard() -> None:
     import json
     code = os.path.dirname(here)
     pj, inst = os.path.join(code, ".claude-plugin", "plugin.json"), os.path.join(os.environ.get("CCC_HOME", ""), "installed.json")
-    if not (os.path.exists(pj) and os.path.exists(inst)) or (args[:1] and args[0] in ("doctor", "support-info")):
+    if not (os.path.exists(pj) and os.path.exists(inst)) or (args[:1] and args[0] in ("doctor", "support-info", "update-check", "update")):
         return
     try:
         want = json.load(open(pj, encoding="utf-8")).get("version", "")
