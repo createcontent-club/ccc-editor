@@ -772,7 +772,10 @@ def main(argv: list[str]) -> None:
                     color = parse_color(a.color)
                 except ValueError as err:
                     raise SystemExit(str(err))
-            p["hook"] = build_hook(p, a.text.strip(), a.style or prev.get("style") or "box", color or prev.get("bg"),
+            style = a.style or prev.get("style") or "box"
+            if style == "serif" and (p.get("layout") or {}).get("type") == "split":
+                raise SystemExit("Split Screen nema Editorial Serif hook (samo Basic): izaberi box, color ili stack.")
+            p["hook"] = build_hook(p, a.text.strip(), style, color or prev.get("bg"),
                                    a.position or prev.get("placement") or "below")
             job.save(p)
             h = p["hook"]

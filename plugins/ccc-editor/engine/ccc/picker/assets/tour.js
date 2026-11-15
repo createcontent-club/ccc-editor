@@ -6,10 +6,11 @@
   const CSS = `
   .tour-block { position: fixed; inset: 0; z-index: 1000; }
   .tour-hole { position: fixed; z-index: 1001; border-radius: 16px; pointer-events: none;
-    box-shadow: 0 0 0 3px #3D8BFF, 0 0 30px rgba(0,102,255,.55), 0 0 0 200vmax rgba(0,0,0,.68); transition: all .28s ease; }
+    box-shadow: 0 0 0 3px #3D8BFF, 0 0 30px rgba(0,102,255,.55), 0 0 0 200vmax rgba(0,0,0,.68); will-change: left, top, width, height; }
   .tour-tip { position: fixed; z-index: 1002; width: min(360px, calc(100vw - 32px)); background: #0B0F18; border: 1px solid rgba(0,102,255,.45);
-    border-radius: 16px; padding: 18px 20px 16px; color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.6); transition: top .28s ease, left .28s ease;
+    border-radius: 16px; padding: 18px 20px 16px; color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.6); opacity: 0; transform: translateY(6px); transition: opacity .2s ease, transform .2s ease;
     font: 400 14.5px/1.5 "Inter", system-ui, sans-serif; }
+  .tour-tip.on { opacity: 1; transform: none; }
   .tour-tip .step { color: #3D8BFF; font: 800 11.5px/1 "Montserrat", "Inter", sans-serif; letter-spacing: .14em; text-transform: uppercase; }
   .tour-tip h3 { margin: 8px 0 6px; font: 800 18px/1.25 "Montserrat", "Inter", sans-serif; }
   .tour-tip p { margin: 0 0 14px; color: #C9D2E4; }
@@ -21,30 +22,63 @@
   .tour-tip .next { background: #0066FF; border: 0; color: #fff; box-shadow: 0 0 18px rgba(0,102,255,.5); }
   .tour-tip button:focus-visible { outline: 3px solid #3D8BFF; outline-offset: 2px; }
   .tour-tip button:hover { transform: none; }
-  @media (prefers-reduced-motion: reduce) { .tour-hole, .tour-tip { transition: none; } }`;
+  @media (prefers-reduced-motion: reduce) { .tour-tip { transition: none; transform: none; } }`;
   let st = null;
   const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   function el(step) { const e = typeof step.el === "function" ? step.el() : document.querySelector(step.el); return e && e.getClientRects().length ? e : null; }
 
-  function place() {
+  /* Kretanje (Petar 15.11.: okvir je skakao po ekranu): ranije CSS tranzicija + ponovno postavljanje na svaki scroll
+     dogadjaj tokom glatkog skrola + dvostruko postavljanje -> okvir je jurio metu u cik-cak. Sada jedna rAF petlja:
+     okvir ide JEDNOM glatkom putanjom od starog mesta do mete (meta se cita uzivo, pa skrol ne pravi trzaje),
+     posle toga se drzi mete; objasnjenje se sakrije dok se okvir krece i pojavi tek kad se sve smiri. */
+  const PAD = 8, DUR = 460;
+  const easeIO = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+  function targetRect() {
+    const t = el(st.steps[st.i]), vw = innerWidth, vh = innerHeight;
+    const r = t ? t.getBoundingClientRect() : { left: vw / 2, top: vh / 2, width: 0, height: 0 };
+    return { x: r.left - PAD, y: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
+  }
+  function drawHole(r) {
+    st.cur = r;
+    const s = st.hole.style;
+    s.left = `${r.x}px`; s.top = `${r.y}px`; s.width = `${r.w}px`; s.height = `${r.h}px`;
+  }
+  function placeTip(r, keepSide) {
+    const vw = innerWidth, vh = innerHeight, tw = st.tip.offsetWidth, th = st.tip.offsetHeight;
+    const below = r.y + r.h + 14, above = r.y - 14 - th;
+    let side = keepSide && st.side ? st.side : (below + th <= vh - 12 ? "below" : above >= 12 ? "above" : "over");
+    if (side === "below" && below + th > vh - 12 && above >= 12) side = "above";
+    if (side === "above" && above < 12 && below + th <= vh - 12) side = "below";
+    st.side = side;
+    const top = side === "below" ? below : side === "above" ? above : Math.max(12, Math.min(vh - th - 12, r.y + 20));
+    const left = Math.max(16, Math.min(vw - tw - 16, r.x + r.w / 2 - tw / 2));
+    st.tip.style.top = `${Math.round(top)}px`; st.tip.style.left = `${Math.round(left)}px`;
+  }
+  function frame(now) {
     if (!st) return;
-    const step = st.steps[st.i], target = el(step);
-    const pad = 8, vw = innerWidth, vh = innerHeight;
-    const r = target ? target.getBoundingClientRect() : { left: vw / 2, top: vh / 2, width: 0, height: 0, right: vw / 2, bottom: vh / 2 };
-    Object.assign(st.hole.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
-    const tw = st.tip.offsetWidth, th = st.tip.offsetHeight;
-    let top = r.bottom + pad + 14;
-    if (top + th > vh - 12) top = r.top - pad - 14 - th;            // nema mesta ispod → iznad
-    if (top < 12) top = Math.max(12, Math.min(vh - th - 12, r.top + 12));  // ni iznad → preko gornjeg dela
-    const left = Math.max(16, Math.min(vw - tw - 16, r.left + r.width / 2 - tw / 2));
-    Object.assign(st.tip.style, { top: `${top}px`, left: `${left}px` });
+    const goal = targetRect();
+    if (st.from) {
+      const k = reduced() ? 1 : Math.min(1, (now - st.t0) / DUR), e = easeIO(k), f = st.from;
+      drawHole({ x: f.x + (goal.x - f.x) * e, y: f.y + (goal.y - f.y) * e, w: f.w + (goal.w - f.w) * e, h: f.h + (goal.h - f.h) * e });
+      if (k >= 1) st.from = null;
+    } else drawHole(goal);
+    // smireno = putanja gotova i meta se ne pomera 3 kadra zaredom (glatki skrol zavrsen)
+    const same = st.last && Math.abs(st.last.x - goal.x) < 0.5 && Math.abs(st.last.y - goal.y) < 0.5 && Math.abs(st.last.h - goal.h) < 0.5;
+    st.still = same ? st.still + 1 : 0;
+    st.last = goal;
+    if (!st.from && (st.tipOn || st.still >= 3 || now - st.t0 > 1400)) {
+      placeTip(st.cur, st.tipOn);
+      if (!st.tipOn) { st.tipOn = true; st.tip.classList.add("on"); st.tip.querySelector(".next").focus({ preventScroll: true }); }
+    }
+    st.raf = requestAnimationFrame(frame);
   }
 
   function show(i) {
     st.i = i;
     const step = st.steps[i], n = st.steps.length;
+    st.tip.classList.remove("on"); st.tipOn = false; st.side = null;
     st.tip.innerHTML = `<div class="step">${i + 1} of ${n}</div><h3 id="tour-title">${esc(step.title)}</h3><p>${esc(step.text)}</p>
       <div class="row"><button type="button" class="skip">${i === n - 1 ? "" : "Skip tour"}</button><span class="sp"></span>
       ${i > 0 ? '<button type="button" class="back">Back</button>' : ""}<button type="button" class="next">${i === n - 1 ? "Got it" : "Next"}</button></div>`;
@@ -54,17 +88,28 @@
     st.tip.querySelector(".next").onclick = () => (i === n - 1 ? finish() : show(i + 1));
     const back = st.tip.querySelector(".back");
     if (back) back.onclick = () => show(i - 1);
+    // skrol samo kad meta (sa mestom za objasnjenje) nije vec lepo na ekranu: manje kretanja = mirniji vodic
     const target = el(step);
-    if (target) target.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "center" });
-    setTimeout(() => { place(); st && st.tip.querySelector(".next").focus({ preventScroll: true }); }, reduced() ? 0 : 380);
-    place();
+    if (target) {
+      const r = target.getBoundingClientRect(), vh = innerHeight, room = st.tip.offsetHeight + 40;
+      const fits = r.top >= 16 && r.bottom <= vh - 16 && (r.top >= room || vh - r.bottom >= room);
+      if (!fits) {
+        const tall = r.height > vh - room - 32;  // ne staje sa objašnjenjem: objašnjenje iznad, meta ispod njega
+        const want = tall ? Math.min(room + 8, vh * 0.45) : (vh - r.height) / 2;
+        scrollTo({ top: Math.max(0, scrollY + r.top - want), behavior: reduced() ? "auto" : "smooth" });
+      }
+    }
+    st.from = st.cur ? { ...st.cur } : null;  // prvi korak: okvir odmah na meti
+    st.t0 = performance.now(); st.still = 0; st.last = null;
+    if (!st.raf) st.raf = requestAnimationFrame(frame);
   }
 
   function finish() {
     if (!st) return;
-    const { key, block, hole, tip, onKey, back } = st;
+    const { key, block, hole, tip, onKey, back, raf } = st;
+    cancelAnimationFrame(raf);
     [block, hole, tip].forEach(x => x.remove());
-    removeEventListener("keydown", onKey, true); removeEventListener("resize", place); removeEventListener("scroll", place, true);
+    removeEventListener("keydown", onKey, true);
     st = null;
     try { fetch("/api/ui", { method: "POST", body: JSON.stringify({ key, value: true }) }); } catch (e) {}
     if (back) try { back.focus(); } catch (e) {}
@@ -91,7 +136,7 @@
       }
     };
     st = { key, steps, i: 0, block, hole, tip, onKey, back: opts.returnFocus || null };
-    addEventListener("keydown", onKey, true); addEventListener("resize", place); addEventListener("scroll", place, true);
+    addEventListener("keydown", onKey, true);  // skrol i promena velicine: rAF petlja sama prati metu
     show(0);
   }
 

@@ -111,6 +111,9 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
                 return self._page("format.html")
             if path == "/logo.png":
                 return self._send(200, (PAGE_DIR / "logo.png").read_bytes(), "image/png")
+            if path == "/api/hook-ideas":  # ideje za hook iz transkripta (prepare ga puni u pozadini)
+                from .hook_ideas import for_job
+                return self._json(for_job(job.dir))
             if path == "/api/menu":
                 return self._json({"formats": formats.menu(), "video": p["name"]})
             if path.startswith("/api/format/"):
@@ -120,6 +123,7 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
                     return self._json({"error": "unknown format"}, 404)
                 return self._json({**f, "fixed": formats.fixed(f), "palette": ACCENT_PALETTE,
                                    "default_color": p.get("caption_accent") or DEFAULT_ACCENT, "video": p["name"],
+                                   "duration": (p.get("source") or {}).get("duration"),
                                    "fonts": {k: {"name": v["name"], "desc": v["desc"], "spec": font_spec(k)}
                                              for k, v in FONT_SETS.items()}})
             for prefix, base in (("/assets/", PAGE_DIR / "assets"), ("/fonts/", FONT_DIR)):

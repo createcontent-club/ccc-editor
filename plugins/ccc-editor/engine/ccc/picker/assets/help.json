@@ -285,7 +285,7 @@
   "faq": [
     {
       "q": "How long does it take?",
-      "a": "Usually 5 to 10 minutes for Basic Edit and 10 to 20 minutes for Split Screen, depending on how long your video is. Claude tells you in the chat when it's ready."
+      "a": "Usually 10 to 20 minutes for Basic Edit and 20 to 45 minutes for Split Screen, depending on how long your video is (a long Split Screen video can take over an hour). Claude tells you in the chat when it's ready."
     },
     {
       "q": "Does my video leave my computer?",

@@ -96,11 +96,12 @@ FORMATS: list[dict] = [
         status="ready",
         includes=["Tight cuts", "Text hook", "Captions", "Camera zoom", "Clean audio"]),
     # Split Screen: 50/50 — sadržaj gore, govornik dole; hook prvih ~3 s na liniji podele,
-    # pa na istom mestu titlovi (bez hooka titlovi od starta); kamera uvek statična; ostalo kao Basic.
+    # pa na istom mestu titlovi (bez hooka titlovi od starta); kamera uvek statična; Editorial Serif hook samo u Basic-u
+    # (ne uklapa se na liniju podele, Petar 15.11.); ostalo kao Basic.
     fmt("split-screen", "Split Screen",
         "You below, what you're talking about above: animated visuals, real logos and headlines, or your own screenshots.",
         status="ready",
-        from_basic={"hook": {"positions": ["line"]}, "camera": {"modes": ["static"]}},
+        from_basic={"hook": {"styles": ["box", "color", "stack"], "positions": ["line"]}, "camera": {"modes": ["static"]}},
         own=["50/50 split: visuals on top, you below", "top half filled automatically (or with your files)"],
         includes=["50/50 split", "Animated visuals", "Real logos & headlines", "Your screenshots", "Captions"],
         layout="split"),

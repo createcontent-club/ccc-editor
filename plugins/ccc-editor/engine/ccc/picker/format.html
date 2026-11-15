@@ -66,6 +66,9 @@
     font: 800 10.5px/1.5 var(--head); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 0 14px rgba(0,102,255,.5); pointer-events: none; }
   .opt { position: relative; }
   .opt .rec { top: -10px; right: 12px; }  /* na gornjoj ivici opcije: nikad ne prekriva naziv (uski ekran) */
+  /* oznaka je <span> u opciji/kartici: pravila tipa ".opt span { color: muted }" su je bledela (Petar 15.11.) */
+  .opt span.rec, .card span.rec, .fcard span.rec, span.rec { color: #fff; opacity: 1; font: 800 10.5px/1.5 var(--head);
+    letter-spacing: .06em; text-transform: uppercase; background: #0066FF; }
   .options { padding-top: 6px; }
   section.pulse { animation: pulse 1.6s ease-out; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,102,255,.0); border-color: var(--line); }
@@ -124,6 +127,7 @@
   /* Primeri i ideje (faza 2) */
   .ideas { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
   .ideas[hidden] { display: none; }
+  .ideas-note { flex-basis: 100%; margin: 0 0 2px; color: var(--muted); font-size: 13px; }
   .idea { background: #0B0F18; border: 1px solid var(--line); color: #DCE6FA; font: 600 13.5px/1.3 "Inter"; padding: 9px 12px; border-radius: 10px;
     box-shadow: none; cursor: pointer; white-space: normal; text-align: left; }
   .idea:hover, .idea:focus-visible { border-color: var(--accent); color: #fff; transform: none; box-shadow: 0 0 14px rgba(0,102,255,.3); outline: none; }
@@ -219,7 +223,7 @@
   .opt.selected .yn .ic { background: var(--accent); color: #fff; box-shadow: 0 0 14px rgba(0,102,255,.55); }
   .warn { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
 
-  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.86); backdrop-filter: blur(12px); border-top: 1px solid var(--accent-line); box-shadow: 0 -10px 40px rgba(0,102,255,.10); }
+  .bar { position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.86);  /* iznad oznaka "Recommended" (z 2) pri skrolu */ backdrop-filter: blur(12px); border-top: 1px solid var(--accent-line); box-shadow: 0 -10px 40px rgba(0,102,255,.10); }
   .bar .in { max-width: 1080px; margin: 0 auto; padding: 14px 16px; display: flex; gap: 16px; align-items: center; justify-content: space-between; }
   .summary { color: var(--muted); font-size: 13.5px; }
   button { background: var(--accent); color: #fff; border: 0; border-radius: 13px; padding: 15px 28px; font: 800 16px var(--head); cursor: pointer; box-shadow: 0 0 24px rgba(0,102,255,.5); transition: transform .15s, box-shadow .15s; white-space: nowrap; }
@@ -473,7 +477,7 @@ function render() {
   $("hookText").disabled = !hookOn();
   $("stackHint").style.display = (hookOn() && S.hookStyle === "stack") ? "inline" : "none";
   $("splitBtn").style.display = (hookOn() && S.hookStyle === "stack" && S.hookText.trim() && !S.hookText.includes("|")) ? "inline" : "none";
-  $("ideasBtn").style.display = hookOn() && (HELP.examples?.hooks || []).length ? "inline" : "none";
+  $("ideasBtn").style.display = hookOn() ? "inline" : "none";
   if (!hookOn()) { $("hookIdeas").hidden = true; $("ideasBtn").setAttribute("aria-expanded", "false"); }
   hookMeter();
 
@@ -593,15 +597,35 @@ function toggleBox(btn, box) {
 function setupExamples() {
   const ex = HELP.examples || {};
   // ideje za hook: klik upisuje tekst (može da se menja)
+  // Ideje iz klijentovog videa (rečenice iz transkripta, /api/hook-ideas). Dok se video još čita: opšti primeri
+  // + napomena, i stranica sama proveri ponovo dok je kutija otvorena (Petar 15.11.: ranije uvek isti primeri).
   const ideas = $("hookIdeas");
-  (ex.hooks || []).forEach(t => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "idea"; b.textContent = t;
-    b.onclick = () => { const ta = $("hookText"); ta.value = t; S.hookText = t; render(); ta.focus(); };
-    ideas.appendChild(b);
-  });
-  if (!(ex.hooks || []).length) $("ideasBtn").style.display = "none";
-  $("ideasBtn").onclick = () => toggleBox($("ideasBtn"), ideas);
+  let mine = null, timer = null;
+  const fill = (list, note) => {
+    ideas.innerHTML = note ? `<p class="ideas-note">${esc(note)}</p>` : "";
+    list.forEach(t => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "idea"; b.textContent = t;
+      b.onclick = () => { const ta = $("hookText"); ta.value = t; S.hookText = t; render(); ta.focus(); };
+      ideas.appendChild(b);
+    });
+  };
+  const load = async () => {
+    clearTimeout(timer);
+    if (mine) return;
+    let r = null;
+    try { r = await (await fetch("/api/hook-ideas")).json(); } catch (e) {}
+    if (r && r.ready && r.ideas.length) {
+      mine = r.ideas;
+      fill(mine, "From your video. Tap one to use it, then make it yours:");
+    } else if (r && r.ready) {
+      fill(ex.hooks || [], "Some examples to get you started:");
+    } else {
+      fill(ex.hooks || [], "Still reading your video. Ideas from it will show up here in a moment. For now, some examples:");
+      if (!ideas.hidden) timer = setTimeout(load, 4000);
+    }
+  };
+  $("ideasBtn").onclick = () => { toggleBox($("ideasBtn"), ideas); if (!ideas.hidden) load(); else clearTimeout(timer); };
   // Stacked: ubaci "|" gde je kursor
   $("splitBtn").onclick = () => {
     const ta = $("hookText"), p = ta.selectionStart ?? ta.value.length;
@@ -818,6 +842,18 @@ const linkList = () => S.links.split(/[\s,]+/).map(x => x.trim()).filter(Boolean
   .map(x => /^https?:\/\//i.test(x) ? x : /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(x) ? "https://" + x : x);
 const badLinks = () => linkList().filter(x => !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(x));
 
+// Koliko traje izrada: po formatu i dužini snimka (stvarna merenja testova, PLAN §18; Petar 15.11.: stari brojevi
+// 5–10 / 10–20 min su bili prekratki). Proveravati u svakom skenu Style Menu-a i menjati kad se izrada ubrza/uspori.
+const EDIT_TIME = {
+  basic: [[90, "10 to 15"], [180, "15 to 25"], [Infinity, "20 to 35"]],
+  split: [[60, "20 to 30"], [120, "25 to 40"], [240, "35 to 55"], [Infinity, "45 to 75"]],
+};
+function editTime(split, dur) {
+  const rows = EDIT_TIME[split ? "split" : "basic"];
+  if (!dur) return `Usually ${split ? "20 to 45" : "10 to 20"} minutes, depending on how long your video is.`;
+  const row = rows.find(([max]) => dur <= max);
+  return `Usually ${row[1]} minutes for a video this long.`;
+}
 // "What happens next": iskreno šta sada radi editor, koliko otprilike traje, šta klijent (ne) treba da radi
 function nextScreen(b) {
   const split = isSplit();
@@ -827,7 +863,7 @@ function nextScreen(b) {
     ...(split ? [b.web ? "We build the visuals for the top half and look up the real logos, headlines and photos you mention." : "We build the visuals for the top half."] : []),
     "We render the final video and run our quality checks.",
   ];
-  const time = split ? "Usually 10 to 20 minutes, depending on how long your video is." : "Usually 5 to 10 minutes, depending on how long your video is.";
+  const time = editTime(split, CFG.duration);
   return `<div class="done"><img src="/logo.png" alt=""><h1>Editing started ✂️</h1><p>You can close this page now. You don't need to do anything else.</p>
     <div class="whatnext">
       <div class="card2"><h2>What happens now</h2><ol>${steps.map(x => `<li><span>${esc(x)}</span></li>`).join("")}</ol>
