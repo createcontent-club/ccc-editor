@@ -3,7 +3,8 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/session-context.txt\"" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\" \"${CLAUDE_PLUGIN_DATA}\"" },
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/auto-setup.sh\" \"${CLAUDE_PLUGIN_DATA}\"", "async": true }
         ]
       }
     ],
@@ -11,6 +12,14 @@
       {
         "hooks": [
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/video-prompt.sh\"" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/allow-own.sh\"" }
         ]
       }
     ]

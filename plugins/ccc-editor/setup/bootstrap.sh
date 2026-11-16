@@ -35,6 +35,19 @@ fi
 die() { echo "  ✗ $1"; echo "SETUP_FAILED"; echo "SETUP_REASON: ${2:-other}"; exit 1; }
 
 mkdir -p "$HOME_DIR" || die "can't create $HOME_DIR" permission
+# Jedan setup u isto vreme (16.11.): hook ga pokreće sam u pozadini čim se Claude otvori (hooks/auto-setup.sh), a skill
+# ga pokreće u Step 0 — drugi čeka prvi, pa samo proveri (sve je već tu, traje sekunde) i završi sa SETUP_OK.
+LOCK_DIR="$HOME_DIR/.setup-lock"
+take_lock() { mkdir "$LOCK_DIR" 2>/dev/null || return 1; echo $$ > "$LOCK_DIR/pid"; trap 'rm -rf "$LOCK_DIR"' EXIT; }
+if ! take_lock; then
+  other="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+  if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then
+    echo "SETUP_RUNNING: the editor is already setting itself up in the background (started when Claude opened). Waiting for it to finish…"
+    i=0; while [ -d "$LOCK_DIR" ] && [ $i -lt 1500 ]; do sleep 2; i=$((i + 1)); done
+  fi
+  rm -rf "$LOCK_DIR" 2>/dev/null
+  take_lock || die "another setup is still running, try again in a minute" other
+fi
 # everything below also goes to setup.log (support asks for it: `ccc support-info` includes its tail)
 exec > >(tee -a "$HOME_DIR/setup.log") 2>&1
 echo ""; echo "===== setup $(date '+%Y-%m-%d %H:%M:%S') · plugin $(plugin_version) · $(uname -sm)"
