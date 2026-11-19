@@ -237,16 +237,28 @@ def face_track(job, p: dict) -> list[dict]:
     return _inliers(track)
 
 
+def plausible(f: dict, ref: tuple[float, float, float] | None) -> bool:
+    """Uzorak lica liči na govornika ovog videa (ref = medijane visina lica, centar, brada iz face_track)."""
+    if not ref:
+        return True
+    fh, cx, chin = ref
+    return 0.7 * fh <= f["face_h"] <= 1.4 * fh and abs(f["cx"] - cx) <= 1.2 * fh and abs(f["chin"] - chin) <= 1.0 * fh
+
+
+def track_ref(track: list[dict]) -> tuple[float, float, float] | None:
+    if len(track) < 5:
+        return None
+    return (statistics.median(f["face_h"] for f in track), statistics.median(f["cx"] for f in track),
+            statistics.median(f["chin"] for f in track))
+
+
 def _inliers(track: list[dict]) -> list[dict]:
     """Bez pogrešnih detekcija: lice mnogo veće/manje od uobičajenog ili daleko od uobičajenog mesta (ruka,
     lice na ekranu iza govornika). Jedan takav uzorak je ranije pomerao bradu celog kadra (fr-ramp: brada 1551 vs ~1140)."""
-    if len(track) < 5:
+    ref = track_ref(track)
+    if not ref:
         return track
-    fh = statistics.median(f["face_h"] for f in track)
-    cx = statistics.median(f["cx"] for f in track)
-    chin = statistics.median(f["chin"] for f in track)
-    good = [f for f in track if 0.7 * fh <= f["face_h"] <= 1.4 * fh and abs(f["cx"] - cx) <= 1.2 * fh
-            and abs(f["chin"] - chin) <= 1.0 * fh]
+    good = [f for f in track if plausible(f, ref)]
     return good if len(good) >= len(track) // 2 else track
 
 

@@ -84,9 +84,12 @@ def build(job, p: dict) -> list[dict]:
     for sh in shots:
         g = segs[sh[len(sh) // 2]]
         mids.append(round((g["vFrom"] + g["vFrames"] / 2) / fps, 3))
-    found = {round(x["t"], 3): x for x in _faces(job, mids)}
-    from .captions import face_track, half_h
+    from .captions import face_track, half_h, plausible, track_ref
     track = face_track(job, p)
+    # uzorak iz sredine kadra prolazi isti filter kao zapis lica (19.11., tb-transformer: pogrešna detekcija sa bradom
+    # 1801 umesto ~980 → lažno "titl preko usta" i kadar bez zuma)
+    ref = track_ref(track)
+    found = {round(x["t"], 3): x for x in _faces(job, mids) if plausible(x, ref)}
     H = 1920
     default = p.get("face", {})
     cap_top = p["captionY"] - half_h(p) if "captionY" in p else None
