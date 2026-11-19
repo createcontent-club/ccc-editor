@@ -36,6 +36,14 @@ def _ui_state() -> dict:
     except (OSError, ValueError):
         return {}
 
+class _Server(ThreadingHTTPServer):
+    """Red čekanja za konekcije: podrazumevanih 5 je premalo. Stranica odjednom traži ~25 fajlova (fontovi, slike,
+    8 primera); Chrome otvara mnogo konekcija, višak je dobijao "connection reset" i deo fontova/primera ostajao prazan
+    (Petar 19.11.: crni primeri titlova i Stacked hooka, fontovi u Times-u). Test: 24 istovremena zahteva → 9 odbijenih."""
+    request_queue_size = 256
+    daemon_threads = True
+
+
 PAGE_DIR = Path(__file__).resolve().parent / "picker"
 FONT_DIR = FONTS
 # Klijentovi fajlovi za Split Screen (drop zona): ostaju na računaru, u work/<ime>/assets/.
@@ -72,7 +80,27 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):  # pregledač prekinuo (npr. video traži drugi deo fajla)
+                pass
+
+        def _static(self, f: Path):
+            """Fajl stranice (font, primer, slika). Podržava Range (Safari ne pušta video bez 206 odgovora)."""
+            body = f.read_bytes()
+            ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+            rng = re.fullmatch(r"bytes=(\d*)-(\d*)", (self.headers.get("Range") or "").strip())
+            if rng and (rng.group(1) or rng.group(2)) and body:
+                n = len(body)
+                if rng.group(1):
+                    a, b = int(rng.group(1)), int(rng.group(2) or n - 1)
+                else:  # bytes=-500 = poslednjih 500
+                    a, b = max(0, n - int(rng.group(2))), n - 1
+                if a >= n:
+                    return self._send(416, b"", ctype, {"Content-Range": f"bytes */{n}"})
+                b = min(b, n - 1)
+                return self._send(206, body[a:b + 1], ctype, {"Content-Range": f"bytes {a}-{b}/{n}", "Accept-Ranges": "bytes"})
+            return self._send(200, body, ctype, {"Accept-Ranges": "bytes"})
 
         def _json(self, obj: dict, code: int = 200):
             self._send(code, json.dumps(obj).encode(), "application/json")
@@ -137,8 +165,7 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
                 if path.startswith(prefix):
                     f = (base / path[len(prefix):]).resolve()
                     if f.is_file() and base.resolve() in f.parents:
-                        ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
-                        return self._send(200, f.read_bytes(), ctype)
+                        return self._static(f)
             self._send(404, b"not found", "text/plain")
 
         def do_POST(self):
@@ -206,7 +233,7 @@ def run(job, p: dict, timeout: float = 1800, open_browser: bool = True,
             self._json({"ok": True, "duration": self._duration()})  # za vreme izrade na poslednjoj strani
             done.set()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = _Server(("127.0.0.1", 0), Handler)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     if start_format:
         url += f"f/{formats.get(start_format)['id']}"

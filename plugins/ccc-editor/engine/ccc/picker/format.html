@@ -406,6 +406,14 @@ function makeButton(el, label) {
 }
 const press = (sel, on) => document.querySelectorAll(sel).forEach(el => { const v = on(el); el.classList.toggle("selected", v); el.setAttribute("aria-pressed", v); });
 
+// Primer (video) koji nije stigao (pao zahtev, Petar 19.11.: crni primeri) → još 3 pokušaja, pa bar slika (poster).
+function retryVideo(v, left = 3) {
+  v.addEventListener("error", () => {
+    if (left-- <= 0) return;
+    setTimeout(() => { const src = v.getAttribute("src"); v.removeAttribute("src"); v.load(); v.src = src; v.play().catch(() => {}); }, 400 * (3 - left));
+  });
+}
+
 function cards(gridId, items, kind) {
   const g = $(gridId);
   items.forEach((it, i) => {
@@ -415,7 +423,9 @@ function cards(gridId, items, kind) {
       <video src="/assets/${kind}-${it.id}.mp4" poster="/assets/${kind}-${it.id}.jpg" muted loop playsinline autoplay></video>
       <div class="label"><b>${it.name}</b><span>${it.desc}</span></div>`;
     c.onclick = () => { S[kind === "hook" ? "hookStyle" : "captionStyle"] = it.id; render(); };
-    c.querySelector("video").setAttribute("aria-hidden", "true");
+    const v = c.querySelector("video");
+    v.setAttribute("aria-hidden", "true");
+    retryVideo(v);
     g.appendChild(c);
   });
 }
@@ -428,7 +438,9 @@ function fontCards(items) {
     (it.spec?.faces || []).forEach(f => {
       const role = f.family.includes("Hook") ? "hook" : "cap";
       const face = new FontFace(fam(role), `url(/fonts/${encodeURIComponent(f.file)})`, { weight: f.weight, ...(f.stretch ? { stretch: f.stretch } : {}) });
-      face.load().then(ff => document.fonts.add(ff)).catch(() => {});
+      const add = (left) => face.load().then(ff => document.fonts.add(ff))
+        .catch(() => { if (left) setTimeout(() => add(left - 1), 400 * (4 - left)); });  // pao zahtev → još 3 pokušaja
+      add(3);
     });
     const tr = it.spec?.tracking || { caption: 0, hook: 0 };
     const axes = it.spec?.hookAxes ? `font-variation-settings:'wght' 700,'wdth' ${it.spec.hookAxes.wdth},'opsz' ${it.spec.hookAxes.opsz};` : "";

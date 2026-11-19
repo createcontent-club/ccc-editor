@@ -151,6 +151,9 @@ function readyCard(f) {
       ${f.includes.length ? `<div class="chips">${f.includes.map(i => `<span class="chip">${esc(i)}</span>`).join("")}</div>` : ""}
       <div class="cta">Choose ${esc(f.title)} <span class="arr">→</span></div>
     </div>`;
+  const v = a.querySelector("video");  // pao zahtev → još 3 pokušaja (Petar 19.11.: crni primeri)
+  let left = 3;
+  v.addEventListener("error", () => { if (left-- > 0) setTimeout(() => { const src = v.getAttribute("src"); v.removeAttribute("src"); v.load(); v.src = src; v.play().catch(() => {}); }, 400 * (3 - left)); });
   return a;
 }
 
