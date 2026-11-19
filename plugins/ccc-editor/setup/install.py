@@ -63,6 +63,10 @@ MODELS = {
         "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/"
         "models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
         "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"),
+    # Obris osobe → pravi vrh kose za hook iznad glave (MODNet, Apache 2.0, 25 MB; engine/ccc/face.py hair_top)
+    "person/modnet.onnx": (
+        "https://huggingface.co/Xenova/modnet/resolve/fa2fa546052fba4c08921230a26cc69a333fca12/onnx/model.onnx",
+        "07c308cf0fc7e6e8b2065a12ed7fc07e1de8febb7dc7839d7b7f15dd66584df9"),
 }
 WHISPER = {"repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo", "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
            "model.bin": (1617884929, "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da")}
@@ -324,7 +328,7 @@ def install_models(home: Path, skip_whisper: bool) -> None:
     models = home / "tools" / "models"
     for rel, (url, h) in MODELS.items():
         download(url, models / rel, h)
-    ok("noise + face models")
+    ok("noise, face + person models")
     if skip_whisper:
         return
     target = models / "whisper" / "large-v3-turbo"

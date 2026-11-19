@@ -31,6 +31,8 @@ export type HookSpec = {
   pitch?: number;
   /** y vrha prvog boksa (px na 1080×1920) — ispod brade. */
   y: number;
+  /** Smanjen hook (iznad glave bez mesta u punoj veličini): 0.85; podrazumevano 1. */
+  scale?: number;
   start: number;
   end: number;
 };

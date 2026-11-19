@@ -195,19 +195,27 @@ def build(p: dict, voice_runs: list[tuple[float, float]], style: str = "clean") 
     return caps
 
 
-def caption_y(job, p: dict) -> tuple[int, dict]:
-    """Medijana pozicije brade kroz zadržane delove (frejm svakih ~1.5 s) → y centra titla."""
+MAX_SAMPLES = 60      # lica po videu (svaki uzorak = jedan frejm kroz ffmpeg + YuNet)
+CAP_SAFE_BOTTOM = 1540  # dno titla iznad donje IG/TikTok UI zone (isto kao hook.SAFE_BOTTOM)
+CHIN_CLEAR = 8        # px: najmanji razmak brada ↔ vrh titla (titl sme bliže od idealnog, nikad preko brade)
+
+
+def face_track(job, p: dict) -> list[dict]:
+    """Lice kroz zadržane delove: frejm na ~1.5 s u svakom segmentu, ravnomerno do MAX_SAMPLES (keš).
+    Zajedničko za titl i kameru (kamera iz istih uzoraka vidi bradu SVAKOG kadra, ne samo proseka)."""
     times = []
     for s in p["segments"]:
         t = s["srcStart"] + 0.1
         while t < s["srcEnd"] - 0.05:
             times.append(round(t, 2))
             t += 1.5
+    if len(times) > MAX_SAMPLES:  # dug video: ravnomerno kroz ceo snimak (ranije samo prvih 60 → kraj nije meren)
+        times = [times[round(i * (len(times) - 1) / (MAX_SAMPLES - 1))] for i in range(MAX_SAMPLES)]
     # Keš (brzina, 15.11.): isti snimak + isti trenuci = isto lice → rebuild posle izmene plana ne meri ponovo (~10 s).
     video = job.public / "video.mp4"
     try:
         st = video.stat()
-        key = json.dumps([st.st_size, int(st.st_mtime), times[:60]])
+        key = json.dumps([st.st_size, int(st.st_mtime), times, "hair2"])  # "hair2": uzorci imaju i vrh kose
     except OSError:
         key = None
     cache = job.dir / "face-track.json"
@@ -218,7 +226,7 @@ def caption_y(job, p: dict) -> tuple[int, dict]:
         track = None
     if track is None:
         env = {**os.environ, "PYTHONPATH": str(ROOT / "engine")}
-        r = subprocess.run([sys.executable, "-m", "ccc.face", str(video), json.dumps(times[:60])],
+        r = subprocess.run([sys.executable, "-m", "ccc.face", str(video), json.dumps(times)],
                            capture_output=True, text=True, env=env)
         track = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else []
         if key and r.returncode == 0:
@@ -226,6 +234,27 @@ def caption_y(job, p: dict) -> tuple[int, dict]:
                 cache.write_text(json.dumps({"key": key, "track": track}))
             except OSError:
                 pass
+    return _inliers(track)
+
+
+def _inliers(track: list[dict]) -> list[dict]:
+    """Bez pogrešnih detekcija: lice mnogo veće/manje od uobičajenog ili daleko od uobičajenog mesta (ruka,
+    lice na ekranu iza govornika). Jedan takav uzorak je ranije pomerao bradu celog kadra (fr-ramp: brada 1551 vs ~1140)."""
+    if len(track) < 5:
+        return track
+    fh = statistics.median(f["face_h"] for f in track)
+    cx = statistics.median(f["cx"] for f in track)
+    chin = statistics.median(f["chin"] for f in track)
+    good = [f for f in track if 0.7 * fh <= f["face_h"] <= 1.4 * fh and abs(f["cx"] - cx) <= 1.2 * fh
+            and abs(f["chin"] - chin) <= 1.0 * fh]
+    return good if len(good) >= len(track) // 2 else track
+
+
+def caption_y(job, p: dict) -> tuple[int, dict]:
+    """Brada kroz zadržane delove → y centra titla.
+    Razmak od brade (BELOW_CHIN × visina lica) je NAJVEĆI dozvoljen: titl sme bliže kad mora (donja UI zona),
+    nikad dalje i nikad preko brade. Zum se prilagođava titlu (camera.py), ne obrnuto (Petar 18.11., PLAN §23)."""
+    track = face_track(job, p)
     if not track:
         return 1180, {"faces": 0}
     H = track[0]["H"]
@@ -234,13 +263,23 @@ def caption_y(job, p: dict) -> tuple[int, dict]:
     face_h = statistics.median(f["face_h"] for f in track) * 1920 / H
     # Gornja ivica titla ostaje na istoj udaljenosti od brade kao kod Stila 1 (odobreno);
     # viši stilovi (npr. boks) se spuštaju za razliku u visini.
-    y = round(chin + BELOW_CHIN * face_h + half_h(p) - STYLES["clean"]["half_h"])
+    hh = half_h(p)
+    ideal = chin + BELOW_CHIN * face_h + hh - STYLES["clean"]["half_h"]
+    y = min(ideal, CAP_SAFE_BOTTOM - hh)        # lice nisko u kadru: titl bliže bradi, ne u UI zonu
+    y = round(max(y, chin + CHIN_CLEAR + hh))   # …ali nikad preko brade (radije malo u UI zonu)
     # Teme: YuNet okvir lica ne uključuje kosu → +25% visine lica; uzimamo najviši položaj glave
     # (20. percentil), da hook iznad glave ne dođe preko temena kad se govornik pomeri.
     tops = sorted(f["chin"] - f["face_h"] for f in track)
     head_top = tops[int(0.2 * (len(tops) - 1))] * 1920 / H - 0.25 * face_h
-    return y, {"faces": len(track), "samples": len(times[:60]), "chin": round(chin), "face_h": round(face_h),
-               "head_top": round(head_top),
+    # Pravi vrh glave (kosa/kapa, MODNet) kad postoji: najviši položaj (20. percentil). Hook iznad glave ga koristi;
+    # Split isečak i dalje ide po proceni head_top (odobren raspored), dok se ne proveri na Split testovima.
+    hairs = sorted(f["hair"] for f in track if "hair" in f)
+    real = {}
+    if len(hairs) >= max(3, len(track) // 2):
+        real = {"hair_top": round(hairs[int(0.2 * (len(hairs) - 1))] * 1920 / H),
+                "face_top": round(tops[int(0.2 * (len(tops) - 1))] * 1920 / H)}
+    return y, {"faces": len(track), "samples": len(track), "chin": round(chin), "face_h": round(face_h),
+               "head_top": round(head_top), **real, "gap": round(y - hh - chin), "gap_ideal": round(ideal - hh - chin),
                "chin_spread": round((max(f["chin"] for f in track) - min(f["chin"] for f in track)) * 1920 / H)}
 
 

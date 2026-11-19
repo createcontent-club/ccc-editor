@@ -115,7 +115,7 @@ const StackHook: React.FC<{hook: HookSpec; frame: number; fps: number; mult?: nu
   );
 };
 
-export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean; srcFps?: number}> = ({hook, fontsReady, srcFps}) => {
+const HookBody: React.FC<{hook: HookSpec; fontsReady: boolean; srcFps?: number}> = ({hook, fontsReady, srcFps}) => {
   const fs = useFontSpec();
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -169,5 +169,17 @@ export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean; srcFps?: numbe
         </div>
       ))}
     </AbsoluteFill>
+  );
+};
+
+/** Hook iznad glave kad nema mesta u punoj veličini: engine ga smanji (scale < 1, PLAN §23.2). Vrh ostaje na hook.y,
+ *  sredina na sredini ekrana, pa se svi stilovi smanjuju isto (boksovi, prelom i razmaci ostaju u razmeri). */
+export const Hook: React.FC<{hook: HookSpec; fontsReady: boolean; srcFps?: number}> = (props) => {
+  const k = props.hook.scale ?? 1;
+  if (k === 1) return <HookBody {...props} />;
+  return (
+    <div style={{position: 'absolute', inset: 0, transform: `scale(${k})`, transformOrigin: `540px ${props.hook.y}px`}}>
+      <HookBody {...props} />
+    </div>
   );
 };

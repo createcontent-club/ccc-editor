@@ -44,7 +44,65 @@ def _runs(mask: np.ndarray, value: bool) -> list[tuple[int, int]]:
     return out
 
 
-def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
+# Svaka provera ima klasu (PLAN §23.3, princip: raspored nikad ne šalje klijenta podršci):
+#   auto    raspored/kamera: alat to rešava sam; Claude pokrene ispravku, a ako opet padne, rezervni korak. NIKAD podrška.
+#   claude  Claude ispravlja (rez, titl, svoj plan); ista linija pala 2× posle ispravke → podrška (osim svog plana).
+#   client  odluka klijenta: Claude ga pita sa ponuđenim opcijama.
+#   support kvar alata (zvuk, sinhronizacija, render): build još jednom, pa podrška.
+#   info    samo informacija (uvek ✅).
+# (klasa, ispravka, rezervni korak). Tekst je za Claude-a (engleski); release preflight traži klasu za svaki _add.
+CHECKS = {
+    "glas-isecen": ("claude", "a removal cut real speech: `ccc transcript <name>`, then `ccc keep` the affected words", None),
+    "glas-tisina": ("claude", "`ccc listen` around the word: not spoken → `ccc remove <name> wID off-script`; spoken → `ccc verify <name>`", None),
+    "pocetak": ("claude", "`ccc verify <name>` (re-times the first words to the voice), fix its ! lines", None),
+    "kraj": ("claude", "`ccc verify <name>` (re-times the last words to the voice), fix its ! lines", None),
+    "rupe": ("claude", "`ccc verify <name>`, fix its ! lines (a pause or a leftover take stayed in)", None),
+    "uzdasi": ("claude", "`ccc verify <name>`, fix its ! lines (a breath stayed at a cut)", None),
+    "glas-bez-titla": ("claude", "`ccc verify <name>` (re-times the words to the voice), fix its ! lines", None),
+    "poslednji-titl": ("claude", "`ccc verify <name>` (re-times the words to the voice), fix its ! lines", None),
+    "boja-naglaska": ("client", "the color is too dark to read: suggest a lighter shade or one from the palette, then `ccc choices <name> color=…`", None),
+    "hook-boja": ("client", "the hook color has too little contrast: suggest another brand shade, then `ccc choices <name> color=…`", None),
+    "hook": ("auto", "place the hook again: `ccc hook <name> '<same text>'`",
+             "line says NEMA MESTA (too long): Stacked with your own | → save the text without |; otherwise ask the client to "
+             "shorten it. Any other overlap: `ccc hook <name> '<same text>' --position below` and tell the client in one line"),
+    "split-teme": ("client", "the face itself does not fit the bottom half (very close to the lens): offer Basic Edit of this video "
+                   "(`ccc choices <name> format=basic` + its options) or a take filmed a little further away", None),
+    "gornja-polovina": ("claude", "your own plan: fix the moments the line names (`ccc visuals …`); never the support line", None),
+    "asseti-web": ("claude", "swap the named web visuals in the plan (no source record, or the client turned real visuals off)", None),
+    "fajlovi": ("info", "", None),
+    "kamera": ("auto", "place the hook again for the zoom: `ccc hook <name> '<same text>'`",
+               "still failing: `ccc hook <name> '<same text>' --position below` and tell the client in one line. Never turn the zoom off for this"),
+    "skokovi": ("auto", "rebuild the camera: `ccc camera <name>`",
+                "still failing: `ccc choices <name> camera=static` and tell the client in one line that cuts stay without zoom in this video"),
+    "zvuk": ("support", "`ccc audio <name>`, then build once more", None),
+    "klikovi": ("support", "build once more", None),
+    "sync": ("support", "build once more", None),
+    "frejmovi": ("support", "build once more", None),
+    "fps": ("support", "an engine problem, not a choice: build once more", None),
+    "trajanje": ("support", "an engine problem, not a choice: build once more", None),
+}
+
+
+def _add(res: list, cid: str, pair: tuple) -> None:
+    res.append((bool(pair[0]), pair[1], cid))
+
+
+def report(res: list) -> bool:
+    """Ispis provere: ✅ / ❌ [klasa] linija + šta uraditi. → True ako je sve prošlo."""
+    for ok, msg, cid in res:
+        if ok:
+            print(f"  ✅ {msg}")
+            continue
+        cls, fix, fallback = CHECKS[cid]
+        print(f"  ❌ [{cls}] {msg}")
+        if fix:
+            print(f"      → fix: {fix}")
+        if fallback:
+            print(f"      → if this line fails again: {fallback}")
+    return all(ok for ok, _, _ in res)
+
+
+def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str, str]]:
     res: list[tuple[bool, str]] = []
     segs, fps, cfg = p["segments"], p["fps"], p["cut"]
     frame = 1 / fps
@@ -75,9 +133,9 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         elif any(not kept(k * HOP + HOP / 2) for k in voiced):
             k = next(k for k in voiced if not kept(k * HOP + HOP / 2))
             clipped.append(f"{w['id']} '{w['text']}' @{k * HOP:.2f}s")
-    res.append((not clipped, f"isečen glas u zadržanim rečima: {len(clipped)}"
+    _add(res, "glas-isecen", (not clipped, f"isečen glas u zadržanim rečima: {len(clipped)}"
                 + (f" → {', '.join(clipped[:5])}" if clipped else "")))
-    res.append((not silent, f"zadržane reči bez detektovanog glasa (moguće isečene): {len(silent)}"
+    _add(res, "glas-tisina", (not silent, f"zadržane reči bez detektovanog glasa (moguće isečene): {len(silent)}"
                 + (f" → {', '.join(silent[:6])}" if silent else "")))
 
     # 2. Početak i kraj: video kreće na prvom slogu i završava se na poslednjem.
@@ -93,8 +151,8 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     last_end = (len(vm) - int(np.argmax(vm[::-1]))) * HOP
     total = sum(g["vFrames"] for g in segs) / fps
     tail = total - last_end
-    res.append((first <= frame, f"početak: glas kreće na {first * 1000:.0f} ms (≤ 1 frejm = {frame * 1000:.0f} ms)"))
-    res.append((tail <= frame, f"kraj: posle poslednjeg sloga {max(0, tail) * 1000:.0f} ms (≤ 1 frejm)"))
+    _add(res, "pocetak", (first <= frame, f"početak: glas kreće na {first * 1000:.0f} ms (≤ 1 frejm = {frame * 1000:.0f} ms)"))
+    _add(res, "kraj", (tail <= frame, f"kraj: posle poslednjeg sloga {max(0, tail) * 1000:.0f} ms (≤ 1 frejm)"))
 
     # 3. Rupe bez glasa u gotovom zvuku (pauze, uzdasi) — dozvoljeno najviše ~1 frejm.
     gaps = [(a * HOP, (b - a) * HOP) for a, b in _runs(vm, False) if a > 0 and b < len(vm)]
@@ -144,10 +202,10 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         return int((r[a:b] > 8).sum()) if b - a > 1 else 0
     breaths = [(t, d) for t, d in gaps if bump(t, d) >= 5 and not in_word(t, d)]
     g = np.array([d for _, d in gaps]) * fps if gaps else np.array([0.0])
-    res.append((not long_gaps, f"rupe bez glasa > {limit * 1000:.0f} ms: {len(long_gaps)}"
+    _add(res, "rupe", (not long_gaps, f"rupe bez glasa > {limit * 1000:.0f} ms: {len(long_gaps)}"
                 + (" → " + ", ".join(f"{t:.2f}s ({d * 1000:.0f} ms)" for t, d in long_gaps[:6]) if long_gaps else "")
                 + f" · sve rupe: prosek {g.mean():.2f}, max {g.max():.2f} frejma"))
-    res.append((not breaths, f"uzdasi/dah u gotovom zvuku: {len(breaths)}"
+    _add(res, "uzdasi", (not breaths, f"uzdasi/dah u gotovom zvuku: {len(breaths)}"
                 + (" → " + ", ".join(f"{t:.2f}s" for t, _ in breaths[:6]) if breaths else "")))
 
     # 3b. Titlovi: nijedan trenutak glasa bez titla, poslednji titl traje do kraja videa.
@@ -170,17 +228,17 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
             else:
                 spans.append([t, t])
         spans = [(a, b) for a, b in spans if b - a >= 0.02]
-        res.append((not spans, f"glas bez titla: {len(spans)}"
+        _add(res, "glas-bez-titla", (not spans, f"glas bez titla: {len(spans)}"
                     + (" → " + ", ".join(f"{a:.2f}–{b:.2f}s" for a, b in spans[:6]) if spans else "")))
         gap_end = total - caps[-1]["end"]
-        res.append((abs(gap_end) < frame / 2, f"poslednji titl traje do kraja videa (razlika {gap_end * 1000:.0f} ms)"))
+        _add(res, "poslednji-titl", (abs(gap_end) < frame / 2, f"poslednji titl traje do kraja videa (razlika {gap_end * 1000:.0f} ms)"))
 
     # 3b2. Boja naglaska (Karaoke) mora biti dovoljno svetla da se aktivna reč čita.
     if p.get("caption_style") == "karaoke":
         from .captions import DEFAULT_ACCENT, MIN_ACCENT_LUMINANCE, luminance
         acc = p.get("caption_accent") or DEFAULT_ACCENT
         lum = luminance(acc)
-        res.append((lum >= MIN_ACCENT_LUMINANCE,
+        _add(res, "boja-naglaska", (lum >= MIN_ACCENT_LUMINANCE,
                     f"boja naglaska {acc}: osvetljenost {lum:.2f} (≥ {MIN_ACCENT_LUMINANCE}"
                     + ("" if lum >= MIN_ACCENT_LUMINANCE else " — pretamna, predloži klijentu svetliju nijansu") + ")"))
 
@@ -196,15 +254,20 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         cap_top, cap_bottom = p["captionY"] - half_h(p), p["captionY"] + half_h(p)
         clear_caption = (hook["y"] >= cap_bottom or hook["bottom"] <= cap_top
                          or cap_from >= hook["end"])  # Split: titl kreće tek posle hooka
-        clear_face = hook["y"] >= face.get("chin", 0) or hook["bottom"] <= face.get("head_top", 0)
+        if (p.get("layout") or {}).get("type") == "split":
+            clear_face = hook["y"] >= face.get("chin", 0) or hook["bottom"] <= face.get("head_top", 0)
+        else:  # Basic: pravi obris kose; dno hooka sme najviše do gornje trećine kose (camera.head_limits)
+            from .camera import head_limits
+            clear_face = hook["y"] >= face.get("chin", 0) or hook["bottom"] <= head_limits(p, hook.get("end"))[1] + 0.5
+        widest *= hook.get("scale", 1.0)
         in_frame = widest <= 960 and hook["y"] >= SAFE_TOP and hook["bottom"] <= SAFE_BOTTOM
         cap_ok = hook["text"][:1] == hook["text"][:1].upper()
         if hook.get("bg"):
             from .hook import LARGE_TEXT_CONTRAST, contrast
             cr = contrast(hook["bg"], hook["fg"])
-            res.append((cr >= LARGE_TEXT_CONTRAST, f"hook boja: boks {hook['bg']} / tekst {hook['fg']}, "
+            _add(res, "hook-boja", (cr >= LARGE_TEXT_CONTRAST, f"hook boja: boks {hook['bg']} / tekst {hook['fg']}, "
                                                    f"kontrast {cr:.1f}:1 (≥ {LARGE_TEXT_CONTRAST} WCAG, krupan tekst)"))
-        res.append((clear_caption and clear_face and in_frame and cap_ok,
+        _add(res, "hook", (clear_caption and clear_face and in_frame and cap_ok,
                     f"hook {hook.get('style', 'box')} ({hook.get('position')}): y {hook['y']}–{hook['bottom']}, titl {cap_top}–{cap_bottom}, "
                     f"lice {face.get('head_top')}–{face.get('chin')}, najširi boks {widest:.0f} px, "
                     f"veliko početno slovo: {'da' if cap_ok else 'NE'}, do {hook['end']:.2f}s"))
@@ -214,9 +277,14 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
     if lay.get("type") == "split" and p.get("face"):
         from .captions import to_output_y
         top, chin = to_output_y(p, p["face"]["head_top"]), to_output_y(p, p["face"]["chin"])
-        ok = top >= lay["line"] + 40 and chin <= 1920 - 120
-        res.append((ok, f"split: linija {lay['line']}, isečak od y {lay.get('cropY')}, teme {top:.0f} (≥ {lay['line'] + 40}), "
-                        f"brada {chin:.0f} (≤ 1800)"))
+        brows = to_output_y(p, p["face"]["chin"] - p["face"].get("face_h", 280))
+        # Uslov: lice (od obrva) ispod linije i brada u kadru. Kosa pod linijom je samo upozorenje: titl/hook na
+        # liniji tada prekriva vrh kose, kao i u Basic-u (PLAN §23.3). Ranije je ovo slalo klijenta na novi snimak.
+        ok = brows >= lay["line"] + 60 and chin <= 1920 - 120
+        if ok and top < lay["line"] + 40:
+            print(f"  ! split: vrh kose {top:.0f} je iznad linije+40 ({lay['line'] + 40}) → titl/hook prekrivaju vrh kose (dozvoljeno)")
+        _add(res, "split-teme", (ok, f"split: linija {lay['line']}, isečak od y {lay.get('cropY')}, obrve {brows:.0f} (≥ {lay['line'] + 60}), "
+                        f"teme {top:.0f}, brada {chin:.0f} (≤ 1800)"))
 
     # 3c3. Split Screen, gornja polovina: plan pokriva ceo video, momenti nisu prekratki, fajlovi postoje.
     if lay.get("type") == "split":
@@ -224,7 +292,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         items, problems = timeline(p)
         problems = validate_plan(p.get("visuals") or {}, job) + problems if p.get("visuals") else ["nema plana"]
         cover = bool(items) and items[0]["start"] == 0 and abs(items[-1]["end"] - total) < frame
-        res.append((not problems and cover,
+        _add(res, "gornja-polovina", (not problems and cover,
                     f"gornja polovina: {len(items)} momenata, pokriveno 0–{items[-1]['end'] if items else 0:.2f}s od {total:.2f}s"
                     + ("" if not problems else " → " + "; ".join(problems[:4]))))
         from .story import story_warnings
@@ -236,7 +304,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
             print(f"  · [{story_severity(w)}] {w}")
         blocked = [w for w in story_w if story_severity(w) == "must"]
         if blocked:  # isečen fokus screenshot-a: provera pada, ništa se ne izvozi (principles.md 51)
-            res.append((False, "gornja polovina: " + "; ".join(blocked[:2])))
+            _add(res, "gornja-polovina", (False, "gornja polovina: " + "; ".join(blocked[:2])))
         # Klijentovi fajlovi: svaki je iskorišćen ili prijavljen (skill kaže klijentu koji nije i zašto).
         from .assets import nfc, originals, prepare
         from .web import _from_link, sources
@@ -252,30 +320,41 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
             # klijent isključio prave vizuale → sme samo ono što je došlo iz njegovih linkova
             off = [n for n in web if n in used and ch.get("web") is False and not (src.get(n) or {}).get("client_link")
                    and not _from_link(job, (src.get(n) or {}).get("url") or "")]
-            res.append((not no_src and not off, f"asseti sa interneta: iskorišćeno {len([n for n in web if n in used])}/{len(web)}"
+            _add(res, "asseti-web", (not no_src and not off, f"asseti sa interneta: iskorišćeno {len([n for n in web if n in used])}/{len(web)}"
                                     + (f" · bez zapisa porekla: {', '.join(no_src)}" if no_src else "")
                                     + (f" · klijent je isključio prave vizuale, a iskorišćeno: {', '.join(off)}" if off else "")))
         if names:
             man = prepare(job)
             unused = [n for n in names if n not in used]
             bad = [n for n in names if man.get(n, {}).get("kind") == "error"]
-            res.append((True, f"fajlovi klijenta: iskorišćeno {len(names) - len(unused)}/{len(names)}"
+            _add(res, "fajlovi", (True, f"fajlovi klijenta: iskorišćeno {len(names) - len(unused)}/{len(names)}"
                               + (f" · neiskorišćeni (reci klijentu zašto): {', '.join(unused)}" if unused else "")
                               + (f" · ne mogu da se koriste: {', '.join(bad)}" if bad else "")))
 
-    # 3d. Kamera: ni pri najvećem zumu brada ne dolazi do titla, a teme do hooka iznad glave.
+    # 3d. Kamera: brada ne ulazi u titl (po kadru, pri najvećem zumu), teme ne dolazi do hooka iznad glave.
+    #     Zum se sam prilagođava titlu (camera._fit), pa dodir znači samo da se govornik u tom kadru nagnuo:
+    #     to je upozorenje. I titl preko usta (jak nagib napred, zum tu ne pomaže) je upozorenje za Claude-a
+    #     (pogleda kadar), ne pad izvoza: raspored nikad ne šalje klijenta podršci (PLAN §23).
     if p.get("camera") and p.get("face"):
-        from .camera import max_chin_after_zoom, min_head_after_zoom
+        from .camera import chin_touches, max_chin_after_zoom
         from .captions import half_h
-        chin = max_chin_after_zoom(p)
         cap_top = p["captionY"] - half_h(p)
-        ok = chin < cap_top
-        msg = f"kamera: brada pri najvećem zumu {chin:.0f} < vrh titla {cap_top}"
+        touch, mouth = chin_touches(p, cap_top)
+        ok = True
+        if touch or mouth:
+            print(f"  ! kamera: brada dodiruje titl u {len(touch)} kadr., titl preko usta u {len(mouth)} kadr. "
+                  f"(govornik se nagne) → pogledaj ccc stills <ime> " + " ".join(f"{c['t0']:.1f}" for c in (mouth or touch)[:3]
+                                                                                 if "t0" in c))
+        msg = (f"kamera: brada pri najvećem zumu {max_chin_after_zoom(p):.0f}, vrh titla {cap_top}"
+               + (f" · dodir u {len(touch)} kadr. (govornik se nagne, dozvoljeno)" if touch else "")
+               + (f" · titl preko usta u {len(mouth)} kadr. (upozorenje)" if mouth else ""))
         if hook and hook.get("position", "").startswith("iznad glave"):
-            head = min_head_after_zoom(p)
-            ok = ok and hook["bottom"] < head
-            msg += f", hook dno {hook['bottom']} < teme {head:.0f}"
-        res.append((ok, msg))
+            from .camera import head_limits
+            clear, allowed = head_limits(p, hook.get("end"))
+            ok = ok and hook["bottom"] <= allowed + 0.5
+            msg += (f", hook dno {hook['bottom']} ≤ {allowed:.0f} (vrh kose {clear:.0f}"
+                    + (", pravi obris" if "hair_top" in p["face"] else ", procena") + ")")
+        _add(res, "kamera", (ok, msg))
         from .camera import hidden_jumps
         missed = hidden_jumps(job, p)
         fps_ = p["fps"]
@@ -283,7 +362,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         for i_, g_ in enumerate(segs):
             starts[i_] = f_ / fps_
             f_ += g_["vFrames"]
-        res.append((not missed, f"vidljivi skokovi bez promene kadra: {len(missed)}"
+        _add(res, "skokovi", (not missed, f"vidljivi skokovi bez promene kadra: {len(missed)}"
                     + (" → " + ", ".join(f"{starts[m['seg']]:.1f}s (skok {m['jump']})" for m in missed[:6]) if missed else "")))
 
     # 3e. Audio fix: glasnoća za IG/TikTok/Shorts, vrh, klipovanje.
@@ -294,7 +373,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                               capture_output=True, check=True).stdout
         clipped = int((np.abs(np.frombuffer(pcm_, np.float32)) >= 0.999).sum())
         ok = abs(lm["lufs"] - TARGET_LUFS) <= 0.5 and lm["tp"] <= TARGET_TP + 0.05 and clipped == 0
-        res.append((ok, f"zvuk: {lm['lufs']} LUFS (cilj {TARGET_LUFS} ±0.5), vrh {lm['tp']} dBTP (≤ {TARGET_TP}), "
+        _add(res, "zvuk", (ok, f"zvuk: {lm['lufs']} LUFS (cilj {TARGET_LUFS} ±0.5), vrh {lm['tp']} dBTP (≤ {TARGET_TP}), "
                         f"klipovanih uzoraka {clipped}"))
 
     # 4. Klikovi na rezovima.
@@ -308,7 +387,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         at += s["srcEnd"] - s["srcStart"]
         i = int(at * 48000)
         worst = max(worst, float(d[max(0, i - 48):i + 48].max()))
-    res.append((worst <= typical, f"klikovi na rezovima: najveći skok {worst:.4f} (govor p99.9 = {typical:.4f})"))
+    _add(res, "klikovi", (worst <= typical, f"klikovi na rezovima: najveći skok {worst:.4f} (govor p99.9 = {typical:.4f})"))
 
     # 5. Sinhronizacija: na početku svakog segmenta slika i zvuk se razlikuju ≤ pola frejma.
     acc, prev_f, worst_sync = 0.0, 0, 0.0
@@ -317,7 +396,7 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
         worst_sync = max(worst_sync, abs(s["vFrom"] / fps - audio_src_at_cut))
         acc += s["srcEnd"] - s["srcStart"]
         prev_f += s["vFrames"]
-    res.append((worst_sync <= frame / 2 + 1e-3 and abs(total - p["stats"]["voice"]) < 1e-3,
+    _add(res, "sync", (worst_sync <= frame / 2 + 1e-3 and abs(total - p["stats"]["voice"]) < 1e-3,
                 f"sinhronizacija: najveće odstupanje slike od zvuka {worst_sync * 1000:.0f} ms (≤ {frame * 500:.0f} ms), "
                 f"slika {total:.3f}s / zvuk {p['stats']['voice']:.3f}s"))
 
@@ -352,17 +431,17 @@ def run_checks(job, p: dict, rendered: Path | None) -> list[tuple[bool, str]]:
                                           - _frame(src, (s["vFrom"] + mid + 0.5) / fps, zoom, crop=src_c)).mean()))
             out_f += s["vFrames"]
         if diffs:
-            res.append((max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
+            _add(res, "frejmovi", (max(diffs) < 8, f"frejmovi odgovaraju izvoru: razlika {', '.join(f'{v:.1f}' for v in diffs)} (< 8)"))
         else:
-            res.append((True, "frejmovi odgovaraju izvoru: video je kraći od hooka — nema kadra za poređenje"))
+            _add(res, "frejmovi", (True, "frejmovi odgovaraju izvoru: video je kraći od hooka — nema kadra za poređenje"))
 
         # 7. Izvozni fajl se pušta normalno svuda: ≤ 60 fps i trajanje = trajanje zvuka.
         # (aazar-trial-1: Split Screen 2× od snimka od 60 fps = izvoz od 120 fps → telefoni/QuickTime ga puštaju
         # usporeno, pa je 2-minutni video izgledao kao 6 minuta. Nijedna provera to nije uhvatila.)
         from .media import probe
         info = probe(rendered)
-        res.append((info["fps"] <= 60.5 and not info["vfr"],
+        _add(res, "fps", (info["fps"] <= 60.5 and not info["vfr"],
                     f"fps izvoza: {info['fps']:g} (≤ 60, stalan{'' if not info['vfr'] else ' — NIJE stalan'})"))
-        res.append((abs(info["duration"] - p["stats"]["voice"]) <= 0.1,
+        _add(res, "trajanje", (abs(info["duration"] - p["stats"]["voice"]) <= 0.1,
                     f"trajanje izvoza: {info['duration']:.2f}s / zvuk {p['stats']['voice']:.2f}s (razlika ≤ 0.1s)"))
     return res

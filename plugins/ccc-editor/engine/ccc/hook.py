@@ -34,6 +34,7 @@ STYLES = {
               "max_w": 900, "line_h": 104, "pitch": 100, "pad_x": 0, "balanced": True},
 }
 GAP = 36                         # razmak hook ↔ titl / hook ↔ teme
+HOOK_SMALL = 0.85                # hook iznad glave bez mesta u punoj veličini se smanjuje (Remotion: hook.scale)
 SAFE_TOP, SAFE_BOTTOM = 220, 1540  # IG/TikTok UI zone (px na 1920)
 END_DEFAULT = 3.44               # referenca: hook nestaje naglo na 3.44 s
 END_WINDOW = (3.0, 4.0)          # …ako u ovom prozoru postoji rez, hook nestaje baš na njemu
@@ -189,7 +190,7 @@ def _stack_layout(text: str, fid: str | None = None) -> dict:
 
 
 def build(p: dict, text: str, style: str = "box", color: str | None = None, placement: str = "below") -> dict:
-    from .camera import min_head_after_zoom
+    from .camera import head_limits, keep_head_clear
 
     st = STYLES[style]
     fid = p.get("font") if p.get("font") in F.SETS else F.DEFAULT
@@ -225,19 +226,38 @@ def build(p: dict, text: str, style: str = "box", color: str | None = None, plac
         return _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height, where,
                        lay if style == "stack" else None)
     below = p["captionY"] + half_h(p) + GAP
-    above = min_head_after_zoom(p) - GAP - height  # teme pri najvećem zumu
+    # Iznad glave (PLAN §23.2): pun hook potpuno iznad kose → pun hook do vrha UI zone, sme preko gornje trećine kose
+    # → hook na 85% → nema mesta. Kosa = pravi obris (MODNet), pri zumu, samo kadrovi dok hook traje.
+    def ladder(clear: float, allowed: float):
+        for k in (1.0, HOOK_SMALL):
+            hk = height * k
+            y_up = max(SAFE_TOP, clear - GAP - hk)
+            if y_up + hk <= allowed:
+                return (y_up, k, "iznad glave" + ("" if y_up + hk <= clear - GAP else " (malo preko kose)")
+                        + ("" if k == 1.0 else f" (hook {round(k * 100)}%, tesno iznad glave)"))
+        return None
+    up = ladder(*head_limits(p, end))
+    if up is None and p.get("camera") and (placement == "above" or below + height > SAFE_BOTTOM):
+        # Mesta ima bez zuma, a zum u prvim sekundama podiže glavu u hook: zum tih kadrova se prilagodi hooku.
+        up0 = ladder(*head_limits({**p, "camera": []}, end))
+        if up0 and keep_head_clear(p, up0[0] + height * up0[1], end):
+            up = ladder(*head_limits(p, end))
     # Klijent bira poziciju ("below" = ispod titla, "above" = iznad glave). Ako izabrana nema mesta,
     # koristi se druga i to se prijavljuje (skill obaveštava klijenta). Nikad preko UI zone ni lica.
-    fits = {"below": below + height <= SAFE_BOTTOM, "above": above >= SAFE_TOP}
-    spot = {"below": (below, "ispod titla"), "above": (above, "iznad glave")}
+    fits = {"below": below + height <= SAFE_BOTTOM, "above": up is not None}
+    spot = {"below": (below, 1.0, "ispod titla"), "above": up or (SAFE_TOP, 1.0, "iznad glave")}
     other = "above" if placement == "below" else "below"
+    k = 1.0
     if fits[placement]:
-        y, where = spot[placement]
+        y, k, where = spot[placement]
     elif fits[other]:
-        y, where = spot[other][0], f"{spot[other][1]} (izabrano {spot[placement][1]}, ali tamo nema mesta)"
+        y, k, w2 = spot[other]
+        where = f"{w2} (izabrano {spot[placement][2]}, ali tamo nema mesta)"
     else:  # predugačak hook — skill traži od klijenta kraći tekst
         y, where = below, "NEMA MESTA — hook je predugačak"
-    return _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height, where,
+    if k != 1.0:
+        extra["scale"] = k
+    return _finish(p, text, style, fid, placement, color, lines, extra, st, end, y, height * k, where,
                    lay if style == "stack" else None)
 
 

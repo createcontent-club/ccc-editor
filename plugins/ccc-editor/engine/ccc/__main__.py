@@ -113,7 +113,7 @@ def _speaker_video(job: Job, p: dict) -> None:
 
 def _build(job: Job, name: str) -> None:
     """Izbori klijenta → gotov video. Svaki korak je ista komanda koju bi pokrenuo i ručno."""
-    from .check import run_checks
+    from .check import report, run_checks
     from .review import client_report
 
     f = job.dir / "choices.json"
@@ -168,9 +168,7 @@ def _build(job: Job, name: str) -> None:
     p = job.load()
     print("▶ Provera")
     res = run_checks(job, p, job.dir / "final.mp4")
-    for ok, msg in res:
-        print(f"  {'✅' if ok else '❌'} {msg}")
-    if not all(ok for ok, _ in res):
+    if not report(res):
         print("CCC_CHECK_FAILED: provera nije prošla — ispravi pa ponovo ./ccc build (video NIJE izvezen).")
         sys.exit(EXIT_CHECK)
 
@@ -871,15 +869,13 @@ def main(argv: list[str]) -> None:
         job.save(p)
         print(f"✓ odobreno: {a.gate} ({p['approved'][a.gate]})")
     elif a.cmd == "check":
-        from .check import run_checks
+        from .check import report, run_checks
         cand = [f for f in (job.dir / "final.mp4", job.dir / "preview.mp4") if f.exists()]
         if not cand:
             raise SystemExit("Nema renderovanog videa — prvo ./ccc build (ili ./ccc render).")
         out = max(cand, key=lambda f: f.stat().st_mtime)  # stari final.mp4 ne sme da sakrije noviji preview
         res = run_checks(job, p, out)
-        for ok, msg in res:
-            print(f"  {'✅' if ok else '❌'} {msg}")
-        if not all(ok for ok, _ in res):
+        if not report(res):
             print(f"CCC_CHECK_FAILED: {out.name}")
             sys.exit(EXIT_CHECK)
     elif a.cmd == "render":

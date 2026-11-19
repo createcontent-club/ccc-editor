@@ -220,7 +220,7 @@ Then `ccc build <name>`. The check line `gornja polovina: …` must pass (whole 
 ## Judgment
 
 - Same as Basic for Stacked hooks and Minimal captions (see `formats/basic.md`).
-- If the check line `split: … teme …` fails, the client's head sits too high or too low in their recording for the bottom half — tell them in one sentence and ask for a recording with a little space above the head.
+- The engine picks the bottom-half crop itself. Hair under the line is allowed (`! split: vrh kose …`, the captions cover the top of the hair). The check line `split: … obrve …` fails only when the face itself does not fit (filmed very close to the lens): it is a `[client]` line, ask the question from the skill's Step 5 (Basic Edit of this video, or a take a little further away).
 
 ## Extra changes
 
